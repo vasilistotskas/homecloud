@@ -157,6 +157,22 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 - **Live Photos** (kei `src/state/types.rs` + 1,814 live manifest rows): one `asset_id` carries the still as `version=original, media_type=live_photo_image` and the motion clip as `version=live_original, media_type=live_photo_video`; edited Live Photos add `adjusted` + `live_adjusted`. Version keys: `original, medium, thumb, adjusted, alternative, live_original, live_medium, live_thumb, live_adjusted`. Statuses: `pending, policy_excluded, downloaded, failed`. Unknown values are rejected (fail closed).
 - **Ordering:** kei enumerates newest-first; pyicloud's `photos.all` yields oldest-first (first 400 = 2022-06..08). Identity comparison (Spike A) therefore runs after the full sync covers both ranges.
 
+### Spike A — asset identity (passed 2026-10-05) — gate for P3
+
+Compared a read-only pyicloud 2.7.0 listing (400 oldest assets, `spike_a_ids.py`) with the full kei manifest:
+
+- kei `asset_id` = pyicloud `PhotoAsset.asset_id` (the **CPLAsset** record name, which `PhotoAsset.delete()` targets) for **400/400**; 0 matched `master_id` (CPLMaster).
+- Original size, `added_date` (to the second) and filename stem equal for **400/400**.
+- pyicloud reported 252 Live Photos; kei holds both `original` and `live_original` for **252/252**.
+- pyicloud 2.7.0 notes: install with the `[cli]` extra (it imports `rich` unconditionally — pyicloud #361, fixed after 2.7.0); 2FA must follow `request_2fa_code()` → `validate_2fa_code()` → `trust_session()` (as pyicloud's own CLI does), otherwise validation takes the SMS path; `delete()` returns `True` unconditionally (pyicloud #353) — deletions must be confirmed by re-fetch.
+
+Conclusion: deletion addresses assets by kei `asset_id`, cross-checked against size, added date and filename before every delete.
+
+### Full-library results (2026-10-05)
+
+- kei full sync: 5,377 files downloaded, 0 failed, 239.0 GiB in 59 m 18 s.
+- First full verification: 3,661 assets / 5,687 renditions. One false quarantine (an animated GIF that kei classes as video was box-walked as ISO-BMFF) led to per-container tier selection (`verify.RequiredTiers`, migration 0002) and the audited `quarantine release` command. After the fix: **3,661/3,661 verified, 0 quarantined**.
+
 ### Spike C — background launch (decided 2026-10-05)
 
 - Two entrypoints over the same `internal/` packages: `cmd/homecloud` (console CLI) and `cmd/homecloud-agent` (built with `-ldflags=-H=windowsgui`, so Windows never allocates a console; logs go to file).
