@@ -28,8 +28,8 @@ func (p PendingResource) IsVideo() bool {
 	return p.MediaType == "video" || p.MediaType == "live_photo_video"
 }
 
-// PendingVerification returns up to limit renditions of non-quarantined assets
-// that are missing a required tier, oldest-downloaded asset first.
+// PendingVerification returns up to limit renditions (all when limit < 0) of
+// downloaded assets that are missing a required tier, oldest state change first.
 func (db *DB) PendingVerification(ctx context.Context, limit int) (out []PendingResource, err error) {
 	rows, err := db.r.QueryContext(ctx, `
 		SELECT r.library, r.asset_id, r.version, r.local_path, r.media_type, r.size_bytes, r.kei_sha256,

@@ -3,15 +3,20 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"time"
 
 	"github.com/urfave/cli/v3"
 
+	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/doctor"
+	"github.com/vasilistotskas/homecloud/internal/ledger"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -51,6 +56,16 @@ func newApp() *cli.Command {
 				Usage:  "run read-only environment checks",
 				Action: runDoctor,
 			},
+			{
+				Name:   "verify",
+				Usage:  "ingest kei's manifest and run all outstanding verification (does not contact iCloud)",
+				Action: runVerify,
+			},
+			{
+				Name:   "status",
+				Usage:  "show asset counts by state",
+				Action: runStatus,
+			},
 		},
 	}
 }
@@ -73,6 +88,70 @@ func loadConfig(cmd *cli.Command) (*config.Config, error) {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 	return cfg, nil
+}
+
+func openLedger(ctx context.Context, cfg *config.Config) (*ledger.DB, error) {
+	db, err := ledger.Open(ctx, app.LedgerPath(cfg))
+	if err != nil {
+		return nil, fmt.Errorf("open ledger: %w", err)
+	}
+	return db, nil
+}
+
+func runVerify(ctx context.Context, cmd *cli.Command) (err error) {
+	cfg, err := loadConfig(cmd)
+	if err != nil {
+		return err
+	}
+	db, err := openLedger(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, db.Close()) }()
+
+	log := slog.New(slog.NewTextHandler(cmd.Root().ErrWriter, nil))
+	ingested, err := app.Ingest(ctx, cfg, db, time.Now())
+	if err != nil {
+		return err
+	}
+	log.Info("ingested", "assets", ingested.Assets, "renditions", ingested.Renditions,
+		"new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
+
+	started := time.Now()
+	verified, err := app.Verify(ctx, cfg, db, log, time.Now)
+	log.Info("verified", "checked", verified.Checked, "passed", verified.Passed,
+		"mismatched", verified.Mismatched, "errored", verified.Errored, "elapsed", time.Since(started).Round(time.Second))
+	if err != nil {
+		return err
+	}
+	if verified.Mismatched > 0 || verified.Errored > 0 {
+		return cli.Exit("verify: some renditions did not pass", 1)
+	}
+	return nil
+}
+
+func runStatus(ctx context.Context, cmd *cli.Command) (err error) {
+	cfg, err := loadConfig(cmd)
+	if err != nil {
+		return err
+	}
+	db, err := openLedger(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, db.Close()) }()
+
+	counts, err := db.StateCounts(ctx)
+	if err != nil {
+		return fmt.Errorf("status: %w", err)
+	}
+	w := cmd.Root().Writer
+	for _, s := range []ledger.AssetState{ledger.StateDiscovered, ledger.StateDownloaded, ledger.StateVerified, ledger.StateQuarantined} {
+		if _, err := fmt.Fprintf(w, "%-12s %d\n", s, counts[s]); err != nil {
+			return fmt.Errorf("write status: %w", err)
+		}
+	}
+	return nil
 }
 
 func runDoctor(ctx context.Context, cmd *cli.Command) error {

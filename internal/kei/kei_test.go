@@ -2,6 +2,27 @@ package kei
 
 import "testing"
 
+func TestOutcomeFor(t *testing.T) {
+	tests := []struct {
+		code    int
+		want    Outcome
+		wantErr bool
+	}{
+		{0, OutcomeOK, false},
+		{2, OutcomePartial, false},
+		{3, OutcomeAuthRequired, false},
+		{4, OutcomeAuthTerminal, false},
+		{1, 0, true},
+		{130, 0, true},
+	}
+	for _, tt := range tests {
+		got, err := outcomeFor(tt.code)
+		if (err != nil) != tt.wantErr || (!tt.wantErr && got != tt.want) {
+			t.Errorf("outcomeFor(%d) = %v, %v; want %v, err=%v", tt.code, got, err, tt.want, tt.wantErr)
+		}
+	}
+}
+
 func TestVersionPattern(t *testing.T) {
 	tests := []struct {
 		output, want string

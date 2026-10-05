@@ -20,6 +20,10 @@ linters:
   settings:
     exhaustive:
       default-signifies-exhaustive: true
+    wrapcheck:
+      # Errors from this module's own packages already carry context at their source.
+      ignore-package-globs:
+        - github.com/vasilistotskas/homecloud/*
     govet:
       enable-all: true
       disable:
