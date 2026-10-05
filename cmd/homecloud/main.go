@@ -17,6 +17,8 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/doctor"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/notify"
+	"github.com/vasilistotskas/homecloud/internal/schedtask"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -65,6 +67,21 @@ func newApp() *cli.Command {
 				Name:   "status",
 				Usage:  "show asset counts by state",
 				Action: runStatus,
+			},
+			{
+				Name:   "notify-test",
+				Usage:  "send a test push notification through ntfy",
+				Action: runNotifyTest,
+			},
+			{
+				Name:   "install",
+				Usage:  "register homecloud-agent (next to this binary) to start at logon, and start it now",
+				Action: runInstall,
+			},
+			{
+				Name:   "uninstall",
+				Usage:  "remove the homecloud-agent logon task",
+				Action: runUninstall,
 			},
 		},
 	}
@@ -152,6 +169,79 @@ func runStatus(ctx context.Context, cmd *cli.Command) (err error) {
 		}
 	}
 	return nil
+}
+
+// agentTaskName is the Task Scheduler name of the logon task.
+const agentTaskName = "homecloud-agent"
+
+// printf writes command output, wrapping write failures.
+func printf(cmd *cli.Command, format string, args ...any) error {
+	if _, err := fmt.Fprintf(cmd.Root().Writer, format, args...); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+	return nil
+}
+
+func runNotifyTest(ctx context.Context, cmd *cli.Command) error {
+	cfg, err := loadConfig(cmd)
+	if err != nil {
+		return err
+	}
+	msg := notify.Msg{Title: "homecloud test", Body: "Notifications from homecloud reach this device.", Priority: notify.PriorityDefault, Tags: []string{"white_check_mark"}}
+	if sendErr := notify.New(cfg.Notify).Send(ctx, msg); sendErr != nil {
+		return fmt.Errorf("notify-test: %w", sendErr)
+	}
+	return printf(cmd, "sent\n")
+}
+
+func runInstall(ctx context.Context, cmd *cli.Command) error {
+	if _, err := loadConfig(cmd); err != nil {
+		return err
+	}
+	spec, err := agentTaskSpec()
+	if err != nil {
+		return fmt.Errorf("install: %w", err)
+	}
+	if regErr := schedtask.Register(ctx, spec); regErr != nil {
+		return fmt.Errorf("install: %w", regErr)
+	}
+	if runErr := schedtask.Run(ctx, agentTaskName); runErr != nil {
+		return fmt.Errorf("install: start agent: %w", runErr)
+	}
+	return printf(cmd, "registered and started task %q -> %s\n", agentTaskName, spec.Command)
+}
+
+// agentTaskSpec describes the logon task for the homecloud-agent.exe that sits
+// next to this binary, running as the current user.
+func agentTaskSpec() (schedtask.Spec, error) {
+	self, err := os.Executable()
+	if err != nil {
+		return schedtask.Spec{}, fmt.Errorf("locate executable: %w", err)
+	}
+	dir := filepath.Dir(self)
+	agent := filepath.Join(dir, "homecloud-agent.exe")
+	if _, statErr := os.Stat(agent); statErr != nil {
+		return schedtask.Spec{}, fmt.Errorf("agent binary next to homecloud.exe: %w", statErr)
+	}
+	sid, user, err := schedtask.CurrentUser()
+	if err != nil {
+		return schedtask.Spec{}, err
+	}
+	return schedtask.Spec{
+		Name:        agentTaskName,
+		Description: "homecloud background agent: archive iCloud Photos to the local archive and verify it. https://github.com/vasilistotskas/homecloud",
+		Command:     agent,
+		WorkingDir:  dir,
+		UserSID:     sid,
+		UserName:    user,
+	}, nil
+}
+
+func runUninstall(ctx context.Context, cmd *cli.Command) error {
+	if err := schedtask.Delete(ctx, agentTaskName); err != nil {
+		return fmt.Errorf("uninstall: %w", err)
+	}
+	return printf(cmd, "removed task %q (a running agent keeps running until it exits or you log off)\n", agentTaskName)
 }
 
 func runDoctor(ctx context.Context, cmd *cli.Command) error {
