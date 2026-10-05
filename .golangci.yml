@@ -24,6 +24,12 @@ linters:
       enable-all: true
       disable:
         - fieldalignment
+  exclusions:
+    rules:
+      # Tests assert on errors directly; wrapping them adds no context.
+      - path: _test\.go
+        linters:
+          - wrapcheck
 
 formatters:
   enable:
