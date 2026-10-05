@@ -35,7 +35,12 @@ it("renders a realistic overview in StrictMode without looping", async () => {
           overview: create(OverviewSchema, {
             assets: { verified: 3661n },
             archive: { files: 5687n, bytes: 285_942_383_675n },
-            storage: { root: "E:\HomeCloud", totalBytes: 999_286_689_792n, freeBytes: 518_929_182_720n, minFreePercent: 15 },
+            storage: {
+              root: "E:\\HomeCloud",
+              totalBytes: 999_286_689_792n,
+              freeBytes: 518_929_182_720n,
+              minFreePercent: 15,
+            },
             appleAccount: { state: AppleAccountState.SIGNED_IN },
             activity: { phase: Phase.IDLE, nextCycleAt: timestampFromDate(new Date(Date.now() + 3_000_000)) },
             lastCycle: run,
