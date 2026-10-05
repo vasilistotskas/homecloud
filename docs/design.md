@@ -70,7 +70,7 @@ State machine: `discovered → downloaded → verified → eligible → delete_r
 ## 6. Verification tiers
 
 1. **Content:** SHA-256 of the file on E: equals kei's recorded download SHA-256; size equals the manifest size.
-2. **Structure (video):** MP4/QuickTime top-level box walk (`ftyp`, `moov`, `mdat`; last box ends exactly at EOF) — catches truncation.
+2. **Structure (video):** MP4/QuickTime top-level box walk — contiguous chain ending exactly at EOF, containing `moov` and `mdat`; `ftyp` first only for ISO-BMFF extensions (see §10) — catches truncation.
 3. **Probe (video):** `ffprobe` reports streams and a positive duration consistent across container and streams.
 
 Scrub: re-hash a rolling ~5 % of the archive weekly (full cycle ≈ 5 months). A scrub failure quarantines the asset and halts deletion.
@@ -121,4 +121,15 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 
 ## 10. Spike findings
 
-_To be recorded during P0._
+### kei configuration semantics (verified against kei v0.24.1 docs and source)
+
+- **One copy per asset:** `[filters] albums = ["none"]`, `unfiled = true`. The unfiled pass excludes only members of *selected* albums (`compute_unfiled_exclude_ids` in `src/commands/service.rs` returns an empty set when no album is selected), so it enumerates the whole library. Album passes would write one extra copy per album membership (wiki *Folder Structure*).
+- **Completeness for deletion:** `photos.edited = true` and `photos.alternative = true` so edits and RAW siblings are archived before an asset can ever be deleted; `live_photo_mode = "both"`.
+- **Filenames:** `keep_unicode_in_filenames = true` (lossless names); `file_match_policy = "name-id7"` (asset-ID-qualified names, no size-based collision heuristics).
+- **State location:** `data_dir` defaults to the config file's parent; homecloud places kei's config at `<root>\kei\config.toml` so kei state lives beside the archive.
+- **Download integrity (kei-side):** bytes received must equal both `Content-Length` and the API `size`, otherwise retry (wiki *Download Pipeline*); SHA-256 recorded at download time (`verify --checksums`). Apple's `fileChecksum` is an MMCS signature, not a content hash.
+- **Auth:** SRP + trusted-device 2FA; credentials via Windows Credential Manager (`kei password set`); headless runs exit **3** when 2FA is needed; `kei login get-code` / `submit-code` for non-interactive completion.
+
+### Verification design corrections
+
+- QuickTime `.mov` files may legitimately begin with `wide`, `mdat`, `moov`, `free`, `skip` or `pnot` rather than `ftyp` (wiki *Content Validation*). Tier 2 therefore validates a **contiguous top-level box chain ending exactly at EOF that contains `moov` and `mdat`**, and requires `ftyp` only for ISO-BMFF extensions (`.mp4`, `.m4v`, `.heic`).
