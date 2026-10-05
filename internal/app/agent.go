@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -196,6 +199,9 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	if err := a.checkDrive(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	if err := a.hideHiddenFolder(); err != nil {
+		errs = append(errs, err)
+	}
 	if files, err := export.Write(ctx, a.db, a.cfg.Storage.Root); err != nil {
 		errs = append(errs, err)
 	} else {
@@ -260,6 +266,24 @@ func (a *Agent) checkDrive(ctx context.Context) error {
 			Priority: notify.PriorityUrgent,
 			Tags:     []string{"rotating_light"},
 		})
+	}
+	return nil
+}
+
+// hideHiddenFolder keeps the folder holding iCloud's Hidden photos hidden on
+// disk as well, once kei has created it.
+func (a *Agent) hideHiddenFolder() error {
+	if !*a.cfg.ICloud.IncludeHidden {
+		return nil
+	}
+	dir := filepath.Join(a.cfg.Storage.Root, kei.PhotosDir, kei.HiddenDir)
+	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("hidden photos folder: %w", err)
+	}
+	if err := platform.MarkHidden(dir); err != nil {
+		return fmt.Errorf("hidden photos folder: %w", err)
 	}
 	return nil
 }

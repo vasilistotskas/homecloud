@@ -3227,8 +3227,12 @@ type Settings struct {
 	SyncIntervalSeconds  int64   `protobuf:"varint,11,opt,name=sync_interval_seconds,json=syncIntervalSeconds,proto3" json:"sync_interval_seconds,omitempty"`
 	ScrubIntervalSeconds int64   `protobuf:"varint,12,opt,name=scrub_interval_seconds,json=scrubIntervalSeconds,proto3" json:"scrub_interval_seconds,omitempty"`
 	ScrubFraction        float64 `protobuf:"fixed64,13,opt,name=scrub_fraction,json=scrubFraction,proto3" json:"scrub_fraction,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	// The Apple Account kei signs in to.
+	AppleId string `protobuf:"bytes,14,opt,name=apple_id,json=appleId,proto3" json:"apple_id,omitempty"`
+	// Whether photos hidden in iCloud are archived (under Photos/.Hidden).
+	IncludeHidden bool `protobuf:"varint,15,opt,name=include_hidden,json=includeHidden,proto3" json:"include_hidden,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Settings) Reset() {
@@ -3350,6 +3354,20 @@ func (x *Settings) GetScrubFraction() float64 {
 		return x.ScrubFraction
 	}
 	return 0
+}
+
+func (x *Settings) GetAppleId() string {
+	if x != nil {
+		return x.AppleId
+	}
+	return ""
+}
+
+func (x *Settings) GetIncludeHidden() bool {
+	if x != nil {
+		return x.IncludeHidden
+	}
+	return false
 }
 
 // ToolPin is an external tool and the exact version homecloud requires.
@@ -3778,7 +3796,7 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x1cSendTestNotificationResponse\"\x14\n" +
 	"\x12GetSettingsRequest\"O\n" +
 	"\x13GetSettingsResponse\x128\n" +
-	"\bsettings\x18\x01 \x01(\v2\x1c.homecloud.agent.v1.SettingsR\bsettings\"\xbd\x04\n" +
+	"\bsettings\x18\x01 \x01(\v2\x1c.homecloud.agent.v1.SettingsR\bsettings\"\xff\x04\n" +
 	"\bSettings\x12\x1f\n" +
 	"\vconfig_path\x18\x01 \x01(\tR\n" +
 	"configPath\x12!\n" +
@@ -3797,7 +3815,9 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	" \x01(\tR\vnotifyTopic\x122\n" +
 	"\x15sync_interval_seconds\x18\v \x01(\x03R\x13syncIntervalSeconds\x124\n" +
 	"\x16scrub_interval_seconds\x18\f \x01(\x03R\x14scrubIntervalSeconds\x12%\n" +
-	"\x0escrub_fraction\x18\r \x01(\x01R\rscrubFraction\";\n" +
+	"\x0escrub_fraction\x18\r \x01(\x01R\rscrubFraction\x12\x19\n" +
+	"\bapple_id\x18\x0e \x01(\tR\aappleId\x12%\n" +
+	"\x0einclude_hidden\x18\x0f \x01(\bR\rincludeHidden\";\n" +
 	"\aToolPin\x12\x16\n" +
 	"\x06binary\x18\x01 \x01(\tR\x06binary\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\"\x18\n" +

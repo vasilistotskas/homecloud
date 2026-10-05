@@ -450,6 +450,10 @@ message Settings {
   int64 sync_interval_seconds = 11;
   int64 scrub_interval_seconds = 12;
   double scrub_fraction = 13;
+  // The Apple Account kei signs in to.
+  string apple_id = 14;
+  // Whether photos hidden in iCloud are archived (under Photos/.Hidden).
+  bool include_hidden = 15;
 }
 
 // ToolPin is an external tool and the exact version homecloud requires.

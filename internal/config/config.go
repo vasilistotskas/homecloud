@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/netip"
 	"net/url"
 	"os"
@@ -24,6 +25,7 @@ import (
 // Config is the complete homecloud configuration.
 type Config struct {
 	Storage  Storage  `toml:"storage"`
+	ICloud   ICloud   `toml:"icloud"`
 	Kei      Kei      `toml:"kei"`
 	FFprobe  FFprobe  `toml:"ffprobe"`
 	Web      Web      `toml:"web"`
@@ -43,7 +45,17 @@ type Storage struct {
 	MinFreePercent float64 `toml:"min_free_percent"`
 }
 
-// Kei pins the kei downloader.
+// ICloud describes the account and what of it is archived.
+type ICloud struct {
+	// AppleID is the account kei signs in to.
+	AppleID string `toml:"apple_id"`
+	// IncludeHidden archives photos hidden in iCloud Photos, kept apart under
+	// Photos/.Hidden and marked hidden on disk. It must be set explicitly.
+	IncludeHidden *bool `toml:"include_hidden"`
+}
+
+// Kei pins the kei downloader. homecloud generates kei's configuration at
+// Config from its own settings; edits to that file are overwritten.
 type Kei struct {
 	Binary  string `toml:"binary"`
 	Version string `toml:"version"`
@@ -131,6 +143,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Storage.MinFreePercent <= 0 || c.Storage.MinFreePercent >= 100 {
 		add("storage.min_free_percent must be in (0, 100), got %v", c.Storage.MinFreePercent)
+	}
+	if _, err := mail.ParseAddress(c.ICloud.AppleID); err != nil || strings.ContainsAny(c.ICloud.AppleID, "<> ") {
+		add("icloud.apple_id must be the Apple Account email address, got %q", c.ICloud.AppleID)
+	}
+	if c.ICloud.IncludeHidden == nil {
+		add("icloud.include_hidden must be set to true or false")
 	}
 
 	type field struct{ key, value string }

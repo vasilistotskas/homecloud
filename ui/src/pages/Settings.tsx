@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import {
+  Badge,
   Button,
   Caption1,
   Card,
@@ -133,8 +134,25 @@ export function SettingsPage() {
       </Group>
 
       <Group title="iCloud">
+        <Row label="Apple Account" detail={s.appleId} />
+        <Row
+          label="Hidden photos"
+          detail={
+            s.includeHidden
+              ? "Archived in Photos/.Hidden, a folder hidden on disk"
+              : "Not archived; they stay only in iCloud (icloud.include_hidden)"
+          }
+        >
+          <Badge appearance="tint" color={s.includeHidden ? "success" : "informative"}>
+            {s.includeHidden ? "On" : "Off"}
+          </Badge>
+        </Row>
         <Row label="Downloader" detail={`kei ${s.downloader?.version ?? ""} · ${s.downloader?.binary ?? ""}`} mono />
-        <Row label="Downloader configuration" detail={s.downloaderConfig} mono />
+        <Row
+          label="Downloader configuration"
+          detail={`${s.downloaderConfig} (written by homecloud from the settings above)`}
+          mono
+        />
         <Row label="Check for new items" detail="Downloads new photos and videos, then verifies them">
           <Text>{formatInterval(s.syncIntervalSeconds)}</Text>
         </Row>

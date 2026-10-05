@@ -17,6 +17,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/health"
+	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -107,6 +108,7 @@ func fixture(t *testing.T, corrupt bool) string {
 
 func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*Agent, *recordingNotifier) {
 	t.Helper()
+	includeHidden := true
 	exe, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -127,6 +129,7 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 	n := &recordingNotifier{}
 	cfg := &config.Config{
 		Storage:  config.Storage{Root: filepath.Dir(manifest)},
+		ICloud:   config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
 		Kei:      config.Kei{Binary: exe, Config: "unused.toml"},
 		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
 	}
@@ -295,5 +298,21 @@ func TestCycleExportsManifest(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(filepath.Dir(manifest), export.ManifestFile)) //nolint:gosec // test temp path
 	if err != nil || !strings.Contains(string(data), "IMG_0001_QUFBQTA.HEIC,photo") {
 		t.Fatalf("manifest = %q, %v", data, err)
+	}
+}
+
+func TestCycleKeepsHiddenFolderHidden(t *testing.T) {
+	clock := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	manifest := fixture(t, false)
+	agent, _ := newTestAgent(t, manifest, "0", &clock)
+	dir := filepath.Join(filepath.Dir(manifest), kei.PhotosDir, kei.HiddenDir)
+	if err := agent.Cycle(context.Background()); err != nil {
+		t.Fatalf("cycle without a hidden folder: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := agent.Cycle(context.Background()); err != nil {
+		t.Fatalf("cycle with a hidden folder: %v", err)
 	}
 }

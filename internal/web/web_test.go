@@ -74,8 +74,10 @@ func setup(t *testing.T) *env {
 	}
 	authn := auth.New(token, func() time.Time { return t0 })
 	agent := &fakeAgent{hub: app.NewHub(), started: true}
+	includeHidden := true
 	cfg := &config.Config{
 		Storage:  config.Storage{Root: t.TempDir(), MinFreePercent: 15},
+		ICloud:   config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
 		Web:      config.Web{Listen: listen},
 		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
 	}

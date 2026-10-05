@@ -6,6 +6,11 @@ Photos/YYYY/MM/
     the month it was taken. Edited versions, Live Photo videos and RAW
     alternatives sit next to their originals.
 
+Photos/.Hidden/YYYY/MM/
+    Photos and videos hidden in iCloud Photos (when homecloud is set to archive
+    them), kept apart and hidden from file managers. Show hidden items to see
+    them.
+
 *.xmp (next to each file)
     XMP metadata sidecars: capture date and time zone, GPS location, rating
     and favourite, title and caption, albums and people. Standard XMP, read by

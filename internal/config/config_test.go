@@ -27,6 +27,10 @@ root = '@ROOT@'
 volume_id = '@VOLUME_ID@'
 min_free_percent = 15
 
+[icloud]
+apple_id = "someone@example.com"
+include_hidden = true
+
 [kei]
 binary = '@KEI_BINARY@'
 version = "0.24.1"
@@ -69,6 +73,7 @@ func TestLoadValid(t *testing.T) {
 			VolumeID:       testVolumeID,
 			MinFreePercent: 15,
 		},
+		ICloud:   ICloud{AppleID: "someone@example.com", IncludeHidden: ptr(true)},
 		Kei:      Kei{Binary: testKeiBinary, Version: "0.24.1", Config: testKeiConfig},
 		FFprobe:  FFprobe{Binary: testFFprobeBin, Version: "9.0.2"},
 		Web:      Web{Listen: "127.0.0.1:8790"},
@@ -110,6 +115,9 @@ func TestValidate(t *testing.T) {
 		{"bad volume id", func(c *Config) { c.Storage.VolumeID = "not-a-volume" }, "storage.volume_id"},
 		{"free percent zero", func(c *Config) { c.Storage.MinFreePercent = 0 }, "storage.min_free_percent"},
 		{"free percent 100", func(c *Config) { c.Storage.MinFreePercent = 100 }, "storage.min_free_percent"},
+		{"no apple id", func(c *Config) { c.ICloud.AppleID = "" }, "icloud.apple_id"},
+		{"display-name apple id", func(c *Config) { c.ICloud.AppleID = "Me <me@example.com>" }, "icloud.apple_id"},
+		{"hidden unset", func(c *Config) { c.ICloud.IncludeHidden = nil }, "icloud.include_hidden"},
 		{"relative kei binary", func(c *Config) { c.Kei.Binary = `kei.exe` }, "kei.binary"},
 		{"loose kei version", func(c *Config) { c.Kei.Version = "0.24" }, "kei.version"},
 		{"loose ffprobe version", func(c *Config) { c.FFprobe.Version = "latest" }, "ffprobe.version"},
@@ -154,3 +162,5 @@ func TestDurationRejectsGarbage(t *testing.T) {
 		t.Fatal("want parse error")
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

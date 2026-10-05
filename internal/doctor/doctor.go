@@ -29,7 +29,7 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		checkDir("archive root", cfg.Storage.Root),
 		checkVolume(cfg.Storage),
 		checkSpace(cfg.Storage),
-		checkFile("kei config", cfg.Kei.Config),
+		checkKeiConfig(cfg),
 		checkPin(ctx, "kei version", kei.Pin(cfg.Kei).Check),
 		checkPin(ctx, "ffprobe version", verify.FFprobePin(cfg.FFprobe).Check),
 	}
@@ -58,18 +58,6 @@ func checkDir(name, path string) Result {
 	}
 }
 
-func checkFile(name, path string) Result {
-	info, err := os.Stat(path)
-	switch {
-	case err != nil:
-		return Result{Name: name, Err: err}
-	case info.IsDir():
-		return Result{Name: name, Err: fmt.Errorf("%s is a directory", path)}
-	default:
-		return Result{Name: name, Detail: path}
-	}
-}
-
 func checkVolume(s config.Storage) Result {
 	if err := platform.CheckVolume(s.Root, s.VolumeID); err != nil {
 		return Result{Name: "archive volume", Err: err}
@@ -88,4 +76,13 @@ func checkPin(ctx context.Context, name string, check func(context.Context) erro
 		return Result{Name: name, Err: err}
 	}
 	return Result{Name: name, Detail: "pinned version present"}
+}
+
+// checkKeiConfig reports whether kei's configuration matches homecloud's
+// settings. Only the agent writes it (at startup), so doctor stays read-only.
+func checkKeiConfig(cfg *config.Config) Result {
+	if err := kei.ConfigCurrent(cfg); err != nil {
+		return Result{Name: "kei config", Err: err}
+	}
+	return Result{Name: "kei config", Detail: cfg.Kei.Config}
 }

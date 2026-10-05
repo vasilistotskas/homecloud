@@ -14,6 +14,8 @@
 //	StateDir() (string, error)           per-user runtime state directory
 //	WriteSecretFile(path, data) error    atomic write readable only by the current user
 //	OpenURL(url) error                   open a URL in the default browser
+//	MarkHidden(path) error               hide a file or folder from file managers
+//	DriveHealthOf(ctx, path)             SMART health of the drive holding path
 package platform
 
 import (

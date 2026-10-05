@@ -321,6 +321,8 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv1.GetSetti
 		SyncIntervalSeconds:  int64(c.Schedule.SyncInterval.Std() / time.Second),
 		ScrubIntervalSeconds: int64(c.Schedule.ScrubInterval.Std() / time.Second),
 		ScrubFraction:        c.Schedule.ScrubFraction,
+		AppleId:              c.ICloud.AppleID,
+		IncludeHidden:        *c.ICloud.IncludeHidden,
 	}}), nil
 }
 

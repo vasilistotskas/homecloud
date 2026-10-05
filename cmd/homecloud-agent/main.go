@@ -23,6 +23,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/doctor"
+	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -65,6 +66,14 @@ func run() (err error) {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// homecloud owns kei's configuration: write it before anything checks or runs kei.
+	if changed, keiErr := kei.WriteConfig(cfg); keiErr != nil {
+		log.Error("writing kei configuration failed; not starting", "err", keiErr)
+		return keiErr
+	} else if changed {
+		log.Info("kei configuration written", "path", cfg.Kei.Config)
+	}
 
 	if doctorErr := doctor.Err(doctor.Run(ctx, cfg)); doctorErr != nil {
 		log.Error("environment checks failed; not starting", "err", doctorErr)

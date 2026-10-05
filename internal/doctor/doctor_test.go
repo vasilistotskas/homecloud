@@ -22,13 +22,10 @@ func TestErr(t *testing.T) {
 	}
 }
 
-func TestCheckDirAndFile(t *testing.T) {
+func TestCheckDir(t *testing.T) {
 	dir := t.TempDir()
 	if r := checkDir("d", dir); !r.OK() {
 		t.Errorf("checkDir(existing dir): %v", r.Err)
-	}
-	if r := checkFile("f", dir); r.OK() {
-		t.Error("checkFile(dir) should fail")
 	}
 	if r := checkDir("d", filepath.Join(dir, "missing")); r.OK() {
 		t.Error("checkDir(missing) should fail")
