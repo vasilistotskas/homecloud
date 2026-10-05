@@ -98,6 +98,24 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 - **P2** — iCloud Drive mirror; local encrypted iPhone backup + monitor.
 - **P3** — staged deleter.
 
+## 8a. Platforms, API and GUI (decided 2026-10-05)
+
+- **Platforms:** Windows and Linux are both first-class for the agent and CLI. OS-specific behaviour lives only in `internal/platform` (`*_windows.go` / `*_linux.go`); business logic never branches on `runtime.GOOS`. Unsupported operating systems fail to compile rather than run degraded.
+
+  | Concern | Windows | Linux |
+  |---|---|---|
+  | Archive volume identity (`storage.volume_id`) | volume GUID name `\\?\Volume{…}\` | filesystem UUID, resolved via `statx(STATX_MNT_ID)` → `/proc/self/mountinfo` → `/dev/disk/by-uuid` (no root) |
+  | Free space | `GetDiskFreeSpaceEx` | `statfs` `Bavail × Frsize` |
+  | Single instance | `Local\` named mutex | `flock(LOCK_EX\|LOCK_NB)` on `$XDG_RUNTIME_DIR/homecloud/agent.lock` |
+  | Start at logon | Task Scheduler logon task (`schtasks /XML`) | systemd `--user` unit, `Type=notify`, `Restart=on-failure` (linger for headless hosts) |
+  | Agent logs | rotating files under `storage.root\logs` | stderr → journald |
+  | Windowless build | `-ldflags=-H=windowsgui` | n/a |
+
+  kei's Linux binaries require glibc ≥ 2.39 (Ubuntu 24.04 / Debian 13+).
+- **Process model:** the agent is always a separate, headless process that owns the ledger, kei, verification, notifications and (later) deletion. No GUI ever hosts it.
+- **Local API:** Connect-RPC (connect-go, protobuf package `homecloud.agent.v1`, `buf breaking` in CI) over loopback HTTP. Authentication: 256-bit bearer token in a per-user file (owner-only ACL on Windows, mode 0600 on Linux), exact Host check, Origin allow-list, no wildcard CORS. A version/capabilities handshake gates clients. Destructive actions require a per-request confirmation nonce recorded in the ledger.
+- **GUI:** one React + Fluent UI v9 single-page app, hosted (a) in a Tauri 2 desktop shell on Windows (tray, autostart, notifications, single-instance, updater, Mica) and (b) by the agent itself for browsers and Linux/headless hosts. Tauri installs the agent and its logon task but never supervises it. Rejected: Wails v3 (beta, single principal maintainer), WinUI 3 (Windows-only), Fyne/Gio (non-Fluent, low-level), Avalonia/Flutter/Electron (additional stack or weight), MAUI (no Linux).
+
 ## 9. Dependencies (verified 2026-10-05)
 
 | Dependency | Version | Source |

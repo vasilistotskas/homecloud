@@ -18,7 +18,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/doctor"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
-	"github.com/vasilistotskas/homecloud/internal/schedtask"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -75,12 +75,12 @@ func newApp() *cli.Command {
 			},
 			{
 				Name:   "install",
-				Usage:  "register homecloud-agent (next to this binary) to start at logon, and start it now",
+				Usage:  "start homecloud-agent (next to this binary) at logon and now (Task Scheduler / systemd user unit)",
 				Action: runInstall,
 			},
 			{
 				Name:   "uninstall",
-				Usage:  "remove the homecloud-agent logon task",
+				Usage:  "stop starting homecloud-agent at logon",
 				Action: runUninstall,
 			},
 		},
@@ -171,8 +171,8 @@ func runStatus(ctx context.Context, cmd *cli.Command) (err error) {
 	return nil
 }
 
-// agentTaskName is the Task Scheduler name of the logon task.
-const agentTaskName = "homecloud-agent"
+// agentName names the agent executable and its logon task / systemd unit.
+const agentName = "homecloud-agent"
 
 // printf writes command output, wrapping write failures.
 func printf(cmd *cli.Command, format string, args ...any) error {
@@ -198,50 +198,40 @@ func runInstall(ctx context.Context, cmd *cli.Command) error {
 	if _, err := loadConfig(cmd); err != nil {
 		return err
 	}
-	spec, err := agentTaskSpec()
+	svc, err := agentService()
 	if err != nil {
 		return fmt.Errorf("install: %w", err)
 	}
-	if regErr := schedtask.Register(ctx, spec); regErr != nil {
-		return fmt.Errorf("install: %w", regErr)
+	if installErr := platform.InstallAgent(ctx, svc); installErr != nil {
+		return fmt.Errorf("install: %w", installErr)
 	}
-	if runErr := schedtask.Run(ctx, agentTaskName); runErr != nil {
-		return fmt.Errorf("install: start agent: %w", runErr)
-	}
-	return printf(cmd, "registered and started task %q -> %s\n", agentTaskName, spec.Command)
+	return printf(cmd, "registered and started %q -> %s\n", agentName, svc.Executable)
 }
 
-// agentTaskSpec describes the logon task for the homecloud-agent.exe that sits
-// next to this binary, running as the current user.
-func agentTaskSpec() (schedtask.Spec, error) {
+// agentService describes the homecloud-agent executable that sits next to this binary.
+func agentService() (platform.AgentService, error) {
 	self, err := os.Executable()
 	if err != nil {
-		return schedtask.Spec{}, fmt.Errorf("locate executable: %w", err)
+		return platform.AgentService{}, fmt.Errorf("locate executable: %w", err)
 	}
 	dir := filepath.Dir(self)
-	agent := filepath.Join(dir, "homecloud-agent.exe")
+	agent := filepath.Join(dir, agentName+platform.ExeSuffix)
 	if _, statErr := os.Stat(agent); statErr != nil {
-		return schedtask.Spec{}, fmt.Errorf("agent binary next to homecloud.exe: %w", statErr)
+		return platform.AgentService{}, fmt.Errorf("agent binary next to homecloud: %w", statErr)
 	}
-	sid, user, err := schedtask.CurrentUser()
-	if err != nil {
-		return schedtask.Spec{}, err
-	}
-	return schedtask.Spec{
-		Name:        agentTaskName,
-		Description: "homecloud background agent: archive iCloud Photos to the local archive and verify it. https://github.com/vasilistotskas/homecloud",
-		Command:     agent,
+	return platform.AgentService{
+		Name:        agentName,
+		Description: "homecloud background agent: archive iCloud Photos locally and verify it (https://github.com/vasilistotskas/homecloud)",
+		Executable:  agent,
 		WorkingDir:  dir,
-		UserSID:     sid,
-		UserName:    user,
 	}, nil
 }
 
 func runUninstall(ctx context.Context, cmd *cli.Command) error {
-	if err := schedtask.Delete(ctx, agentTaskName); err != nil {
+	if err := platform.UninstallAgent(ctx, agentName); err != nil {
 		return fmt.Errorf("uninstall: %w", err)
 	}
-	return printf(cmd, "removed task %q (a running agent keeps running until it exits or you log off)\n", agentTaskName)
+	return printf(cmd, "removed %q\n", agentName)
 }
 
 func runDoctor(ctx context.Context, cmd *cli.Command) error {

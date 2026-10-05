@@ -10,7 +10,11 @@ permissions:
 
 jobs:
   check:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v7.0.0
@@ -20,10 +24,6 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race ./...
-      - name: Build
-        run: |
-          go build -trimpath -o bin/homecloud.exe ./cmd/homecloud
-          go build -trimpath -ldflags=-H=windowsgui -o bin/homecloud-agent.exe ./cmd/homecloud-agent
       - uses: golangci/golangci-lint-action@v9.3.0
         with:
           version: v2.14.0
@@ -34,3 +34,15 @@ jobs:
           go-version-input: ""
           go-version-file: go.mod
           repo-checkout: false
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          go build -trimpath -o bin/homecloud.exe ./cmd/homecloud
+          go build -trimpath -ldflags=-H=windowsgui -o bin/homecloud-agent.exe ./cmd/homecloud-agent
+      - name: Build (Linux amd64 + arm64)
+        if: runner.os == 'Linux'
+        run: |
+          for arch in amd64 arm64; do
+            GOARCH=$arch go build -trimpath -o bin/linux-$arch/homecloud ./cmd/homecloud
+            GOARCH=$arch go build -trimpath -o bin/linux-$arch/homecloud-agent ./cmd/homecloud-agent
+          done

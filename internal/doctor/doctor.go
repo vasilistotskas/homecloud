@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
-	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/kei"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/verify"
 )
 
@@ -71,14 +71,14 @@ func checkFile(name, path string) Result {
 }
 
 func checkVolume(s config.Storage) Result {
-	if err := health.CheckVolume(s.Root, s.VolumeGUID); err != nil {
+	if err := platform.CheckVolume(s.Root, s.VolumeID); err != nil {
 		return Result{Name: "archive volume", Err: err}
 	}
-	return Result{Name: "archive volume", Detail: s.VolumeGUID}
+	return Result{Name: "archive volume", Detail: s.VolumeID}
 }
 
 func checkSpace(s config.Storage) Result {
-	space, err := health.CheckFreeSpace(s.Root, s.MinFreePercent)
+	space, err := platform.CheckFreeSpace(s.Root, s.MinFreePercent)
 	detail := fmt.Sprintf("%.1f%% free (%.0f of %.0f GB)", space.FreePercent(), float64(space.Free)/1e9, float64(space.Total)/1e9)
 	return Result{Name: "free space", Detail: detail, Err: err}
 }

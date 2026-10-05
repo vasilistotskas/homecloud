@@ -1,9 +1,4 @@
-//go:build windows
-
-// Package schedtask registers homecloud's logon task with Windows Task Scheduler
-// using the documented `schtasks /Create /XML` interface and the Task Scheduler
-// schema (http://schemas.microsoft.com/windows/2004/02/mit/task).
-package schedtask
+package platform
 
 import (
 	"bytes"
@@ -20,15 +15,36 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Spec describes a per-user logon task that runs one executable.
-type Spec struct {
-	Name        string // task path, e.g. "homecloud-agent"
-	Description string
-	Command     string // absolute path to the executable
-	WorkingDir  string
-	UserSID     string // principal (runs as this user, interactive token)
-	UserName    string // DOMAIN\user for the logon trigger
+// On Windows the agent is started at logon by a Task Scheduler task, registered
+// through the documented `schtasks /Create /XML` interface using the Task
+// Scheduler schema (http://schemas.microsoft.com/windows/2004/02/mit/task).
+
+// InstallAgent registers a logon task for the current user and starts it now.
+func InstallAgent(ctx context.Context, svc AgentService) error {
+	sid, user, err := currentUser()
+	if err != nil {
+		return err
+	}
+	doc, err := renderTask(svc, sid, user)
+	if err != nil {
+		return err
+	}
+	if err := registerTask(ctx, svc.Name, doc); err != nil {
+		return err
+	}
+	return schtasks(ctx, "/Run", "/TN", svc.Name)
 }
+
+// UninstallAgent removes the logon task. A running agent keeps running until it exits.
+func UninstallAgent(ctx context.Context, name string) error {
+	return schtasks(ctx, "/Delete", "/TN", name, "/F")
+}
+
+// NotifyReady is a no-op: Task Scheduler has no readiness protocol.
+func NotifyReady() error { return nil }
+
+// NotifyStopping is a no-op: Task Scheduler has no readiness protocol.
+func NotifyStopping() error { return nil }
 
 type taskXML struct {
 	XMLName          xml.Name `xml:"Task"`
@@ -70,26 +86,26 @@ type taskXML struct {
 	} `xml:"Actions"`
 }
 
-// Render returns the task definition as UTF-16LE XML with a BOM, the encoding
-// Task Scheduler itself uses for exported tasks.
-func Render(s Spec) ([]byte, error) {
-	if !filepath.IsAbs(s.Command) || !filepath.IsAbs(s.WorkingDir) {
-		return nil, fmt.Errorf("task command and working dir must be absolute: %q, %q", s.Command, s.WorkingDir)
+// renderTask returns the task definition as BOM-prefixed UTF-16LE XML, the
+// encoding Task Scheduler itself uses for exported tasks.
+func renderTask(svc AgentService, userSID, userName string) ([]byte, error) {
+	if !filepath.IsAbs(svc.Executable) || !filepath.IsAbs(svc.WorkingDir) {
+		return nil, fmt.Errorf("agent executable and working dir must be absolute: %q, %q", svc.Executable, svc.WorkingDir)
 	}
 	var t taskXML
 	t.Version = "1.3"
 	t.Xmlns = "http://schemas.microsoft.com/windows/2004/02/mit/task"
-	t.RegistrationInfo.Description = s.Description
-	t.RegistrationInfo.URI = `\` + s.Name
+	t.RegistrationInfo.Description = svc.Description
+	t.RegistrationInfo.URI = `\` + svc.Name
 	p := &t.Principals.Principal
-	p.ID, p.UserID, p.LogonType, p.RunLevel = "Author", s.UserSID, "InteractiveToken", "LeastPrivilege"
+	p.ID, p.UserID, p.LogonType, p.RunLevel = "Author", userSID, "InteractiveToken", "LeastPrivilege"
 	st := &t.Settings
 	st.ExecutionTimeLimit = "PT0S" // no limit: the agent is long-running
 	st.MultipleInstancesPolicy = "IgnoreNew"
 	st.RestartOnFailure.Interval, st.RestartOnFailure.Count = "PT5M", 3
-	t.Triggers.LogonTrigger.UserID = s.UserName
+	t.Triggers.LogonTrigger.UserID = userName
 	t.Actions.Context = "Author"
-	t.Actions.Exec.Command, t.Actions.Exec.WorkingDirectory = s.Command, s.WorkingDir
+	t.Actions.Exec.Command, t.Actions.Exec.WorkingDirectory = svc.Executable, svc.WorkingDir
 
 	body, err := xml.MarshalIndent(t, "", "  ")
 	if err != nil {
@@ -106,8 +122,8 @@ func Render(s Spec) ([]byte, error) {
 	return out, nil
 }
 
-// CurrentUser returns the SID string and DOMAIN\name of the process owner.
-func CurrentUser() (sid, name string, err error) {
+// currentUser returns the SID string and DOMAIN\name of the process owner.
+func currentUser() (sid, name string, err error) {
 	tu, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return "", "", fmt.Errorf("read token user: %w", err)
@@ -119,12 +135,7 @@ func CurrentUser() (sid, name string, err error) {
 	return tu.User.Sid.String(), domain + `\` + account, nil
 }
 
-// Register creates or replaces the task.
-func Register(ctx context.Context, s Spec) (err error) {
-	doc, err := Render(s)
-	if err != nil {
-		return err
-	}
+func registerTask(ctx context.Context, name string, doc []byte) (err error) {
 	f, err := os.CreateTemp("", "homecloud-task-*.xml")
 	if err != nil {
 		return fmt.Errorf("create task xml: %w", err)
@@ -136,17 +147,7 @@ func Register(ctx context.Context, s Spec) (err error) {
 	if err = f.Close(); err != nil {
 		return fmt.Errorf("close task xml: %w", err)
 	}
-	return schtasks(ctx, "/Create", "/TN", s.Name, "/XML", f.Name(), "/F")
-}
-
-// Run starts the task now.
-func Run(ctx context.Context, name string) error {
-	return schtasks(ctx, "/Run", "/TN", name)
-}
-
-// Delete removes the task.
-func Delete(ctx context.Context, name string) error {
-	return schtasks(ctx, "/Delete", "/TN", name, "/F")
+	return schtasks(ctx, "/Create", "/TN", name, "/XML", f.Name(), "/F")
 }
 
 func schtasks(ctx context.Context, args ...string) error {

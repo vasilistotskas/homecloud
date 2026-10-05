@@ -10,19 +10,30 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-const validTOML = `
+// Platform-specific absolute paths and volume ids come from config_<os>_test.go.
+var (
+	testKeiBinary  = filepath.Join(testTools, "kei", "kei")
+	testKeiConfig  = filepath.Join(testRoot, "kei", "config.toml")
+	testFFprobeBin = filepath.Join(testTools, "ffmpeg", "ffprobe")
+)
+
+// validTOML is a complete valid configuration.
+var validTOML = strings.NewReplacer(
+	"@ROOT@", testRoot, "@VOLUME_ID@", testVolumeID,
+	"@KEI_BINARY@", testKeiBinary, "@KEI_CONFIG@", testKeiConfig, "@FFPROBE@", testFFprobeBin,
+).Replace(`
 [storage]
-root = 'E:\HomeCloud'
-volume_guid = '\\?\Volume{0a1b2c3d-1111-2222-3333-444455556666}\'
+root = '@ROOT@'
+volume_id = '@VOLUME_ID@'
 min_free_percent = 15
 
 [kei]
-binary = 'C:\Tools\kei\kei.exe'
+binary = '@KEI_BINARY@'
 version = "0.24.1"
-config = 'E:\HomeCloud\kei\config.toml'
+config = '@KEI_CONFIG@'
 
 [ffprobe]
-binary = 'C:\Tools\ffmpeg\ffprobe.exe'
+binary = '@FFPROBE@'
 version = "9.0.2"
 
 [web]
@@ -36,7 +47,7 @@ topic = "hc_0123456789abcdefABCDEF"
 sync_interval = "1h"
 scrub_interval = "168h"
 scrub_fraction = 0.05
-`
+`)
 
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
@@ -54,12 +65,12 @@ func TestLoadValid(t *testing.T) {
 	}
 	want := &Config{
 		Storage: Storage{
-			Root:           `E:\HomeCloud`,
-			VolumeGUID:     `\\?\Volume{0a1b2c3d-1111-2222-3333-444455556666}\`,
+			Root:           testRoot,
+			VolumeID:       testVolumeID,
 			MinFreePercent: 15,
 		},
-		Kei:      Kei{Binary: `C:\Tools\kei\kei.exe`, Version: "0.24.1", Config: `E:\HomeCloud\kei\config.toml`},
-		FFprobe:  FFprobe{Binary: `C:\Tools\ffmpeg\ffprobe.exe`, Version: "9.0.2"},
+		Kei:      Kei{Binary: testKeiBinary, Version: "0.24.1", Config: testKeiConfig},
+		FFprobe:  FFprobe{Binary: testFFprobeBin, Version: "9.0.2"},
 		Web:      Web{Listen: "127.0.0.1:8790"},
 		Notify:   Notify{Server: "https://ntfy.sh", Topic: "hc_0123456789abcdefABCDEF"},
 		Schedule: Schedule{SyncInterval: Duration(time.Hour), ScrubInterval: Duration(168 * time.Hour), ScrubFraction: 0.05},
@@ -96,7 +107,7 @@ func TestValidate(t *testing.T) {
 		wantErr string
 	}{
 		{"relative root", func(c *Config) { c.Storage.Root = `HomeCloud` }, "storage.root"},
-		{"bad volume guid", func(c *Config) { c.Storage.VolumeGUID = `E:\` }, "storage.volume_guid"},
+		{"bad volume id", func(c *Config) { c.Storage.VolumeID = "not-a-volume" }, "storage.volume_id"},
 		{"free percent zero", func(c *Config) { c.Storage.MinFreePercent = 0 }, "storage.min_free_percent"},
 		{"free percent 100", func(c *Config) { c.Storage.MinFreePercent = 100 }, "storage.min_free_percent"},
 		{"relative kei binary", func(c *Config) { c.Kei.Binary = `kei.exe` }, "kei.binary"},

@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // Config is the complete homecloud configuration.
@@ -33,10 +35,10 @@ type Config struct {
 type Storage struct {
 	// Root is the archive root directory (for example E:\HomeCloud).
 	Root string `toml:"root"`
-	// VolumeGUID is the expected volume name of Root, in the form
-	// \\?\Volume{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}\ . It guards against
-	// a different disk being mounted at the same drive letter.
-	VolumeGUID string `toml:"volume_guid"`
+	// VolumeID is the expected identity of the volume holding Root: a volume
+	// GUID name (\\?\Volume{...}\) on Windows, a filesystem UUID on Linux. It
+	// guards against a different disk being mounted at the same location.
+	VolumeID string `toml:"volume_id"`
 	// MinFreePercent is the minimum free space on the archive volume.
 	MinFreePercent float64 `toml:"min_free_percent"`
 }
@@ -112,9 +114,8 @@ func Load(path string) (*Config, error) {
 }
 
 var (
-	volumeGUIDPattern = regexp.MustCompile(`^\\\\\?\\Volume\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}\\$`)
-	versionPattern    = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-	ntfyTopicPattern  = regexp.MustCompile(`^[A-Za-z0-9_-]{24,64}$`)
+	versionPattern   = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+	ntfyTopicPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{24,64}$`)
 )
 
 // Validate reports every configuration problem at once.
@@ -125,8 +126,8 @@ func (c *Config) Validate() error {
 	if !filepath.IsAbs(c.Storage.Root) {
 		add("storage.root must be an absolute path, got %q", c.Storage.Root)
 	}
-	if !volumeGUIDPattern.MatchString(c.Storage.VolumeGUID) {
-		add(`storage.volume_guid must look like \\?\Volume{GUID}\, got %q`, c.Storage.VolumeGUID)
+	if err := platform.ValidateVolumeID(c.Storage.VolumeID); err != nil {
+		add("storage.volume_id: %w", err)
 	}
 	if c.Storage.MinFreePercent <= 0 || c.Storage.MinFreePercent >= 100 {
 		add("storage.min_free_percent must be in (0, 100), got %v", c.Storage.MinFreePercent)

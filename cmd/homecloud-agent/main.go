@@ -1,6 +1,8 @@
-// Command homecloud-agent is homecloud's background process. Build it with
-// -ldflags=-H=windowsgui so Windows never allocates a console; it is started at
-// logon by a Task Scheduler logon trigger (see docs/design.md, Spike C).
+// Command homecloud-agent is homecloud's long-running background process.
+//
+// Windows: build with -ldflags=-H=windowsgui (no console); started at logon by a
+// Task Scheduler task. Linux: runs as a systemd user unit (Type=notify) and logs
+// to stderr for journald. See docs/design.md §8a.
 package main
 
 import (
@@ -11,27 +13,22 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
-
-	"github.com/DeRuina/timberjack"
 
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/doctor"
-	"github.com/vasilistotskas/homecloud/internal/instance"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/web"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
-const (
-	mutexName     = "homecloud-agent"
-	logMaxSizeMB  = 20
-	logMaxBackups = 10
-)
+const instanceName = "homecloud-agent"
 
 func main() {
 	if err := run(); err != nil {
@@ -41,7 +38,7 @@ func main() {
 }
 
 func run() (err error) {
-	lock, err := instance.Acquire(mutexName)
+	lock, err := platform.AcquireInstance(instanceName)
 	if err != nil {
 		return fmt.Errorf("acquire instance lock: %w", err)
 	}
@@ -56,14 +53,12 @@ func run() (err error) {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logDir := filepath.Join(cfg.Storage.Root, "logs")
-	agentLog := &timberjack.Logger{Filename: filepath.Join(logDir, "homecloud-agent.log"), MaxSize: logMaxSizeMB, MaxBackups: logMaxBackups, LocalTime: true}
-	keiLog := &timberjack.Logger{Filename: filepath.Join(logDir, "kei.log"), MaxSize: logMaxSizeMB, MaxBackups: logMaxBackups, LocalTime: true}
-	defer func() { err = errors.Join(err, agentLog.Close(), keiLog.Close()) }()
-	log := slog.New(slog.NewJSONHandler(agentLog, nil))
+	logs := openLogs(cfg.Storage.Root)
+	defer func() { err = errors.Join(err, logs.Close()) }()
+	log := slog.New(slog.NewJSONHandler(logs.agent, nil))
 	log.Info("homecloud-agent starting", "version", version, "config", cfgPath)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if doctorErr := doctor.Err(doctor.Run(ctx, cfg)); doctorErr != nil {
@@ -87,13 +82,19 @@ func run() (err error) {
 	}()
 	defer func() { stop(); <-webDone }()
 
-	agent := &app.Agent{Cfg: cfg, DB: db, Log: log, Notify: notify.New(cfg.Notify), KeiLog: keiLog, Now: time.Now}
-	err = agent.Run(ctx)
-	if errors.Is(err, context.Canceled) {
+	if readyErr := platform.NotifyReady(); readyErr != nil {
+		log.Error("service manager readiness notification failed", "err", readyErr)
+	}
+	agent := &app.Agent{Cfg: cfg, DB: db, Log: log, Notify: notify.New(cfg.Notify), KeiLog: logs.kei, Now: time.Now}
+	runErr := agent.Run(ctx)
+	if stopErr := platform.NotifyStopping(); stopErr != nil {
+		log.Error("service manager stopping notification failed", "err", stopErr)
+	}
+	if errors.Is(runErr, context.Canceled) {
 		log.Info("homecloud-agent stopped")
 		return nil
 	}
-	return err
+	return runErr
 }
 
 func configPath() (string, error) {
@@ -105,26 +106,4 @@ func configPath() (string, error) {
 		return "", fmt.Errorf("locate config dir: %w", err)
 	}
 	return filepath.Join(dir, "homecloud", "config.toml"), nil
-}
-
-// reportStartupFailure records errors that happen before (or instead of) the
-// agent's own log; a windowsgui process has no console to print to.
-func reportStartupFailure(err error) {
-	if errors.Is(err, instance.ErrAlreadyRunning) {
-		return
-	}
-	dir, dirErr := os.UserCacheDir()
-	if dirErr != nil {
-		return
-	}
-	path := filepath.Join(dir, "homecloud", "agent-startup.log")
-	if mkErr := os.MkdirAll(filepath.Dir(path), 0o700); mkErr != nil {
-		return
-	}
-	f, openErr := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // fixed path under the user cache dir
-	if openErr != nil {
-		return
-	}
-	_, _ = fmt.Fprintf(f, "%s homecloud-agent: %v\n", time.Now().Format(time.RFC3339), err)
-	_ = f.Close()
 }

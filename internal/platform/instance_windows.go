@@ -1,7 +1,4 @@
-//go:build windows
-
-// Package instance guarantees that only one homecloud agent runs per user session.
-package instance
+package platform
 
 import (
 	"errors"
@@ -10,16 +7,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ErrAlreadyRunning is returned when another process holds the lock.
-var ErrAlreadyRunning = errors.New("another instance is already running")
-
 // Lock is a held single-instance lock.
 type Lock struct {
 	h windows.Handle
 }
 
-// Acquire takes the named mutex (scoped to the current session via the Local\ namespace).
-func Acquire(name string) (*Lock, error) {
+// AcquireInstance takes a named mutex in the session-local namespace (Local\).
+func AcquireInstance(name string) (*Lock, error) {
 	n, err := windows.UTF16PtrFromString(`Local\` + name)
 	if err != nil {
 		return nil, fmt.Errorf("encode mutex name: %w", err)

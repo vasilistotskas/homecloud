@@ -1,6 +1,4 @@
-//go:build windows
-
-package schedtask
+package platform
 
 import (
 	"encoding/binary"
@@ -21,15 +19,13 @@ func decodeUTF16LE(t *testing.T, b []byte) string {
 	return string(utf16.Decode(units))
 }
 
-func TestRender(t *testing.T) {
-	doc, err := Render(Spec{
+func TestRenderTask(t *testing.T) {
+	doc, err := renderTask(AgentService{
 		Name:        "homecloud-agent",
 		Description: "homecloud <agent> & friends",
-		Command:     `C:\Users\me\AppData\Local\Programs\homecloud\homecloud-agent.exe`,
+		Executable:  `C:\Users\me\AppData\Local\Programs\homecloud\homecloud-agent.exe`,
 		WorkingDir:  `C:\Users\me\AppData\Local\Programs\homecloud`,
-		UserSID:     "S-1-5-21-1-2-3-1001",
-		UserName:    `HOST\me`,
-	})
+	}, "S-1-5-21-1-2-3-1001", `HOST\me`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,18 +51,18 @@ func TestRender(t *testing.T) {
 	}
 }
 
-func TestRenderRejectsRelativePaths(t *testing.T) {
-	if _, err := Render(Spec{Command: "homecloud-agent.exe", WorkingDir: `C:\x`}); err == nil {
-		t.Fatal("want error for relative command")
+func TestRenderTaskRejectsRelativePaths(t *testing.T) {
+	if _, err := renderTask(AgentService{Executable: "homecloud-agent.exe", WorkingDir: `C:\x`}, "S-1", `H\u`); err == nil {
+		t.Fatal("want error for relative executable")
 	}
 }
 
 func TestCurrentUser(t *testing.T) {
-	sid, name, err := CurrentUser()
+	sid, name, err := currentUser()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(sid, "S-1-") || !strings.Contains(name, `\`) {
-		t.Fatalf("CurrentUser = %q, %q", sid, name)
+		t.Fatalf("currentUser = %q, %q", sid, name)
 	}
 }
