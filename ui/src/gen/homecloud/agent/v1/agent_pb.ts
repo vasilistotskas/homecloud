@@ -909,7 +909,7 @@ export type ListAssetsRequest = Message<"homecloud.agent.v1.ListAssetsRequest"> 
   kind: AssetKind;
 
   /**
-   * Lists the photos hidden in iCloud (archived under Photos/.Hidden) instead
+   * Lists the photos hidden in iCloud (archived under Photos/Hidden) instead
    * of the others.
    *
    * @generated from field: bool hidden = 4;
@@ -1470,7 +1470,7 @@ export type Settings = Message<"homecloud.agent.v1.Settings"> & {
   appleId: string;
 
   /**
-   * Whether photos hidden in iCloud are archived (under Photos/.Hidden).
+   * Whether photos hidden in iCloud are archived (under Photos/Hidden).
    *
    * @generated from field: bool include_hidden = 15;
    */

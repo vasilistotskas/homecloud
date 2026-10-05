@@ -40,7 +40,7 @@ func TestRenderConfig(t *testing.T) {
 			wantSmart = "Hidden"
 		}
 		if k.Auth.Username != "someone@example.com" || k.Download.Directory != filepath.Join(cfg.Storage.Root, "Photos") ||
-			k.Download.FolderStructureAlbums != "%Y/%m" || k.Download.FolderStructureSmartFolders != ".Hidden/%Y/%m" ||
+			k.Download.FolderStructureAlbums != "%Y/%m" || k.Download.FolderStructureSmartFolders != "Hidden/%Y/%m" ||
 			len(k.Filters.SmartFolders) != 1 || k.Filters.SmartFolders[0] != wantSmart || !k.Metadata.XMPSidecar {
 			t.Fatalf("hidden=%v rendered %+v", hidden, k)
 		}

@@ -354,7 +354,7 @@ message ListAssetsRequest {
   string page_token = 2;
   // Restricts the page to one kind; unspecified lists every kind.
   AssetKind kind = 3;
-  // Lists the photos hidden in iCloud (archived under Photos/.Hidden) instead
+  // Lists the photos hidden in iCloud (archived under Photos/Hidden) instead
   // of the others.
   bool hidden = 4;
 }
@@ -496,7 +496,7 @@ message Settings {
   double scrub_fraction = 13;
   // The Apple Account kei signs in to.
   string apple_id = 14;
-  // Whether photos hidden in iCloud are archived (under Photos/.Hidden).
+  // Whether photos hidden in iCloud are archived (under Photos/Hidden).
   bool include_hidden = 15;
   // The ffmpeg binary that renders thumbnails and previews.
   ToolPin thumbnailer = 16;

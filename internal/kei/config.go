@@ -14,12 +14,12 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
-// Archive layout below storage.root. Hidden photos sit in a dot-folder, which
-// file managers hide on Linux and macOS; the agent also sets the Windows
-// hidden attribute on it.
+// Archive layout below storage.root. Hidden photos get their own folder, which
+// the agent hides on disk (platform.MarkHidden). It cannot be a dot-folder:
+// kei strips leading dots from every path component (sanitize_path_component).
 const (
 	PhotosDir = "Photos"
-	HiddenDir = ".Hidden"
+	HiddenDir = "Hidden"
 	// dateFolders renders the capture month; every pass uses it, so an asset
 	// can only ever have one place in the archive.
 	dateFolders = "%Y/%m"

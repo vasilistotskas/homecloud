@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const hiddenDir = `E:\HomeCloud\Photos\.Hidden\`
+const hiddenDir = `E:\HomeCloud\Photos\Hidden\`
 
 func at(r Rendition, offset time.Duration) Rendition {
 	r.CreatedAt = t0.Add(offset)

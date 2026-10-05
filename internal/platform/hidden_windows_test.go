@@ -8,7 +8,7 @@ import (
 )
 
 func TestMarkHidden(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), ".Hidden")
+	dir := filepath.Join(t.TempDir(), "Hidden")
 	if err := windows.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}

@@ -2391,7 +2391,7 @@ type ListAssetsRequest struct {
 	PageToken string `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	// Restricts the page to one kind; unspecified lists every kind.
 	Kind AssetKind `protobuf:"varint,3,opt,name=kind,proto3,enum=homecloud.agent.v1.AssetKind" json:"kind,omitempty"`
-	// Lists the photos hidden in iCloud (archived under Photos/.Hidden) instead
+	// Lists the photos hidden in iCloud (archived under Photos/Hidden) instead
 	// of the others.
 	Hidden        bool `protobuf:"varint,4,opt,name=hidden,proto3" json:"hidden,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -3506,7 +3506,7 @@ type Settings struct {
 	ScrubFraction        float64 `protobuf:"fixed64,13,opt,name=scrub_fraction,json=scrubFraction,proto3" json:"scrub_fraction,omitempty"`
 	// The Apple Account kei signs in to.
 	AppleId string `protobuf:"bytes,14,opt,name=apple_id,json=appleId,proto3" json:"apple_id,omitempty"`
-	// Whether photos hidden in iCloud are archived (under Photos/.Hidden).
+	// Whether photos hidden in iCloud are archived (under Photos/Hidden).
 	IncludeHidden bool `protobuf:"varint,15,opt,name=include_hidden,json=includeHidden,proto3" json:"include_hidden,omitempty"`
 	// The ffmpeg binary that renders thumbnails and previews.
 	Thumbnailer   *ToolPin `protobuf:"bytes,16,opt,name=thumbnailer,proto3" json:"thumbnailer,omitempty"`

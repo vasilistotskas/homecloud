@@ -50,7 +50,7 @@ type ICloud struct {
 	// AppleID is the account kei signs in to.
 	AppleID string `toml:"apple_id"`
 	// IncludeHidden archives photos hidden in iCloud Photos, kept apart under
-	// Photos/.Hidden and marked hidden on disk. It must be set explicitly.
+	// Photos/Hidden and hidden on disk. It must be set explicitly.
 	IncludeHidden *bool `toml:"include_hidden"`
 }
 

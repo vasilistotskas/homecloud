@@ -139,7 +139,7 @@ export function SettingsPage() {
           label="Hidden photos"
           detail={
             s.includeHidden
-              ? "Archived in Photos/.Hidden, a folder hidden on disk"
+              ? "Archived in Photos/Hidden, a folder hidden on disk"
               : "Not archived; they stay only in iCloud (icloud.include_hidden)"
           }
         >
