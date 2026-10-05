@@ -76,6 +76,8 @@ func phase(p app.Phase) agentv1.Phase {
 		return agentv1.Phase_PHASE_INGESTING
 	case app.PhaseVerifying:
 		return agentv1.Phase_PHASE_VERIFYING
+	case app.PhasePreparingPreviews:
+		return agentv1.Phase_PHASE_PREPARING_PREVIEWS
 	default:
 		return agentv1.Phase_PHASE_UNSPECIFIED
 	}
@@ -362,4 +364,23 @@ func driveToProto(r health.Report) (*agentv1.DriveHealth, error) {
 		out.MediaErrors, out.PowerOnHours = d.MediaErrors, d.PowerOnHours
 	}
 	return out, nil
+}
+
+var assetKinds = map[ledger.AssetKind]agentv1.AssetKind{
+	ledger.KindPhoto:     agentv1.AssetKind_ASSET_KIND_PHOTO,
+	ledger.KindLivePhoto: agentv1.AssetKind_ASSET_KIND_LIVE_PHOTO,
+	ledger.KindVideo:     agentv1.AssetKind_ASSET_KIND_VIDEO,
+}
+
+// assetKindFilter maps a requested kind; unspecified means every kind.
+func assetKindFilter(k agentv1.AssetKind) (ledger.AssetKind, error) {
+	if k == agentv1.AssetKind_ASSET_KIND_UNSPECIFIED {
+		return "", nil
+	}
+	for lk, pk := range assetKinds {
+		if pk == k {
+			return lk, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported asset kind %v", k)
 }

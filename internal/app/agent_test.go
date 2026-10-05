@@ -21,6 +21,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/thumbs"
 )
 
 // The test binary doubles as a fake kei when HOMECLOUD_FAKE_KEI=1:
@@ -133,7 +134,9 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 		Kei:      config.Kei{Binary: exe, Config: "unused.toml"},
 		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
 	}
-	agent := NewAgent(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), n, io.Discard,
+	// No ffmpeg in tests: previews fail and are logged, as they would without one.
+	renderer := thumbs.New(config.FFmpeg{FFmpeg: filepath.Join(t.TempDir(), "no-ffmpeg"), FFprobe: filepath.Join(t.TempDir(), "no-ffprobe")}, ThumbnailDir(cfg))
+	agent := NewAgent(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), n, io.Discard, renderer,
 		func() time.Time { return *clock })
 	// Tests judge a healthy drive unless they say otherwise.
 	agent.readDrive = func(context.Context) (platform.DriveHealth, error) {

@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file homecloud/agent/v1/agent.proto.
  */
 export const file_homecloud_agent_v1_agent: GenFile = /*@__PURE__*/
-  fileDesc("Ch5ob21lY2xvdWQvYWdlbnQvdjEvYWdlbnQucHJvdG8SEmhvbWVjbG91ZC5hZ2VudC52MSIQCg5HZXRJbmZvUmVxdWVzdCJJCg9HZXRJbmZvUmVzcG9uc2USFQoNYWdlbnRfdmVyc2lvbhgBIAEoCRITCgthcGlfdmVyc2lvbhgCIAEoCRIKCgJvcxgDIAEoCSIUChJHZXRPdmVydmlld1JlcXVlc3QiRQoTR2V0T3ZlcnZpZXdSZXNwb25zZRIuCghvdmVydmlldxgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5PdmVydmlldyIWChRXYXRjaE92ZXJ2aWV3UmVxdWVzdCJHChVXYXRjaE92ZXJ2aWV3UmVzcG9uc2USLgoIb3ZlcnZpZXcYASABKAsyHC5ob21lY2xvdWQuYWdlbnQudjEuT3ZlcnZpZXci4wIKCE92ZXJ2aWV3Ei8KBmFzc2V0cxgBIAEoCzIfLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldENvdW50cxIyCgdhcmNoaXZlGAIgASgLMiEuaG9tZWNsb3VkLmFnZW50LnYxLkFyY2hpdmVUb3RhbHMSLAoHc3RvcmFnZRgDIAEoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5TdG9yYWdlEjcKDWFwcGxlX2FjY291bnQYBCABKAsyIC5ob21lY2xvdWQuYWdlbnQudjEuQXBwbGVBY2NvdW50Ei4KCGFjdGl2aXR5GAUgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFjdGl2aXR5EisKCmxhc3RfY3ljbGUYBiABKAsyFy5ob21lY2xvdWQuYWdlbnQudjEuUnVuEi4KBWRyaXZlGAcgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLkRyaXZlSGVhbHRoIroDCgtEcml2ZUhlYWx0aBIzCgVzdGF0ZRgBIAEoDjIkLmhvbWVjbG91ZC5hZ2VudC52MS5Ecml2ZUhlYWx0aFN0YXRlEi4KCmNoZWNrZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3JlYXNvbnMYAyADKAkSDQoFbW9kZWwYBCABKAkSEAoIcHJvdG9jb2wYBSABKAkSEAoId2FybmluZ3MYBiADKAkSIAoTdGVtcGVyYXR1cmVfY2Vsc2l1cxgHIAEoBUgAiAEBEhkKDHBlcmNlbnRfdXNlZBgIIAEoBUgBiAEBEiQKF2F2YWlsYWJsZV9zcGFyZV9wZXJjZW50GAkgASgFSAKIAQESGQoMbWVkaWFfZXJyb3JzGAogASgESAOIAQESGwoOcG93ZXJfb25faG91cnMYCyABKARIBIgBAUIWChRfdGVtcGVyYXR1cmVfY2Vsc2l1c0IPCg1fcGVyY2VudF91c2VkQhoKGF9hdmFpbGFibGVfc3BhcmVfcGVyY2VudEIPCg1fbWVkaWFfZXJyb3JzQhEKD19wb3dlcl9vbl9ob3VycyJcCgtBc3NldENvdW50cxISCgpkaXNjb3ZlcmVkGAEgASgDEhIKCmRvd25sb2FkZWQYAiABKAMSEAoIdmVyaWZpZWQYAyABKAMSEwoLcXVhcmFudGluZWQYBCABKAMiLQoNQXJjaGl2ZVRvdGFscxINCgVmaWxlcxgBIAEoAxINCgVieXRlcxgCIAEoAyJaCgdTdG9yYWdlEgwKBHJvb3QYASABKAkSEwoLdG90YWxfYnl0ZXMYAiABKAMSEgoKZnJlZV9ieXRlcxgDIAEoAxIYChBtaW5fZnJlZV9wZXJjZW50GAQgASgBIkQKDEFwcGxlQWNjb3VudBI0CgVzdGF0ZRgBIAEoDjIlLmhvbWVjbG91ZC5hZ2VudC52MS5BcHBsZUFjY291bnRTdGF0ZSKdAQoIQWN0aXZpdHkSKAoFcGhhc2UYASABKA4yGS5ob21lY2xvdWQuYWdlbnQudjEuUGhhc2USNAoQcGhhc2Vfc3RhcnRlZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoNbmV4dF9jeWNsZV9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi3wEKA1J1bhIKCgJpZBgBIAEoAxIMCgRraW5kGAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2ZpbmlzaGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgZyZXN1bHQYBSABKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuUnVuUmVzdWx0Ei4KBWN5Y2xlGAYgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLkN5Y2xlUmVwb3J0IosCCgtDeWNsZVJlcG9ydBI1Cghkb3dubG9hZBgBIAEoDjIjLmhvbWVjbG91ZC5hZ2VudC52MS5Eb3dubG9hZE91dGNvbWUSDgoGYXNzZXRzGAIgASgDEhIKCnJlbmRpdGlvbnMYAyABKAMSFgoObmV3X3JlbmRpdGlvbnMYBCABKAMSGgoSY2hhbmdlZF9yZW5kaXRpb25zGAUgASgDEg8KB2NoZWNrZWQYBiABKAMSDgoGcGFzc2VkGAcgASgDEhIKCm1pc21hdGNoZWQYCCABKAMSDwoHZXJyb3JlZBgJIAEoAxINCgVlcnJvchgKIAEoCRIYChBtb3ZlZF9yZW5kaXRpb25zGAsgASgDIjgKD0xpc3RSdW5zUmVxdWVzdBIRCglwYWdlX3NpemUYASABKAUSEgoKcGFnZV90b2tlbhgCIAEoCSJSChBMaXN0UnVuc1Jlc3BvbnNlEiUKBHJ1bnMYASADKAsyFy5ob21lY2xvdWQuYWdlbnQudjEuUnVuEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSL2AwoFRXZlbnQSCgoCaWQYASABKAMSJgoCYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKBWFzc2V0GAMgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0UmVmEkEKEXJlbmRpdGlvbl9jaGFuZ2VkGAQgASgLMiQuaG9tZWNsb3VkLmFnZW50LnYxLlJlbmRpdGlvbkNoYW5nZWRIABI5Cg1zdGF0ZV9jaGFuZ2VkGAUgASgLMiAuaG9tZWNsb3VkLmFnZW50LnYxLlN0YXRlQ2hhbmdlZEgAEjYKC3F1YXJhbnRpbmVkGAYgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLlF1YXJhbnRpbmVkSAASRQoTcXVhcmFudGluZV9yZWxlYXNlZBgHIAEoCzImLmhvbWVjbG91ZC5hZ2VudC52MS5RdWFyYW50aW5lUmVsZWFzZWRIABJGChRkcml2ZV9oZWFsdGhfY2hhbmdlZBgIIAEoCzImLmhvbWVjbG91ZC5hZ2VudC52MS5Ecml2ZUhlYWx0aENoYW5nZWRIABI9Cg9yZW5kaXRpb25fbW92ZWQYCSABKAsyIi5ob21lY2xvdWQuYWdlbnQudjEuUmVuZGl0aW9uTW92ZWRIAEIICgZkZXRhaWwiPwoIQXNzZXRSZWYSDwoHbGlicmFyeRgBIAEoCRIQCghhc3NldF9pZBgCIAEoCRIQCghmaWxlbmFtZRgDIAEoCSJHChBSZW5kaXRpb25DaGFuZ2VkEg8KB3ZlcnNpb24YASABKAkSEgoKc2l6ZV9ieXRlcxgCIAEoAxIOCgZzaGEyNTYYAyABKAkiaAoMU3RhdGVDaGFuZ2VkEiwKBGZyb20YASABKA4yHi5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXRTdGF0ZRIqCgJ0bxgCIAEoDjIeLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFN0YXRlIlYKC1F1YXJhbnRpbmVkEg8KB3ZlcnNpb24YASABKAkSJgoEdGllchgCIAEoDjIYLmhvbWVjbG91ZC5hZ2VudC52MS5UaWVyEg4KBnJlYXNvbhgDIAEoCSIkChJRdWFyYW50aW5lUmVsZWFzZWQSDgoGcmVhc29uGAEgASgJIjsKDlJlbmRpdGlvbk1vdmVkEg8KB3ZlcnNpb24YASABKAkSDAoEZnJvbRgCIAEoCRIKCgJ0bxgDIAEoCSKLAQoSRHJpdmVIZWFsdGhDaGFuZ2VkEjIKBGZyb20YASABKA4yJC5ob21lY2xvdWQuYWdlbnQudjEuRHJpdmVIZWFsdGhTdGF0ZRIwCgJ0bxgCIAEoDjIkLmhvbWVjbG91ZC5hZ2VudC52MS5Ecml2ZUhlYWx0aFN0YXRlEg8KB3JlYXNvbnMYAyADKAkiaAoRTGlzdEV2ZW50c1JlcXVlc3QSLAoFa2luZHMYASADKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuRXZlbnRLaW5kEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIlgKEkxpc3RFdmVudHNSZXNwb25zZRIpCgZldmVudHMYASADKAsyGS5ob21lY2xvdWQuYWdlbnQudjEuRXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIhcKFUxpc3RRdWFyYW50aW5lUmVxdWVzdCJOChZMaXN0UXVhcmFudGluZVJlc3BvbnNlEjQKBmFzc2V0cxgBIAMoCzIkLmhvbWVjbG91ZC5hZ2VudC52MS5RdWFyYW50aW5lZEFzc2V0IqIBChBRdWFyYW50aW5lZEFzc2V0EisKBWFzc2V0GAEgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0UmVmEjIKDnF1YXJhbnRpbmVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCghmYWlsdXJlcxgDIAMoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5GYWlsdXJlIlIKB0ZhaWx1cmUSDwoHdmVyc2lvbhgBIAEoCRImCgR0aWVyGAIgASgOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISDgoGcmVhc29uGAMgASgJIjQKD0dldEFzc2V0UmVxdWVzdBIPCgdsaWJyYXJ5GAEgASgJEhAKCGFzc2V0X2lkGAIgASgJIjwKEEdldEFzc2V0UmVzcG9uc2USKAoFYXNzZXQYASABKAsyGS5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXQi2gIKBUFzc2V0EikKA3JlZhgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFJlZhItCgVzdGF0ZRgCIAEoDjIeLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFN0YXRlEjQKEHN0YXRlX2NoYW5nZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGFkZGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxsYXN0X3NlZW5fYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjEKCnJlbmRpdGlvbnMYByADKAsyHS5ob21lY2xvdWQuYWdlbnQudjEuUmVuZGl0aW9uIqcCCglSZW5kaXRpb24SDwoHdmVyc2lvbhgBIAEoCRIQCghmaWxlbmFtZRgCIAEoCRISCgpsb2NhbF9wYXRoGAMgASgJEjEKCm1lZGlhX3R5cGUYBCABKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuTWVkaWFUeXBlEhIKCnNpemVfYnl0ZXMYBSABKAMSDgoGc2hhMjU2GAYgASgJEjAKDnJlcXVpcmVkX3RpZXJzGAcgAygOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISLAoGcGFzc2VzGAggAygLMhwuaG9tZWNsb3VkLmFnZW50LnYxLlRpZXJQYXNzEiwKB2ZhaWx1cmUYCSABKAsyGy5ob21lY2xvdWQuYWdlbnQudjEuRmFpbHVyZSJaCghUaWVyUGFzcxImCgR0aWVyGAEgASgOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISJgoCYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KGFJlbGVhc2VRdWFyYW50aW5lUmVxdWVzdBIPCgdsaWJyYXJ5GAEgASgJEhAKCGFzc2V0X2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSIbChlSZWxlYXNlUXVhcmFudGluZVJlc3BvbnNlIhIKEFN0YXJ0U3luY1JlcXVlc3QiJAoRU3RhcnRTeW5jUmVzcG9uc2USDwoHc3RhcnRlZBgBIAEoCCIdChtTZW5kVGVzdE5vdGlmaWNhdGlvblJlcXVlc3QiHgocU2VuZFRlc3ROb3RpZmljYXRpb25SZXNwb25zZSIUChJHZXRTZXR0aW5nc1JlcXVlc3QiRQoTR2V0U2V0dGluZ3NSZXNwb25zZRIuCghzZXR0aW5ncxgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5TZXR0aW5ncyKmAwoIU2V0dGluZ3MSEwoLY29uZmlnX3BhdGgYASABKAkSFAoMc3RvcmFnZV9yb290GAIgASgJEhkKEXN0b3JhZ2Vfdm9sdW1lX2lkGAMgASgJEhgKEG1pbl9mcmVlX3BlcmNlbnQYBCABKAESLwoKZG93bmxvYWRlchgFIAEoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5Ub29sUGluEhkKEWRvd25sb2FkZXJfY29uZmlnGAYgASgJEjAKC3ZpZGVvX3Byb2JlGAcgASgLMhsuaG9tZWNsb3VkLmFnZW50LnYxLlRvb2xQaW4SDgoGbGlzdGVuGAggASgJEhUKDW5vdGlmeV9zZXJ2ZXIYCSABKAkSFAoMbm90aWZ5X3RvcGljGAogASgJEh0KFXN5bmNfaW50ZXJ2YWxfc2Vjb25kcxgLIAEoAxIeChZzY3J1Yl9pbnRlcnZhbF9zZWNvbmRzGAwgASgDEhYKDnNjcnViX2ZyYWN0aW9uGA0gASgBEhAKCGFwcGxlX2lkGA4gASgJEhYKDmluY2x1ZGVfaGlkZGVuGA8gASgIIioKB1Rvb2xQaW4SDgoGYmluYXJ5GAEgASgJEg8KB3ZlcnNpb24YAiABKAkiGAoWQ3JlYXRlTG9naW5Db2RlUmVxdWVzdCJXChdDcmVhdGVMb2dpbkNvZGVSZXNwb25zZRIMCgRjb2RlGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIigKGEV4Y2hhbmdlTG9naW5Db2RlUmVxdWVzdBIMCgRjb2RlGAEgASgJIhsKGUV4Y2hhbmdlTG9naW5Db2RlUmVzcG9uc2UqtQEKEERyaXZlSGVhbHRoU3RhdGUSIgoeRFJJVkVfSEVBTFRIX1NUQVRFX1VOU1BFQ0lGSUVEEAASGQoVRFJJVkVfSEVBTFRIX1NUQVRFX09LEAESHgoaRFJJVkVfSEVBTFRIX1NUQVRFX1dBUk5JTkcQAhIeChpEUklWRV9IRUFMVEhfU1RBVEVfRkFJTElORxADEiIKHkRSSVZFX0hFQUxUSF9TVEFURV9VTkFWQUlMQUJMRRAEKq4BChFBcHBsZUFjY291bnRTdGF0ZRIjCh9BUFBMRV9BQ0NPVU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASIQodQVBQTEVfQUNDT1VOVF9TVEFURV9TSUdORURfSU4QARIoCiRBUFBMRV9BQ0NPVU5UX1NUQVRFX1NJR05fSU5fUkVRVUlSRUQQAhInCiNBUFBMRV9BQ0NPVU5UX1NUQVRFX05FRURTX0FUVEVOVElPThADKm8KBVBoYXNlEhUKEVBIQVNFX1VOU1BFQ0lGSUVEEAASDgoKUEhBU0VfSURMRRABEhUKEVBIQVNFX0RPV05MT0FESU5HEAISEwoPUEhBU0VfSU5HRVNUSU5HEAMSEwoPUEhBU0VfVkVSSUZZSU5HEAQqaQoJUnVuUmVzdWx0EhoKFlJVTl9SRVNVTFRfVU5TUEVDSUZJRUQQABIWChJSVU5fUkVTVUxUX1JVTk5JTkcQARIRCg1SVU5fUkVTVUxUX09LEAISFQoRUlVOX1JFU1VMVF9GQUlMRUQQAyrTAQoPRG93bmxvYWRPdXRjb21lEiAKHERPV05MT0FEX09VVENPTUVfVU5TUEVDSUZJRUQQABIXChNET1dOTE9BRF9PVVRDT01FX09LEAESHAoYRE9XTkxPQURfT1VUQ09NRV9QQVJUSUFMEAISJQohRE9XTkxPQURfT1VUQ09NRV9TSUdOX0lOX1JFUVVJUkVEEAMSJAogRE9XTkxPQURfT1VUQ09NRV9ORUVEU19BVFRFTlRJT04QBBIaChZET1dOTE9BRF9PVVRDT01FX0VSUk9SEAUq7AEKCUV2ZW50S2luZBIaChZFVkVOVF9LSU5EX1VOU1BFQ0lGSUVEEAASIAocRVZFTlRfS0lORF9SRU5ESVRJT05fQ0hBTkdFRBABEhwKGEVWRU5UX0tJTkRfU1RBVEVfQ0hBTkdFRBACEhoKFkVWRU5UX0tJTkRfUVVBUkFOVElORUQQAxIiCh5FVkVOVF9LSU5EX1FVQVJBTlRJTkVfUkVMRUFTRUQQBBIjCh9FVkVOVF9LSU5EX0RSSVZFX0hFQUxUSF9DSEFOR0VEEAUSHgoaRVZFTlRfS0lORF9SRU5ESVRJT05fTU9WRUQQBiqYAQoKQXNzZXRTdGF0ZRIbChdBU1NFVF9TVEFURV9VTlNQRUNJRklFRBAAEhoKFkFTU0VUX1NUQVRFX0RJU0NPVkVSRUQQARIaChZBU1NFVF9TVEFURV9ET1dOTE9BREVEEAISGAoUQVNTRVRfU1RBVEVfVkVSSUZJRUQQAxIbChdBU1NFVF9TVEFURV9RVUFSQU5USU5FRBAEKlIKBFRpZXISFAoQVElFUl9VTlNQRUNJRklFRBAAEhAKDFRJRVJfQ09OVEVOVBABEhIKDlRJRVJfU1RSVUNUVVJFEAISDgoKVElFUl9QUk9CRRADKpUBCglNZWRpYVR5cGUSGgoWTUVESUFfVFlQRV9VTlNQRUNJRklFRBAAEhQKEE1FRElBX1RZUEVfUEhPVE8QARIUChBNRURJQV9UWVBFX1ZJREVPEAISHwobTUVESUFfVFlQRV9MSVZFX1BIT1RPX0lNQUdFEAMSHwobTUVESUFfVFlQRV9MSVZFX1BIT1RPX1ZJREVPEAQyxgoKDEFnZW50U2VydmljZRJXCgdHZXRJbmZvEiIuaG9tZWNsb3VkLmFnZW50LnYxLkdldEluZm9SZXF1ZXN0GiMuaG9tZWNsb3VkLmFnZW50LnYxLkdldEluZm9SZXNwb25zZSIDkAIBEmMKC0dldE92ZXJ2aWV3EiYuaG9tZWNsb3VkLmFnZW50LnYxLkdldE92ZXJ2aWV3UmVxdWVzdBonLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRPdmVydmlld1Jlc3BvbnNlIgOQAgESZgoNV2F0Y2hPdmVydmlldxIoLmhvbWVjbG91ZC5hZ2VudC52MS5XYXRjaE92ZXJ2aWV3UmVxdWVzdBopLmhvbWVjbG91ZC5hZ2VudC52MS5XYXRjaE92ZXJ2aWV3UmVzcG9uc2UwARJaCghMaXN0UnVucxIjLmhvbWVjbG91ZC5hZ2VudC52MS5MaXN0UnVuc1JlcXVlc3QaJC5ob21lY2xvdWQuYWdlbnQudjEuTGlzdFJ1bnNSZXNwb25zZSIDkAIBEmAKCkxpc3RFdmVudHMSJS5ob21lY2xvdWQuYWdlbnQudjEuTGlzdEV2ZW50c1JlcXVlc3QaJi5ob21lY2xvdWQuYWdlbnQudjEuTGlzdEV2ZW50c1Jlc3BvbnNlIgOQAgESbAoOTGlzdFF1YXJhbnRpbmUSKS5ob21lY2xvdWQuYWdlbnQudjEuTGlzdFF1YXJhbnRpbmVSZXF1ZXN0GiouaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RRdWFyYW50aW5lUmVzcG9uc2UiA5ACARJaCghHZXRBc3NldBIjLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRBc3NldFJlcXVlc3QaJC5ob21lY2xvdWQuYWdlbnQudjEuR2V0QXNzZXRSZXNwb25zZSIDkAIBEnAKEVJlbGVhc2VRdWFyYW50aW5lEiwuaG9tZWNsb3VkLmFnZW50LnYxLlJlbGVhc2VRdWFyYW50aW5lUmVxdWVzdBotLmhvbWVjbG91ZC5hZ2VudC52MS5SZWxlYXNlUXVhcmFudGluZVJlc3BvbnNlElgKCVN0YXJ0U3luYxIkLmhvbWVjbG91ZC5hZ2VudC52MS5TdGFydFN5bmNSZXF1ZXN0GiUuaG9tZWNsb3VkLmFnZW50LnYxLlN0YXJ0U3luY1Jlc3BvbnNlEnkKFFNlbmRUZXN0Tm90aWZpY2F0aW9uEi8uaG9tZWNsb3VkLmFnZW50LnYxLlNlbmRUZXN0Tm90aWZpY2F0aW9uUmVxdWVzdBowLmhvbWVjbG91ZC5hZ2VudC52MS5TZW5kVGVzdE5vdGlmaWNhdGlvblJlc3BvbnNlEmMKC0dldFNldHRpbmdzEiYuaG9tZWNsb3VkLmFnZW50LnYxLkdldFNldHRpbmdzUmVxdWVzdBonLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRTZXR0aW5nc1Jlc3BvbnNlIgOQAgESagoPQ3JlYXRlTG9naW5Db2RlEiouaG9tZWNsb3VkLmFnZW50LnYxLkNyZWF0ZUxvZ2luQ29kZVJlcXVlc3QaKy5ob21lY2xvdWQuYWdlbnQudjEuQ3JlYXRlTG9naW5Db2RlUmVzcG9uc2UScAoRRXhjaGFuZ2VMb2dpbkNvZGUSLC5ob21lY2xvdWQuYWdlbnQudjEuRXhjaGFuZ2VMb2dpbkNvZGVSZXF1ZXN0Gi0uaG9tZWNsb3VkLmFnZW50LnYxLkV4Y2hhbmdlTG9naW5Db2RlUmVzcG9uc2VC0gEKFmNvbS5ob21lY2xvdWQuYWdlbnQudjFCCkFnZW50UHJvdG9QAVpCZ2l0aHViLmNvbS92YXNpbGlzdG90c2thcy9ob21lY2xvdWQvZ2VuL2hvbWVjbG91ZC9hZ2VudC92MTthZ2VudHYxogIDSEFYqgISSG9tZWNsb3VkLkFnZW50LlYxygISSG9tZWNsb3VkXEFnZW50XFYx4gIeSG9tZWNsb3VkXEFnZW50XFYxXEdQQk1ldGFkYXRh6gIUSG9tZWNsb3VkOjpBZ2VudDo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Ch5ob21lY2xvdWQvYWdlbnQvdjEvYWdlbnQucHJvdG8SEmhvbWVjbG91ZC5hZ2VudC52MSIQCg5HZXRJbmZvUmVxdWVzdCJJCg9HZXRJbmZvUmVzcG9uc2USFQoNYWdlbnRfdmVyc2lvbhgBIAEoCRITCgthcGlfdmVyc2lvbhgCIAEoCRIKCgJvcxgDIAEoCSIUChJHZXRPdmVydmlld1JlcXVlc3QiRQoTR2V0T3ZlcnZpZXdSZXNwb25zZRIuCghvdmVydmlldxgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5PdmVydmlldyIWChRXYXRjaE92ZXJ2aWV3UmVxdWVzdCJHChVXYXRjaE92ZXJ2aWV3UmVzcG9uc2USLgoIb3ZlcnZpZXcYASABKAsyHC5ob21lY2xvdWQuYWdlbnQudjEuT3ZlcnZpZXci4wIKCE92ZXJ2aWV3Ei8KBmFzc2V0cxgBIAEoCzIfLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldENvdW50cxIyCgdhcmNoaXZlGAIgASgLMiEuaG9tZWNsb3VkLmFnZW50LnYxLkFyY2hpdmVUb3RhbHMSLAoHc3RvcmFnZRgDIAEoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5TdG9yYWdlEjcKDWFwcGxlX2FjY291bnQYBCABKAsyIC5ob21lY2xvdWQuYWdlbnQudjEuQXBwbGVBY2NvdW50Ei4KCGFjdGl2aXR5GAUgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFjdGl2aXR5EisKCmxhc3RfY3ljbGUYBiABKAsyFy5ob21lY2xvdWQuYWdlbnQudjEuUnVuEi4KBWRyaXZlGAcgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLkRyaXZlSGVhbHRoIroDCgtEcml2ZUhlYWx0aBIzCgVzdGF0ZRgBIAEoDjIkLmhvbWVjbG91ZC5hZ2VudC52MS5Ecml2ZUhlYWx0aFN0YXRlEi4KCmNoZWNrZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3JlYXNvbnMYAyADKAkSDQoFbW9kZWwYBCABKAkSEAoIcHJvdG9jb2wYBSABKAkSEAoId2FybmluZ3MYBiADKAkSIAoTdGVtcGVyYXR1cmVfY2Vsc2l1cxgHIAEoBUgAiAEBEhkKDHBlcmNlbnRfdXNlZBgIIAEoBUgBiAEBEiQKF2F2YWlsYWJsZV9zcGFyZV9wZXJjZW50GAkgASgFSAKIAQESGQoMbWVkaWFfZXJyb3JzGAogASgESAOIAQESGwoOcG93ZXJfb25faG91cnMYCyABKARIBIgBAUIWChRfdGVtcGVyYXR1cmVfY2Vsc2l1c0IPCg1fcGVyY2VudF91c2VkQhoKGF9hdmFpbGFibGVfc3BhcmVfcGVyY2VudEIPCg1fbWVkaWFfZXJyb3JzQhEKD19wb3dlcl9vbl9ob3VycyJcCgtBc3NldENvdW50cxISCgpkaXNjb3ZlcmVkGAEgASgDEhIKCmRvd25sb2FkZWQYAiABKAMSEAoIdmVyaWZpZWQYAyABKAMSEwoLcXVhcmFudGluZWQYBCABKAMiLQoNQXJjaGl2ZVRvdGFscxINCgVmaWxlcxgBIAEoAxINCgVieXRlcxgCIAEoAyJaCgdTdG9yYWdlEgwKBHJvb3QYASABKAkSEwoLdG90YWxfYnl0ZXMYAiABKAMSEgoKZnJlZV9ieXRlcxgDIAEoAxIYChBtaW5fZnJlZV9wZXJjZW50GAQgASgBIkQKDEFwcGxlQWNjb3VudBI0CgVzdGF0ZRgBIAEoDjIlLmhvbWVjbG91ZC5hZ2VudC52MS5BcHBsZUFjY291bnRTdGF0ZSKdAQoIQWN0aXZpdHkSKAoFcGhhc2UYASABKA4yGS5ob21lY2xvdWQuYWdlbnQudjEuUGhhc2USNAoQcGhhc2Vfc3RhcnRlZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoNbmV4dF9jeWNsZV9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi3wEKA1J1bhIKCgJpZBgBIAEoAxIMCgRraW5kGAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2ZpbmlzaGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgZyZXN1bHQYBSABKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuUnVuUmVzdWx0Ei4KBWN5Y2xlGAYgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLkN5Y2xlUmVwb3J0IosCCgtDeWNsZVJlcG9ydBI1Cghkb3dubG9hZBgBIAEoDjIjLmhvbWVjbG91ZC5hZ2VudC52MS5Eb3dubG9hZE91dGNvbWUSDgoGYXNzZXRzGAIgASgDEhIKCnJlbmRpdGlvbnMYAyABKAMSFgoObmV3X3JlbmRpdGlvbnMYBCABKAMSGgoSY2hhbmdlZF9yZW5kaXRpb25zGAUgASgDEg8KB2NoZWNrZWQYBiABKAMSDgoGcGFzc2VkGAcgASgDEhIKCm1pc21hdGNoZWQYCCABKAMSDwoHZXJyb3JlZBgJIAEoAxINCgVlcnJvchgKIAEoCRIYChBtb3ZlZF9yZW5kaXRpb25zGAsgASgDIjgKD0xpc3RSdW5zUmVxdWVzdBIRCglwYWdlX3NpemUYASABKAUSEgoKcGFnZV90b2tlbhgCIAEoCSJSChBMaXN0UnVuc1Jlc3BvbnNlEiUKBHJ1bnMYASADKAsyFy5ob21lY2xvdWQuYWdlbnQudjEuUnVuEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSL2AwoFRXZlbnQSCgoCaWQYASABKAMSJgoCYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKBWFzc2V0GAMgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0UmVmEkEKEXJlbmRpdGlvbl9jaGFuZ2VkGAQgASgLMiQuaG9tZWNsb3VkLmFnZW50LnYxLlJlbmRpdGlvbkNoYW5nZWRIABI5Cg1zdGF0ZV9jaGFuZ2VkGAUgASgLMiAuaG9tZWNsb3VkLmFnZW50LnYxLlN0YXRlQ2hhbmdlZEgAEjYKC3F1YXJhbnRpbmVkGAYgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLlF1YXJhbnRpbmVkSAASRQoTcXVhcmFudGluZV9yZWxlYXNlZBgHIAEoCzImLmhvbWVjbG91ZC5hZ2VudC52MS5RdWFyYW50aW5lUmVsZWFzZWRIABJGChRkcml2ZV9oZWFsdGhfY2hhbmdlZBgIIAEoCzImLmhvbWVjbG91ZC5hZ2VudC52MS5Ecml2ZUhlYWx0aENoYW5nZWRIABI9Cg9yZW5kaXRpb25fbW92ZWQYCSABKAsyIi5ob21lY2xvdWQuYWdlbnQudjEuUmVuZGl0aW9uTW92ZWRIAEIICgZkZXRhaWwiPwoIQXNzZXRSZWYSDwoHbGlicmFyeRgBIAEoCRIQCghhc3NldF9pZBgCIAEoCRIQCghmaWxlbmFtZRgDIAEoCSJHChBSZW5kaXRpb25DaGFuZ2VkEg8KB3ZlcnNpb24YASABKAkSEgoKc2l6ZV9ieXRlcxgCIAEoAxIOCgZzaGEyNTYYAyABKAkiaAoMU3RhdGVDaGFuZ2VkEiwKBGZyb20YASABKA4yHi5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXRTdGF0ZRIqCgJ0bxgCIAEoDjIeLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFN0YXRlIlYKC1F1YXJhbnRpbmVkEg8KB3ZlcnNpb24YASABKAkSJgoEdGllchgCIAEoDjIYLmhvbWVjbG91ZC5hZ2VudC52MS5UaWVyEg4KBnJlYXNvbhgDIAEoCSIkChJRdWFyYW50aW5lUmVsZWFzZWQSDgoGcmVhc29uGAEgASgJIjsKDlJlbmRpdGlvbk1vdmVkEg8KB3ZlcnNpb24YASABKAkSDAoEZnJvbRgCIAEoCRIKCgJ0bxgDIAEoCSKLAQoSRHJpdmVIZWFsdGhDaGFuZ2VkEjIKBGZyb20YASABKA4yJC5ob21lY2xvdWQuYWdlbnQudjEuRHJpdmVIZWFsdGhTdGF0ZRIwCgJ0bxgCIAEoDjIkLmhvbWVjbG91ZC5hZ2VudC52MS5Ecml2ZUhlYWx0aFN0YXRlEg8KB3JlYXNvbnMYAyADKAkiaAoRTGlzdEV2ZW50c1JlcXVlc3QSLAoFa2luZHMYASADKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuRXZlbnRLaW5kEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIlgKEkxpc3RFdmVudHNSZXNwb25zZRIpCgZldmVudHMYASADKAsyGS5ob21lY2xvdWQuYWdlbnQudjEuRXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIncKEUxpc3RBc3NldHNSZXF1ZXN0EhEKCXBhZ2Vfc2l6ZRgBIAEoBRISCgpwYWdlX3Rva2VuGAIgASgJEisKBGtpbmQYAyABKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXRLaW5kEg4KBmhpZGRlbhgEIAEoCCJdChJMaXN0QXNzZXRzUmVzcG9uc2USLgoFaXRlbXMYASADKAsyHy5ob21lY2xvdWQuYWdlbnQudjEuTGlicmFyeUl0ZW0SFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIosCCgtMaWJyYXJ5SXRlbRIrCgVhc3NldBgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFJlZhIrCgRraW5kGAIgASgOMh0uaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0S2luZBIuCgpjcmVhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgVzdGF0ZRgEIAEoDjIeLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFN0YXRlEhUKDXRodW1ibmFpbF91cmwYBSABKAkSEwoLcHJldmlld191cmwYBiABKAkSFwoPZGlzcGxheV92ZXJzaW9uGAcgASgJIhcKFUxpc3RRdWFyYW50aW5lUmVxdWVzdCJOChZMaXN0UXVhcmFudGluZVJlc3BvbnNlEjQKBmFzc2V0cxgBIAMoCzIkLmhvbWVjbG91ZC5hZ2VudC52MS5RdWFyYW50aW5lZEFzc2V0IqIBChBRdWFyYW50aW5lZEFzc2V0EisKBWFzc2V0GAEgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0UmVmEjIKDnF1YXJhbnRpbmVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCghmYWlsdXJlcxgDIAMoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5GYWlsdXJlIlIKB0ZhaWx1cmUSDwoHdmVyc2lvbhgBIAEoCRImCgR0aWVyGAIgASgOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISDgoGcmVhc29uGAMgASgJIjQKD0dldEFzc2V0UmVxdWVzdBIPCgdsaWJyYXJ5GAEgASgJEhAKCGFzc2V0X2lkGAIgASgJIjwKEEdldEFzc2V0UmVzcG9uc2USKAoFYXNzZXQYASABKAsyGS5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXQi2gIKBUFzc2V0EikKA3JlZhgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFJlZhItCgVzdGF0ZRgCIAEoDjIeLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFN0YXRlEjQKEHN0YXRlX2NoYW5nZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGFkZGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxsYXN0X3NlZW5fYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjEKCnJlbmRpdGlvbnMYByADKAsyHS5ob21lY2xvdWQuYWdlbnQudjEuUmVuZGl0aW9uIqcCCglSZW5kaXRpb24SDwoHdmVyc2lvbhgBIAEoCRIQCghmaWxlbmFtZRgCIAEoCRISCgpsb2NhbF9wYXRoGAMgASgJEjEKCm1lZGlhX3R5cGUYBCABKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuTWVkaWFUeXBlEhIKCnNpemVfYnl0ZXMYBSABKAMSDgoGc2hhMjU2GAYgASgJEjAKDnJlcXVpcmVkX3RpZXJzGAcgAygOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISLAoGcGFzc2VzGAggAygLMhwuaG9tZWNsb3VkLmFnZW50LnYxLlRpZXJQYXNzEiwKB2ZhaWx1cmUYCSABKAsyGy5ob21lY2xvdWQuYWdlbnQudjEuRmFpbHVyZSJaCghUaWVyUGFzcxImCgR0aWVyGAEgASgOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISJgoCYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KGFJlbGVhc2VRdWFyYW50aW5lUmVxdWVzdBIPCgdsaWJyYXJ5GAEgASgJEhAKCGFzc2V0X2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSIbChlSZWxlYXNlUXVhcmFudGluZVJlc3BvbnNlIhIKEFN0YXJ0U3luY1JlcXVlc3QiJAoRU3RhcnRTeW5jUmVzcG9uc2USDwoHc3RhcnRlZBgBIAEoCCIdChtTZW5kVGVzdE5vdGlmaWNhdGlvblJlcXVlc3QiHgocU2VuZFRlc3ROb3RpZmljYXRpb25SZXNwb25zZSIUChJHZXRTZXR0aW5nc1JlcXVlc3QiRQoTR2V0U2V0dGluZ3NSZXNwb25zZRIuCghzZXR0aW5ncxgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5TZXR0aW5ncyLYAwoIU2V0dGluZ3MSEwoLY29uZmlnX3BhdGgYASABKAkSFAoMc3RvcmFnZV9yb290GAIgASgJEhkKEXN0b3JhZ2Vfdm9sdW1lX2lkGAMgASgJEhgKEG1pbl9mcmVlX3BlcmNlbnQYBCABKAESLwoKZG93bmxvYWRlchgFIAEoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5Ub29sUGluEhkKEWRvd25sb2FkZXJfY29uZmlnGAYgASgJEjAKC3ZpZGVvX3Byb2JlGAcgASgLMhsuaG9tZWNsb3VkLmFnZW50LnYxLlRvb2xQaW4SDgoGbGlzdGVuGAggASgJEhUKDW5vdGlmeV9zZXJ2ZXIYCSABKAkSFAoMbm90aWZ5X3RvcGljGAogASgJEh0KFXN5bmNfaW50ZXJ2YWxfc2Vjb25kcxgLIAEoAxIeChZzY3J1Yl9pbnRlcnZhbF9zZWNvbmRzGAwgASgDEhYKDnNjcnViX2ZyYWN0aW9uGA0gASgBEhAKCGFwcGxlX2lkGA4gASgJEhYKDmluY2x1ZGVfaGlkZGVuGA8gASgIEjAKC3RodW1ibmFpbGVyGBAgASgLMhsuaG9tZWNsb3VkLmFnZW50LnYxLlRvb2xQaW4iKgoHVG9vbFBpbhIOCgZiaW5hcnkYASABKAkSDwoHdmVyc2lvbhgCIAEoCSIYChZDcmVhdGVMb2dpbkNvZGVSZXF1ZXN0IlcKF0NyZWF0ZUxvZ2luQ29kZVJlc3BvbnNlEgwKBGNvZGUYASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiKAoYRXhjaGFuZ2VMb2dpbkNvZGVSZXF1ZXN0EgwKBGNvZGUYASABKAkiGwoZRXhjaGFuZ2VMb2dpbkNvZGVSZXNwb25zZSq1AQoQRHJpdmVIZWFsdGhTdGF0ZRIiCh5EUklWRV9IRUFMVEhfU1RBVEVfVU5TUEVDSUZJRUQQABIZChVEUklWRV9IRUFMVEhfU1RBVEVfT0sQARIeChpEUklWRV9IRUFMVEhfU1RBVEVfV0FSTklORxACEh4KGkRSSVZFX0hFQUxUSF9TVEFURV9GQUlMSU5HEAMSIgoeRFJJVkVfSEVBTFRIX1NUQVRFX1VOQVZBSUxBQkxFEAQqrgEKEUFwcGxlQWNjb3VudFN0YXRlEiMKH0FQUExFX0FDQ09VTlRfU1RBVEVfVU5TUEVDSUZJRUQQABIhCh1BUFBMRV9BQ0NPVU5UX1NUQVRFX1NJR05FRF9JThABEigKJEFQUExFX0FDQ09VTlRfU1RBVEVfU0lHTl9JTl9SRVFVSVJFRBACEicKI0FQUExFX0FDQ09VTlRfU1RBVEVfTkVFRFNfQVRURU5USU9OEAMqjQEKBVBoYXNlEhUKEVBIQVNFX1VOU1BFQ0lGSUVEEAASDgoKUEhBU0VfSURMRRABEhUKEVBIQVNFX0RPV05MT0FESU5HEAISEwoPUEhBU0VfSU5HRVNUSU5HEAMSEwoPUEhBU0VfVkVSSUZZSU5HEAQSHAoYUEhBU0VfUFJFUEFSSU5HX1BSRVZJRVdTEAUqaQoJUnVuUmVzdWx0EhoKFlJVTl9SRVNVTFRfVU5TUEVDSUZJRUQQABIWChJSVU5fUkVTVUxUX1JVTk5JTkcQARIRCg1SVU5fUkVTVUxUX09LEAISFQoRUlVOX1JFU1VMVF9GQUlMRUQQAyrTAQoPRG93bmxvYWRPdXRjb21lEiAKHERPV05MT0FEX09VVENPTUVfVU5TUEVDSUZJRUQQABIXChNET1dOTE9BRF9PVVRDT01FX09LEAESHAoYRE9XTkxPQURfT1VUQ09NRV9QQVJUSUFMEAISJQohRE9XTkxPQURfT1VUQ09NRV9TSUdOX0lOX1JFUVVJUkVEEAMSJAogRE9XTkxPQURfT1VUQ09NRV9ORUVEU19BVFRFTlRJT04QBBIaChZET1dOTE9BRF9PVVRDT01FX0VSUk9SEAUq7AEKCUV2ZW50S2luZBIaChZFVkVOVF9LSU5EX1VOU1BFQ0lGSUVEEAASIAocRVZFTlRfS0lORF9SRU5ESVRJT05fQ0hBTkdFRBABEhwKGEVWRU5UX0tJTkRfU1RBVEVfQ0hBTkdFRBACEhoKFkVWRU5UX0tJTkRfUVVBUkFOVElORUQQAxIiCh5FVkVOVF9LSU5EX1FVQVJBTlRJTkVfUkVMRUFTRUQQBBIjCh9FVkVOVF9LSU5EX0RSSVZFX0hFQUxUSF9DSEFOR0VEEAUSHgoaRVZFTlRfS0lORF9SRU5ESVRJT05fTU9WRUQQBiqYAQoKQXNzZXRTdGF0ZRIbChdBU1NFVF9TVEFURV9VTlNQRUNJRklFRBAAEhoKFkFTU0VUX1NUQVRFX0RJU0NPVkVSRUQQARIaChZBU1NFVF9TVEFURV9ET1dOTE9BREVEEAISGAoUQVNTRVRfU1RBVEVfVkVSSUZJRUQQAxIbChdBU1NFVF9TVEFURV9RVUFSQU5USU5FRBAEKlIKBFRpZXISFAoQVElFUl9VTlNQRUNJRklFRBAAEhAKDFRJRVJfQ09OVEVOVBABEhIKDlRJRVJfU1RSVUNUVVJFEAISDgoKVElFUl9QUk9CRRADKm4KCUFzc2V0S2luZBIaChZBU1NFVF9LSU5EX1VOU1BFQ0lGSUVEEAASFAoQQVNTRVRfS0lORF9QSE9UTxABEhkKFUFTU0VUX0tJTkRfTElWRV9QSE9UTxACEhQKEEFTU0VUX0tJTkRfVklERU8QAyqVAQoJTWVkaWFUeXBlEhoKFk1FRElBX1RZUEVfVU5TUEVDSUZJRUQQABIUChBNRURJQV9UWVBFX1BIT1RPEAESFAoQTUVESUFfVFlQRV9WSURFTxACEh8KG01FRElBX1RZUEVfTElWRV9QSE9UT19JTUFHRRADEh8KG01FRElBX1RZUEVfTElWRV9QSE9UT19WSURFTxAEMqgLCgxBZ2VudFNlcnZpY2USVwoHR2V0SW5mbxIiLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRJbmZvUmVxdWVzdBojLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRJbmZvUmVzcG9uc2UiA5ACARJjCgtHZXRPdmVydmlldxImLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRPdmVydmlld1JlcXVlc3QaJy5ob21lY2xvdWQuYWdlbnQudjEuR2V0T3ZlcnZpZXdSZXNwb25zZSIDkAIBEmYKDVdhdGNoT3ZlcnZpZXcSKC5ob21lY2xvdWQuYWdlbnQudjEuV2F0Y2hPdmVydmlld1JlcXVlc3QaKS5ob21lY2xvdWQuYWdlbnQudjEuV2F0Y2hPdmVydmlld1Jlc3BvbnNlMAESWgoITGlzdFJ1bnMSIy5ob21lY2xvdWQuYWdlbnQudjEuTGlzdFJ1bnNSZXF1ZXN0GiQuaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RSdW5zUmVzcG9uc2UiA5ACARJgCgpMaXN0RXZlbnRzEiUuaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RFdmVudHNSZXF1ZXN0GiYuaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RFdmVudHNSZXNwb25zZSIDkAIBEmAKCkxpc3RBc3NldHMSJS5ob21lY2xvdWQuYWdlbnQudjEuTGlzdEFzc2V0c1JlcXVlc3QaJi5ob21lY2xvdWQuYWdlbnQudjEuTGlzdEFzc2V0c1Jlc3BvbnNlIgOQAgESbAoOTGlzdFF1YXJhbnRpbmUSKS5ob21lY2xvdWQuYWdlbnQudjEuTGlzdFF1YXJhbnRpbmVSZXF1ZXN0GiouaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RRdWFyYW50aW5lUmVzcG9uc2UiA5ACARJaCghHZXRBc3NldBIjLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRBc3NldFJlcXVlc3QaJC5ob21lY2xvdWQuYWdlbnQudjEuR2V0QXNzZXRSZXNwb25zZSIDkAIBEnAKEVJlbGVhc2VRdWFyYW50aW5lEiwuaG9tZWNsb3VkLmFnZW50LnYxLlJlbGVhc2VRdWFyYW50aW5lUmVxdWVzdBotLmhvbWVjbG91ZC5hZ2VudC52MS5SZWxlYXNlUXVhcmFudGluZVJlc3BvbnNlElgKCVN0YXJ0U3luYxIkLmhvbWVjbG91ZC5hZ2VudC52MS5TdGFydFN5bmNSZXF1ZXN0GiUuaG9tZWNsb3VkLmFnZW50LnYxLlN0YXJ0U3luY1Jlc3BvbnNlEnkKFFNlbmRUZXN0Tm90aWZpY2F0aW9uEi8uaG9tZWNsb3VkLmFnZW50LnYxLlNlbmRUZXN0Tm90aWZpY2F0aW9uUmVxdWVzdBowLmhvbWVjbG91ZC5hZ2VudC52MS5TZW5kVGVzdE5vdGlmaWNhdGlvblJlc3BvbnNlEmMKC0dldFNldHRpbmdzEiYuaG9tZWNsb3VkLmFnZW50LnYxLkdldFNldHRpbmdzUmVxdWVzdBonLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRTZXR0aW5nc1Jlc3BvbnNlIgOQAgESagoPQ3JlYXRlTG9naW5Db2RlEiouaG9tZWNsb3VkLmFnZW50LnYxLkNyZWF0ZUxvZ2luQ29kZVJlcXVlc3QaKy5ob21lY2xvdWQuYWdlbnQudjEuQ3JlYXRlTG9naW5Db2RlUmVzcG9uc2UScAoRRXhjaGFuZ2VMb2dpbkNvZGUSLC5ob21lY2xvdWQuYWdlbnQudjEuRXhjaGFuZ2VMb2dpbkNvZGVSZXF1ZXN0Gi0uaG9tZWNsb3VkLmFnZW50LnYxLkV4Y2hhbmdlTG9naW5Db2RlUmVzcG9uc2VC0gEKFmNvbS5ob21lY2xvdWQuYWdlbnQudjFCCkFnZW50UHJvdG9QAVpCZ2l0aHViLmNvbS92YXNpbGlzdG90c2thcy9ob21lY2xvdWQvZ2VuL2hvbWVjbG91ZC9hZ2VudC92MTthZ2VudHYxogIDSEFYqgISSG9tZWNsb3VkLkFnZW50LlYxygISSG9tZWNsb3VkXEFnZW50XFYx4gIeSG9tZWNsb3VkXEFnZW50XFYxXEdQQk1ldGFkYXRh6gIUSG9tZWNsb3VkOjpBZ2VudDo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message homecloud.agent.v1.GetInfoRequest
@@ -886,6 +886,123 @@ export const ListEventsResponseSchema: GenMessage<ListEventsResponse> = /*@__PUR
   messageDesc(file_homecloud_agent_v1_agent, 26);
 
 /**
+ * @generated from message homecloud.agent.v1.ListAssetsRequest
+ */
+export type ListAssetsRequest = Message<"homecloud.agent.v1.ListAssetsRequest"> & {
+  /**
+   * At most 200; 0 selects the default of 60.
+   *
+   * @generated from field: int32 page_size = 1;
+   */
+  pageSize: number;
+
+  /**
+   * @generated from field: string page_token = 2;
+   */
+  pageToken: string;
+
+  /**
+   * Restricts the page to one kind; unspecified lists every kind.
+   *
+   * @generated from field: homecloud.agent.v1.AssetKind kind = 3;
+   */
+  kind: AssetKind;
+
+  /**
+   * Lists the photos hidden in iCloud (archived under Photos/.Hidden) instead
+   * of the others.
+   *
+   * @generated from field: bool hidden = 4;
+   */
+  hidden: boolean;
+};
+
+/**
+ * Describes the message homecloud.agent.v1.ListAssetsRequest.
+ * Use `create(ListAssetsRequestSchema)` to create a new message.
+ */
+export const ListAssetsRequestSchema: GenMessage<ListAssetsRequest> = /*@__PURE__*/
+  messageDesc(file_homecloud_agent_v1_agent, 27);
+
+/**
+ * @generated from message homecloud.agent.v1.ListAssetsResponse
+ */
+export type ListAssetsResponse = Message<"homecloud.agent.v1.ListAssetsResponse"> & {
+  /**
+   * @generated from field: repeated homecloud.agent.v1.LibraryItem items = 1;
+   */
+  items: LibraryItem[];
+
+  /**
+   * @generated from field: string next_page_token = 2;
+   */
+  nextPageToken: string;
+};
+
+/**
+ * Describes the message homecloud.agent.v1.ListAssetsResponse.
+ * Use `create(ListAssetsResponseSchema)` to create a new message.
+ */
+export const ListAssetsResponseSchema: GenMessage<ListAssetsResponse> = /*@__PURE__*/
+  messageDesc(file_homecloud_agent_v1_agent, 28);
+
+/**
+ * LibraryItem is one asset in the library browser.
+ *
+ * @generated from message homecloud.agent.v1.LibraryItem
+ */
+export type LibraryItem = Message<"homecloud.agent.v1.LibraryItem"> & {
+  /**
+   * @generated from field: homecloud.agent.v1.AssetRef asset = 1;
+   */
+  asset?: AssetRef | undefined;
+
+  /**
+   * @generated from field: homecloud.agent.v1.AssetKind kind = 2;
+   */
+  kind: AssetKind;
+
+  /**
+   * When it was taken; absent when iCloud did not say.
+   *
+   * @generated from field: google.protobuf.Timestamp created_at = 3;
+   */
+  createdAt?: Timestamp | undefined;
+
+  /**
+   * @generated from field: homecloud.agent.v1.AssetState state = 4;
+   */
+  state: AssetState;
+
+  /**
+   * Signed URLs of a 320 px square thumbnail and a preview that fits 1600 px,
+   * both WebP, valid for at least 12 hours.
+   *
+   * @generated from field: string thumbnail_url = 5;
+   */
+  thumbnailUrl: string;
+
+  /**
+   * @generated from field: string preview_url = 6;
+   */
+  previewUrl: string;
+
+  /**
+   * The rendition they show: the edited version when there is one.
+   *
+   * @generated from field: string display_version = 7;
+   */
+  displayVersion: string;
+};
+
+/**
+ * Describes the message homecloud.agent.v1.LibraryItem.
+ * Use `create(LibraryItemSchema)` to create a new message.
+ */
+export const LibraryItemSchema: GenMessage<LibraryItem> = /*@__PURE__*/
+  messageDesc(file_homecloud_agent_v1_agent, 29);
+
+/**
  * @generated from message homecloud.agent.v1.ListQuarantineRequest
  */
 export type ListQuarantineRequest = Message<"homecloud.agent.v1.ListQuarantineRequest"> & {
@@ -896,7 +1013,7 @@ export type ListQuarantineRequest = Message<"homecloud.agent.v1.ListQuarantineRe
  * Use `create(ListQuarantineRequestSchema)` to create a new message.
  */
 export const ListQuarantineRequestSchema: GenMessage<ListQuarantineRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 27);
+  messageDesc(file_homecloud_agent_v1_agent, 30);
 
 /**
  * @generated from message homecloud.agent.v1.ListQuarantineResponse
@@ -913,7 +1030,7 @@ export type ListQuarantineResponse = Message<"homecloud.agent.v1.ListQuarantineR
  * Use `create(ListQuarantineResponseSchema)` to create a new message.
  */
 export const ListQuarantineResponseSchema: GenMessage<ListQuarantineResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 28);
+  messageDesc(file_homecloud_agent_v1_agent, 31);
 
 /**
  * @generated from message homecloud.agent.v1.QuarantinedAsset
@@ -940,7 +1057,7 @@ export type QuarantinedAsset = Message<"homecloud.agent.v1.QuarantinedAsset"> & 
  * Use `create(QuarantinedAssetSchema)` to create a new message.
  */
 export const QuarantinedAssetSchema: GenMessage<QuarantinedAsset> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 29);
+  messageDesc(file_homecloud_agent_v1_agent, 32);
 
 /**
  * Failure is a rendition's recorded verification failure.
@@ -969,7 +1086,7 @@ export type Failure = Message<"homecloud.agent.v1.Failure"> & {
  * Use `create(FailureSchema)` to create a new message.
  */
 export const FailureSchema: GenMessage<Failure> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 30);
+  messageDesc(file_homecloud_agent_v1_agent, 33);
 
 /**
  * @generated from message homecloud.agent.v1.GetAssetRequest
@@ -991,7 +1108,7 @@ export type GetAssetRequest = Message<"homecloud.agent.v1.GetAssetRequest"> & {
  * Use `create(GetAssetRequestSchema)` to create a new message.
  */
 export const GetAssetRequestSchema: GenMessage<GetAssetRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 31);
+  messageDesc(file_homecloud_agent_v1_agent, 34);
 
 /**
  * @generated from message homecloud.agent.v1.GetAssetResponse
@@ -1008,7 +1125,7 @@ export type GetAssetResponse = Message<"homecloud.agent.v1.GetAssetResponse"> & 
  * Use `create(GetAssetResponseSchema)` to create a new message.
  */
 export const GetAssetResponseSchema: GenMessage<GetAssetResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 32);
+  messageDesc(file_homecloud_agent_v1_agent, 35);
 
 /**
  * @generated from message homecloud.agent.v1.Asset
@@ -1055,7 +1172,7 @@ export type Asset = Message<"homecloud.agent.v1.Asset"> & {
  * Use `create(AssetSchema)` to create a new message.
  */
 export const AssetSchema: GenMessage<Asset> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 33);
+  messageDesc(file_homecloud_agent_v1_agent, 36);
 
 /**
  * @generated from message homecloud.agent.v1.Rendition
@@ -1118,7 +1235,7 @@ export type Rendition = Message<"homecloud.agent.v1.Rendition"> & {
  * Use `create(RenditionSchema)` to create a new message.
  */
 export const RenditionSchema: GenMessage<Rendition> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 34);
+  messageDesc(file_homecloud_agent_v1_agent, 37);
 
 /**
  * @generated from message homecloud.agent.v1.TierPass
@@ -1140,7 +1257,7 @@ export type TierPass = Message<"homecloud.agent.v1.TierPass"> & {
  * Use `create(TierPassSchema)` to create a new message.
  */
 export const TierPassSchema: GenMessage<TierPass> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 35);
+  messageDesc(file_homecloud_agent_v1_agent, 38);
 
 /**
  * @generated from message homecloud.agent.v1.ReleaseQuarantineRequest
@@ -1169,7 +1286,7 @@ export type ReleaseQuarantineRequest = Message<"homecloud.agent.v1.ReleaseQuaran
  * Use `create(ReleaseQuarantineRequestSchema)` to create a new message.
  */
 export const ReleaseQuarantineRequestSchema: GenMessage<ReleaseQuarantineRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 36);
+  messageDesc(file_homecloud_agent_v1_agent, 39);
 
 /**
  * @generated from message homecloud.agent.v1.ReleaseQuarantineResponse
@@ -1182,7 +1299,7 @@ export type ReleaseQuarantineResponse = Message<"homecloud.agent.v1.ReleaseQuara
  * Use `create(ReleaseQuarantineResponseSchema)` to create a new message.
  */
 export const ReleaseQuarantineResponseSchema: GenMessage<ReleaseQuarantineResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 37);
+  messageDesc(file_homecloud_agent_v1_agent, 40);
 
 /**
  * @generated from message homecloud.agent.v1.StartSyncRequest
@@ -1195,7 +1312,7 @@ export type StartSyncRequest = Message<"homecloud.agent.v1.StartSyncRequest"> & 
  * Use `create(StartSyncRequestSchema)` to create a new message.
  */
 export const StartSyncRequestSchema: GenMessage<StartSyncRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 38);
+  messageDesc(file_homecloud_agent_v1_agent, 41);
 
 /**
  * @generated from message homecloud.agent.v1.StartSyncResponse
@@ -1214,7 +1331,7 @@ export type StartSyncResponse = Message<"homecloud.agent.v1.StartSyncResponse"> 
  * Use `create(StartSyncResponseSchema)` to create a new message.
  */
 export const StartSyncResponseSchema: GenMessage<StartSyncResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 39);
+  messageDesc(file_homecloud_agent_v1_agent, 42);
 
 /**
  * @generated from message homecloud.agent.v1.SendTestNotificationRequest
@@ -1227,7 +1344,7 @@ export type SendTestNotificationRequest = Message<"homecloud.agent.v1.SendTestNo
  * Use `create(SendTestNotificationRequestSchema)` to create a new message.
  */
 export const SendTestNotificationRequestSchema: GenMessage<SendTestNotificationRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 40);
+  messageDesc(file_homecloud_agent_v1_agent, 43);
 
 /**
  * @generated from message homecloud.agent.v1.SendTestNotificationResponse
@@ -1240,7 +1357,7 @@ export type SendTestNotificationResponse = Message<"homecloud.agent.v1.SendTestN
  * Use `create(SendTestNotificationResponseSchema)` to create a new message.
  */
 export const SendTestNotificationResponseSchema: GenMessage<SendTestNotificationResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 41);
+  messageDesc(file_homecloud_agent_v1_agent, 44);
 
 /**
  * @generated from message homecloud.agent.v1.GetSettingsRequest
@@ -1253,7 +1370,7 @@ export type GetSettingsRequest = Message<"homecloud.agent.v1.GetSettingsRequest"
  * Use `create(GetSettingsRequestSchema)` to create a new message.
  */
 export const GetSettingsRequestSchema: GenMessage<GetSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 42);
+  messageDesc(file_homecloud_agent_v1_agent, 45);
 
 /**
  * @generated from message homecloud.agent.v1.GetSettingsResponse
@@ -1270,7 +1387,7 @@ export type GetSettingsResponse = Message<"homecloud.agent.v1.GetSettingsRespons
  * Use `create(GetSettingsResponseSchema)` to create a new message.
  */
 export const GetSettingsResponseSchema: GenMessage<GetSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 43);
+  messageDesc(file_homecloud_agent_v1_agent, 46);
 
 /**
  * Settings mirrors the agent's validated configuration file.
@@ -1358,6 +1475,13 @@ export type Settings = Message<"homecloud.agent.v1.Settings"> & {
    * @generated from field: bool include_hidden = 15;
    */
   includeHidden: boolean;
+
+  /**
+   * The ffmpeg binary that renders thumbnails and previews.
+   *
+   * @generated from field: homecloud.agent.v1.ToolPin thumbnailer = 16;
+   */
+  thumbnailer?: ToolPin | undefined;
 };
 
 /**
@@ -1365,7 +1489,7 @@ export type Settings = Message<"homecloud.agent.v1.Settings"> & {
  * Use `create(SettingsSchema)` to create a new message.
  */
 export const SettingsSchema: GenMessage<Settings> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 44);
+  messageDesc(file_homecloud_agent_v1_agent, 47);
 
 /**
  * ToolPin is an external tool and the exact version homecloud requires.
@@ -1389,7 +1513,7 @@ export type ToolPin = Message<"homecloud.agent.v1.ToolPin"> & {
  * Use `create(ToolPinSchema)` to create a new message.
  */
 export const ToolPinSchema: GenMessage<ToolPin> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 45);
+  messageDesc(file_homecloud_agent_v1_agent, 48);
 
 /**
  * @generated from message homecloud.agent.v1.CreateLoginCodeRequest
@@ -1402,7 +1526,7 @@ export type CreateLoginCodeRequest = Message<"homecloud.agent.v1.CreateLoginCode
  * Use `create(CreateLoginCodeRequestSchema)` to create a new message.
  */
 export const CreateLoginCodeRequestSchema: GenMessage<CreateLoginCodeRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 46);
+  messageDesc(file_homecloud_agent_v1_agent, 49);
 
 /**
  * @generated from message homecloud.agent.v1.CreateLoginCodeResponse
@@ -1426,7 +1550,7 @@ export type CreateLoginCodeResponse = Message<"homecloud.agent.v1.CreateLoginCod
  * Use `create(CreateLoginCodeResponseSchema)` to create a new message.
  */
 export const CreateLoginCodeResponseSchema: GenMessage<CreateLoginCodeResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 47);
+  messageDesc(file_homecloud_agent_v1_agent, 50);
 
 /**
  * @generated from message homecloud.agent.v1.ExchangeLoginCodeRequest
@@ -1443,7 +1567,7 @@ export type ExchangeLoginCodeRequest = Message<"homecloud.agent.v1.ExchangeLogin
  * Use `create(ExchangeLoginCodeRequestSchema)` to create a new message.
  */
 export const ExchangeLoginCodeRequestSchema: GenMessage<ExchangeLoginCodeRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 48);
+  messageDesc(file_homecloud_agent_v1_agent, 51);
 
 /**
  * @generated from message homecloud.agent.v1.ExchangeLoginCodeResponse
@@ -1456,7 +1580,7 @@ export type ExchangeLoginCodeResponse = Message<"homecloud.agent.v1.ExchangeLogi
  * Use `create(ExchangeLoginCodeResponseSchema)` to create a new message.
  */
 export const ExchangeLoginCodeResponseSchema: GenMessage<ExchangeLoginCodeResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 49);
+  messageDesc(file_homecloud_agent_v1_agent, 52);
 
 /**
  * @generated from enum homecloud.agent.v1.DriveHealthState
@@ -1565,6 +1689,13 @@ export enum Phase {
    * @generated from enum value: PHASE_VERIFYING = 4;
    */
   VERIFYING = 4,
+
+  /**
+   * Rendering thumbnails of new files for the library browser.
+   *
+   * @generated from enum value: PHASE_PREPARING_PREVIEWS = 5;
+   */
+  PREPARING_PREVIEWS = 5,
 }
 
 /**
@@ -1769,6 +1900,37 @@ export const TierSchema: GenEnum<Tier> = /*@__PURE__*/
   enumDesc(file_homecloud_agent_v1_agent, 7);
 
 /**
+ * @generated from enum homecloud.agent.v1.AssetKind
+ */
+export enum AssetKind {
+  /**
+   * @generated from enum value: ASSET_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: ASSET_KIND_PHOTO = 1;
+   */
+  PHOTO = 1,
+
+  /**
+   * @generated from enum value: ASSET_KIND_LIVE_PHOTO = 2;
+   */
+  LIVE_PHOTO = 2,
+
+  /**
+   * @generated from enum value: ASSET_KIND_VIDEO = 3;
+   */
+  VIDEO = 3,
+}
+
+/**
+ * Describes the enum homecloud.agent.v1.AssetKind.
+ */
+export const AssetKindSchema: GenEnum<AssetKind> = /*@__PURE__*/
+  enumDesc(file_homecloud_agent_v1_agent, 8);
+
+/**
  * @generated from enum homecloud.agent.v1.MediaType
  */
 export enum MediaType {
@@ -1802,7 +1964,7 @@ export enum MediaType {
  * Describes the enum homecloud.agent.v1.MediaType.
  */
 export const MediaTypeSchema: GenEnum<MediaType> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 8);
+  enumDesc(file_homecloud_agent_v1_agent, 9);
 
 /**
  * AgentService exposes the agent's state and the operator actions it accepts.
@@ -1860,6 +2022,16 @@ export const AgentService: GenService<{
     methodKind: "unary";
     input: typeof ListEventsRequestSchema;
     output: typeof ListEventsResponseSchema;
+  },
+  /**
+   * ListAssets pages through the archive, newest first, for the library browser.
+   *
+   * @generated from rpc homecloud.agent.v1.AgentService.ListAssets
+   */
+  listAssets: {
+    methodKind: "unary";
+    input: typeof ListAssetsRequestSchema;
+    output: typeof ListAssetsResponseSchema;
   },
   /**
    * ListQuarantine lists quarantined assets with their failing renditions.

@@ -246,6 +246,7 @@ const phaseText: Record<Phase, string> = {
   [Phase.DOWNLOADING]: "Downloading new items from iCloud…",
   [Phase.INGESTING]: "Recording what was downloaded…",
   [Phase.VERIFYING]: "Checking files…",
+  [Phase.PREPARING_PREVIEWS]: "Preparing previews for the library…",
 };
 
 function PhaseBanner({ overview }: { overview: Overview }) {

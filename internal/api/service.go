@@ -5,8 +5,10 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -19,9 +21,12 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/media"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/thumbs"
 )
 
 // Version is this API's "MAJOR.MINOR" version, reported by GetInfo.
@@ -30,6 +35,8 @@ const Version = "1.0"
 const (
 	defaultPageSize = 50
 	maxPageSize     = 200
+	// defaultLibraryPage fills a screen of thumbnails.
+	defaultLibraryPage = 60
 )
 
 // Ledger is the part of the ledger the API reads and writes.
@@ -42,6 +49,7 @@ type Ledger interface {
 	Quarantined(ctx context.Context) ([]ledger.QuarantinedRendition, error)
 	Asset(ctx context.Context, library, assetID string) (ledger.AssetDetail, error)
 	ReleaseQuarantine(ctx context.Context, library, assetID, reason string, now time.Time) error
+	LibraryPage(ctx context.Context, q ledger.LibraryQuery) ([]ledger.LibraryAsset, error)
 }
 
 // Agent is the running agent's control surface.
@@ -59,6 +67,8 @@ type Service struct {
 	agent        Agent
 	notify       app.Notifier
 	auth         *auth.Authenticator
+	media        *media.Signer
+	hiddenDir    string
 	now          func() time.Time
 }
 
@@ -73,6 +83,7 @@ type Deps struct {
 	Agent        Agent
 	Notifier     app.Notifier
 	Auth         *auth.Authenticator
+	Media        *media.Signer
 	Now          func() time.Time
 }
 
@@ -80,7 +91,8 @@ type Deps struct {
 func New(d Deps) *Service {
 	return &Service{
 		cfg: d.Config, configPath: d.ConfigPath, agentVersion: d.AgentVersion,
-		db: d.Ledger, agent: d.Agent, notify: d.Notifier, auth: d.Auth, now: d.Now,
+		db: d.Ledger, agent: d.Agent, notify: d.Notifier, auth: d.Auth, media: d.Media, now: d.Now,
+		hiddenDir: kei.HiddenPath(d.Config.Storage.Root) + string(filepath.Separator),
 	}
 }
 
@@ -314,7 +326,8 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv1.GetSetti
 		MinFreePercent:       c.Storage.MinFreePercent,
 		Downloader:           &agentv1.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
 		DownloaderConfig:     c.Kei.Config,
-		VideoProbe:           &agentv1.ToolPin{Binary: c.FFprobe.Binary, Version: c.FFprobe.Version},
+		VideoProbe:           &agentv1.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
+		Thumbnailer:          &agentv1.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
 		Listen:               c.Web.Listen,
 		NotifyServer:         c.Notify.Server,
 		NotifyTopic:          c.Notify.Topic,
@@ -352,4 +365,73 @@ func (s *Service) ExchangeLoginCode(_ context.Context, req *connect.Request[agen
 
 func internal(err error) error {
 	return connect.NewError(connect.CodeInternal, err)
+}
+
+// ListAssets implements AgentService.
+func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv1.ListAssetsRequest]) (*connect.Response[agentv1.ListAssetsResponse], error) {
+	m := req.Msg
+	size := int(m.GetPageSize())
+	switch {
+	case size < 0 || size > maxPageSize:
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("page_size must be 0..%d", maxPageSize))
+	case size == 0:
+		size = defaultLibraryPage
+	}
+	q := ledger.LibraryQuery{HiddenDir: s.hiddenDir, Hidden: m.GetHidden(), Limit: size}
+	var err error
+	if q.Kind, err = assetKindFilter(m.GetKind()); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if m.GetPageToken() != "" {
+		raw, decodeErr := base64.RawURLEncoding.DecodeString(m.GetPageToken())
+		if decodeErr != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
+		}
+		c, decodeErr := ledger.DecodeCursor(raw)
+		if decodeErr != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
+		}
+		q.After = &c
+	}
+	assets, err := s.db.LibraryPage(ctx, q)
+	if err != nil {
+		return nil, internal(err)
+	}
+	res := &agentv1.ListAssetsResponse{}
+	for _, a := range assets {
+		item, convErr := s.libraryItem(a)
+		if convErr != nil {
+			return nil, internal(convErr)
+		}
+		res.Items = append(res.Items, item)
+	}
+	if len(assets) == size {
+		raw, encErr := ledger.EncodeCursor(assets[len(assets)-1].Cursor)
+		if encErr != nil {
+			return nil, internal(encErr)
+		}
+		res.NextPageToken = base64.RawURLEncoding.EncodeToString(raw)
+	}
+	return connect.NewResponse(res), nil
+}
+
+func (s *Service) libraryItem(a ledger.LibraryAsset) (*agentv1.LibraryItem, error) {
+	state, err := lookup(assetStates, a.State, "asset state")
+	if err != nil {
+		return nil, err
+	}
+	kind, err := lookup(assetKinds, a.Kind, "asset kind")
+	if err != nil {
+		return nil, err
+	}
+	v := a.Display.Version
+	return &agentv1.LibraryItem{
+		Asset:          &agentv1.AssetRef{Library: a.Library, AssetId: a.AssetID, Filename: a.Filename},
+		Kind:           kind,
+		CreatedAt:      optionalTimePtr(a.CreatedAt),
+		State:          state,
+		ThumbnailUrl:   s.media.URL(thumbs.Thumb, a.Library, a.AssetID, v),
+		PreviewUrl:     s.media.URL(thumbs.Preview, a.Library, a.AssetID, v),
+		DisplayVersion: v,
+	}, nil
 }

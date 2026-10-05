@@ -145,7 +145,7 @@ func TestProbeReal(t *testing.T) {
 	if bin == "" || sample == "" {
 		t.Skip("HOMECLOUD_FFPROBE / HOMECLOUD_SAMPLE_VIDEO not set")
 	}
-	cfg := config.FFprobe{Binary: bin}
+	cfg := config.FFmpeg{FFprobe: bin}
 	ctx := context.Background()
 	if err := Structure(sample); err != nil {
 		t.Fatalf("Structure(real): %v", err)

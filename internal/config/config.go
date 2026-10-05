@@ -27,7 +27,7 @@ type Config struct {
 	Storage  Storage  `toml:"storage"`
 	ICloud   ICloud   `toml:"icloud"`
 	Kei      Kei      `toml:"kei"`
-	FFprobe  FFprobe  `toml:"ffprobe"`
+	FFmpeg   FFmpeg   `toml:"ffmpeg"`
 	Web      Web      `toml:"web"`
 	Notify   Notify   `toml:"notify"`
 	Schedule Schedule `toml:"schedule"`
@@ -62,9 +62,11 @@ type Kei struct {
 	Config  string `toml:"config"`
 }
 
-// FFprobe pins the ffprobe binary used for video verification.
-type FFprobe struct {
-	Binary  string `toml:"binary"`
+// FFmpeg pins one FFmpeg build: ffprobe checks that videos play, ffmpeg
+// renders thumbnails and previews. Both must report Version.
+type FFmpeg struct {
+	FFprobe string `toml:"ffprobe"`
+	FFmpeg  string `toml:"ffmpeg"`
 	Version string `toml:"version"`
 }
 
@@ -153,13 +155,16 @@ func (c *Config) Validate() error {
 
 	type field struct{ key, value string }
 	for _, f := range []field{
-		{"kei.binary", c.Kei.Binary}, {"kei.config", c.Kei.Config}, {"ffprobe.binary", c.FFprobe.Binary},
+		{"kei.binary", c.Kei.Binary},
+		{"kei.config", c.Kei.Config},
+		{"ffmpeg.ffprobe", c.FFmpeg.FFprobe},
+		{"ffmpeg.ffmpeg", c.FFmpeg.FFmpeg},
 	} {
 		if !filepath.IsAbs(f.value) {
 			add("%s must be an absolute path, got %q", f.key, f.value)
 		}
 	}
-	for _, f := range []field{{"kei.version", c.Kei.Version}, {"ffprobe.version", c.FFprobe.Version}} {
+	for _, f := range []field{{"kei.version", c.Kei.Version}, {"ffmpeg.version", c.FFmpeg.Version}} {
 		if !versionPattern.MatchString(f.value) {
 			add("%s must be an exact MAJOR.MINOR.PATCH version, got %q", f.key, f.value)
 		}

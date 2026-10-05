@@ -25,8 +25,10 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/doctor"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/media"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/thumbs"
 	"github.com/vasilistotskas/homecloud/internal/web"
 	"github.com/vasilistotskas/homecloud/ui"
 )
@@ -87,13 +89,14 @@ func run() (err error) {
 	defer func() { err = errors.Join(err, db.Close()) }()
 
 	notifier := notify.New(cfg.Notify)
-	agent := app.NewAgent(cfg, db, log, notifier, logs.kei, time.Now)
+	renderer := thumbs.New(cfg.FFmpeg, app.ThumbnailDir(cfg))
+	agent := app.NewAgent(cfg, db, log, notifier, logs.kei, renderer, time.Now)
 
 	// The local API is non-critical: if it cannot serve, archiving continues.
 	webDone := make(chan struct{})
 	go func() {
 		defer close(webDone)
-		if serveErr := serveAPI(ctx, cfg, cfgPath, db, agent, notifier, log); serveErr != nil {
+		if serveErr := serveAPI(ctx, cfg, cfgPath, db, agent, notifier, renderer, log); serveErr != nil {
 			log.Error("local API stopped", "err", serveErr)
 		}
 	}()
@@ -127,12 +130,18 @@ func configPath() (string, error) {
 // serveAPI serves the local API until ctx ends. Clients find it through the
 // discovery file, which is published only once the listener is bound and
 // removed again on shutdown.
-func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledger.DB, agent *app.Agent, n app.Notifier, log *slog.Logger) (err error) {
+func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledger.DB, agent *app.Agent, n app.Notifier,
+	renderer *thumbs.Renderer, log *slog.Logger,
+) (err error) {
 	token, err := auth.NewToken()
 	if err != nil {
 		return err
 	}
 	authn := auth.New(token, time.Now)
+	signer, err := media.NewSigner(time.Now)
+	if err != nil {
+		return err
+	}
 	assets, err := ui.Assets()
 	if err != nil {
 		return err
@@ -142,10 +151,11 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 		App:    assets,
 		Service: api.New(api.Deps{
 			Config: cfg, ConfigPath: cfgPath, AgentVersion: version,
-			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Now: time.Now,
+			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Media: signer, Now: time.Now,
 		}),
-		Auth: authn,
-		Log:  log,
+		Media: media.Handler(signer, db, renderer, log),
+		Auth:  authn,
+		Log:   log,
 	})
 	if err != nil {
 		return err

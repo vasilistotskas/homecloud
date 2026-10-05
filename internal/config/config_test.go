@@ -15,12 +15,13 @@ var (
 	testKeiBinary  = filepath.Join(testTools, "kei", "kei")
 	testKeiConfig  = filepath.Join(testRoot, "kei", "config.toml")
 	testFFprobeBin = filepath.Join(testTools, "ffmpeg", "ffprobe")
+	testFFmpegBin  = filepath.Join(testTools, "ffmpeg", "ffmpeg")
 )
 
 // validTOML is a complete valid configuration.
 var validTOML = strings.NewReplacer(
 	"@ROOT@", testRoot, "@VOLUME_ID@", testVolumeID,
-	"@KEI_BINARY@", testKeiBinary, "@KEI_CONFIG@", testKeiConfig, "@FFPROBE@", testFFprobeBin,
+	"@KEI_BINARY@", testKeiBinary, "@KEI_CONFIG@", testKeiConfig, "@FFPROBE@", testFFprobeBin, "@FFMPEG@", testFFmpegBin,
 ).Replace(`
 [storage]
 root = '@ROOT@'
@@ -36,8 +37,9 @@ binary = '@KEI_BINARY@'
 version = "0.24.1"
 config = '@KEI_CONFIG@'
 
-[ffprobe]
-binary = '@FFPROBE@'
+[ffmpeg]
+ffprobe = '@FFPROBE@'
+ffmpeg = '@FFMPEG@'
 version = "9.0.2"
 
 [web]
@@ -75,7 +77,7 @@ func TestLoadValid(t *testing.T) {
 		},
 		ICloud:   ICloud{AppleID: "someone@example.com", IncludeHidden: ptr(true)},
 		Kei:      Kei{Binary: testKeiBinary, Version: "0.24.1", Config: testKeiConfig},
-		FFprobe:  FFprobe{Binary: testFFprobeBin, Version: "9.0.2"},
+		FFmpeg:   FFmpeg{FFprobe: testFFprobeBin, FFmpeg: testFFmpegBin, Version: "9.0.2"},
 		Web:      Web{Listen: "127.0.0.1:8790"},
 		Notify:   Notify{Server: "https://ntfy.sh", Topic: "hc_0123456789abcdefABCDEF"},
 		Schedule: Schedule{SyncInterval: Duration(time.Hour), ScrubInterval: Duration(168 * time.Hour), ScrubFraction: 0.05},
@@ -120,7 +122,8 @@ func TestValidate(t *testing.T) {
 		{"hidden unset", func(c *Config) { c.ICloud.IncludeHidden = nil }, "icloud.include_hidden"},
 		{"relative kei binary", func(c *Config) { c.Kei.Binary = `kei.exe` }, "kei.binary"},
 		{"loose kei version", func(c *Config) { c.Kei.Version = "0.24" }, "kei.version"},
-		{"loose ffprobe version", func(c *Config) { c.FFprobe.Version = "latest" }, "ffprobe.version"},
+		{"loose ffmpeg version", func(c *Config) { c.FFmpeg.Version = "latest" }, "ffmpeg.version"},
+		{"relative ffmpeg", func(c *Config) { c.FFmpeg.FFmpeg = "ffmpeg.exe" }, "ffmpeg.ffmpeg"},
 		{"non-loopback listen", func(c *Config) { c.Web.Listen = "0.0.0.0:8790" }, "loopback"},
 		{"listen without port", func(c *Config) { c.Web.Listen = "127.0.0.1" }, "web.listen"},
 		{"http ntfy", func(c *Config) { c.Notify.Server = "http://ntfy.sh" }, "notify.server"},

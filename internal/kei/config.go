@@ -149,3 +149,8 @@ func ConfigCurrent(cfg *config.Config) error {
 	}
 	return nil
 }
+
+// HiddenPath is the folder holding photos hidden in iCloud under root.
+func HiddenPath(root string) string {
+	return filepath.Join(root, PhotosDir, HiddenDir)
+}

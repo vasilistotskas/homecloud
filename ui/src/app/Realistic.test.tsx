@@ -17,6 +17,9 @@ import {
   SettingsSchema,
 } from "../gen/homecloud/agent/v1/agent_pb";
 import { App } from "./App";
+import type { Platform } from "./platformContext";
+
+const browser: Platform = { kind: "browser", mediaUrl: (path) => path };
 
 const run = create(RunSchema, {
   id: 4n,
@@ -54,7 +57,7 @@ it("renders a realistic overview in StrictMode without looping", async () => {
   });
   render(
     <StrictMode>
-      <App transport={transport} platform={{ kind: "browser" }} />
+      <App transport={transport} platform={browser} />
     </StrictMode>,
   );
   expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();

@@ -17,7 +17,7 @@ function environment() {
     const transport = new DesktopTransport();
     return { transport, platform: desktopPlatform(transport) };
   }
-  const platform: Platform = { kind: "browser" };
+  const platform: Platform = { kind: "browser", mediaUrl: (path) => path };
   return { transport: browserTransport(), platform };
 }
 

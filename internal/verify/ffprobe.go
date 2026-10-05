@@ -19,10 +19,10 @@ import (
 var ffprobeVersionPattern = regexp.MustCompile(`^ffprobe version (\d+\.\d+\.\d+)\b`)
 
 // FFprobePin returns the version pin for the configured ffprobe binary.
-func FFprobePin(cfg config.FFprobe) tool.Pin {
+func FFprobePin(cfg config.FFmpeg) tool.Pin {
 	return tool.Pin{
 		Name:    "ffprobe",
-		Binary:  cfg.Binary,
+		Binary:  cfg.FFprobe,
 		Args:    []string{"-version"},
 		Pattern: ffprobeVersionPattern,
 		Want:    cfg.Version,
@@ -44,9 +44,9 @@ type probeReport struct {
 // Probe runs ffprobe on a video (tier 3). It requires a clean exit with no
 // diagnostics, a positive container duration, and at least one video stream
 // with a positive duration.
-func Probe(ctx context.Context, cfg config.FFprobe, path string) error {
+func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, cfg.Binary, //nolint:gosec // binary from validated config, path from ledger
+	cmd := exec.CommandContext(ctx, cfg.FFprobe, //nolint:gosec // binary from validated config, path from ledger
 		"-v", "error",
 		"-show_entries", "format=duration:stream=codec_type,duration",
 		"-of", "json",

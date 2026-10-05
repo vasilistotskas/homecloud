@@ -34,10 +34,15 @@ function bearer(token: string): Interceptor {
  */
 export class DesktopTransport implements Transport {
   private inner: Promise<Transport> | undefined;
+  /** The agent's address, known once its endpoint has been read. */
+  baseUrl = "";
 
   private current(): Promise<Transport> {
     this.inner ??= invoke<Endpoint>("agent_endpoint").then(
-      (ep) => createConnectTransport({ baseUrl: ep.url, interceptors: [bearer(ep.token)] }),
+      (ep) => {
+        this.baseUrl = ep.url;
+        return createConnectTransport({ baseUrl: ep.url, interceptors: [bearer(ep.token)] });
+      },
       (err: unknown) => {
         this.inner = undefined;
         throw new ConnectError(String(err), Code.Unavailable);
@@ -87,6 +92,8 @@ export class DesktopTransport implements Transport {
 export function desktopPlatform(transport: DesktopTransport): Platform {
   return {
     kind: "desktop",
+    // Media URLs are paths on the agent, which is not the webview's origin.
+    mediaUrl: (path) => transport.baseUrl + path,
     startAgent: () => invoke("start_agent"),
     revealInFolder: (path) => invoke("reveal_in_folder", { path }),
     onUnauthenticated: () => {

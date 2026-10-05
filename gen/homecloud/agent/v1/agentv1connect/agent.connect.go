@@ -49,6 +49,8 @@ const (
 	AgentServiceListRunsProcedure = "/homecloud.agent.v1.AgentService/ListRuns"
 	// AgentServiceListEventsProcedure is the fully-qualified name of the AgentService's ListEvents RPC.
 	AgentServiceListEventsProcedure = "/homecloud.agent.v1.AgentService/ListEvents"
+	// AgentServiceListAssetsProcedure is the fully-qualified name of the AgentService's ListAssets RPC.
+	AgentServiceListAssetsProcedure = "/homecloud.agent.v1.AgentService/ListAssets"
 	// AgentServiceListQuarantineProcedure is the fully-qualified name of the AgentService's
 	// ListQuarantine RPC.
 	AgentServiceListQuarantineProcedure = "/homecloud.agent.v1.AgentService/ListQuarantine"
@@ -86,6 +88,8 @@ type AgentServiceClient interface {
 	ListRuns(context.Context, *connect.Request[v1.ListRunsRequest]) (*connect.Response[v1.ListRunsResponse], error)
 	// ListEvents pages through the append-only audit log, newest first.
 	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error)
+	// ListAssets pages through the archive, newest first, for the library browser.
+	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
 	// ListQuarantine lists quarantined assets with their failing renditions.
 	ListQuarantine(context.Context, *connect.Request[v1.ListQuarantineRequest]) (*connect.Response[v1.ListQuarantineResponse], error)
 	// GetAsset returns one asset with every rendition and its verification evidence.
@@ -152,6 +156,13 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
+		listAssets: connect.NewClient[v1.ListAssetsRequest, v1.ListAssetsResponse](
+			httpClient,
+			baseURL+AgentServiceListAssetsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ListAssets")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
 		listQuarantine: connect.NewClient[v1.ListQuarantineRequest, v1.ListQuarantineResponse](
 			httpClient,
 			baseURL+AgentServiceListQuarantineProcedure,
@@ -213,6 +224,7 @@ type agentServiceClient struct {
 	watchOverview        *connect.Client[v1.WatchOverviewRequest, v1.WatchOverviewResponse]
 	listRuns             *connect.Client[v1.ListRunsRequest, v1.ListRunsResponse]
 	listEvents           *connect.Client[v1.ListEventsRequest, v1.ListEventsResponse]
+	listAssets           *connect.Client[v1.ListAssetsRequest, v1.ListAssetsResponse]
 	listQuarantine       *connect.Client[v1.ListQuarantineRequest, v1.ListQuarantineResponse]
 	getAsset             *connect.Client[v1.GetAssetRequest, v1.GetAssetResponse]
 	releaseQuarantine    *connect.Client[v1.ReleaseQuarantineRequest, v1.ReleaseQuarantineResponse]
@@ -246,6 +258,11 @@ func (c *agentServiceClient) ListRuns(ctx context.Context, req *connect.Request[
 // ListEvents calls homecloud.agent.v1.AgentService.ListEvents.
 func (c *agentServiceClient) ListEvents(ctx context.Context, req *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error) {
 	return c.listEvents.CallUnary(ctx, req)
+}
+
+// ListAssets calls homecloud.agent.v1.AgentService.ListAssets.
+func (c *agentServiceClient) ListAssets(ctx context.Context, req *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error) {
+	return c.listAssets.CallUnary(ctx, req)
 }
 
 // ListQuarantine calls homecloud.agent.v1.AgentService.ListQuarantine.
@@ -301,6 +318,8 @@ type AgentServiceHandler interface {
 	ListRuns(context.Context, *connect.Request[v1.ListRunsRequest]) (*connect.Response[v1.ListRunsResponse], error)
 	// ListEvents pages through the append-only audit log, newest first.
 	ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error)
+	// ListAssets pages through the archive, newest first, for the library browser.
+	ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error)
 	// ListQuarantine lists quarantined assets with their failing renditions.
 	ListQuarantine(context.Context, *connect.Request[v1.ListQuarantineRequest]) (*connect.Response[v1.ListQuarantineResponse], error)
 	// GetAsset returns one asset with every rendition and its verification evidence.
@@ -360,6 +379,13 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		AgentServiceListEventsProcedure,
 		svc.ListEvents,
 		connect.WithSchema(agentServiceMethods.ByName("ListEvents")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceListAssetsHandler := connect.NewUnaryHandler(
+		AgentServiceListAssetsProcedure,
+		svc.ListAssets,
+		connect.WithSchema(agentServiceMethods.ByName("ListAssets")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
@@ -426,6 +452,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceListRunsHandler.ServeHTTP(w, r)
 		case AgentServiceListEventsProcedure:
 			agentServiceListEventsHandler.ServeHTTP(w, r)
+		case AgentServiceListAssetsProcedure:
+			agentServiceListAssetsHandler.ServeHTTP(w, r)
 		case AgentServiceListQuarantineProcedure:
 			agentServiceListQuarantineHandler.ServeHTTP(w, r)
 		case AgentServiceGetAssetProcedure:
@@ -469,6 +497,10 @@ func (UnimplementedAgentServiceHandler) ListRuns(context.Context, *connect.Reque
 
 func (UnimplementedAgentServiceHandler) ListEvents(context.Context, *connect.Request[v1.ListEventsRequest]) (*connect.Response[v1.ListEventsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v1.AgentService.ListEvents is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ListAssets(context.Context, *connect.Request[v1.ListAssetsRequest]) (*connect.Response[v1.ListAssetsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v1.AgentService.ListAssets is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) ListQuarantine(context.Context, *connect.Request[v1.ListQuarantineRequest]) (*connect.Response[v1.ListQuarantineResponse], error) {

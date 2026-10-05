@@ -135,7 +135,7 @@ func verifyOne(ctx context.Context, cfg *config.Config, db *ledger.DB, p ledger.
 	steps := []step{
 		{p.NeedsContent, ledger.TierContent, func() error { return verify.Content(p.LocalPath, p.SizeBytes, p.SHA256) }},
 		{p.NeedsStructure, ledger.TierStructure, func() error { return verify.Structure(p.LocalPath) }},
-		{p.NeedsProbe, ledger.TierProbe, func() error { return verify.Probe(ctx, cfg.FFprobe, p.LocalPath) }},
+		{p.NeedsProbe, ledger.TierProbe, func() error { return verify.Probe(ctx, cfg.FFmpeg, p.LocalPath) }},
 	}
 	for _, s := range steps {
 		if !s.need {

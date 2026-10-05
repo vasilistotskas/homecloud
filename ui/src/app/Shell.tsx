@@ -10,7 +10,14 @@ import {
   Toaster,
   tokens,
 } from "@fluentui/react-components";
-import { CloudRegular, HistoryRegular, HomeRegular, SettingsRegular, ShieldErrorRegular } from "@fluentui/react-icons";
+import {
+  CloudRegular,
+  HistoryRegular,
+  HomeRegular,
+  ImageMultipleRegular,
+  SettingsRegular,
+  ShieldErrorRegular,
+} from "@fluentui/react-icons";
 import { Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
@@ -41,6 +48,7 @@ const useStyles = makeStyles({
 
 const pages = [
   { path: "/", label: "Overview", icon: <HomeRegular /> },
+  { path: "/library", label: "Library", icon: <ImageMultipleRegular /> },
   { path: "/activity", label: "Activity", icon: <HistoryRegular /> },
   { path: "/quarantine", label: "Quarantine", icon: <ShieldErrorRegular /> },
   { path: "/settings", label: "Settings", icon: <SettingsRegular /> },

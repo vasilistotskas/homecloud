@@ -5,10 +5,14 @@ export type Platform =
   | {
       /** Served by the agent to a browser; authenticated with a session cookie. */
       kind: "browser";
+      /** Resolves a media path from the API; the agent serves this app, so it is same-origin. */
+      mediaUrl: (path: string) => string;
     }
   | {
       /** Inside the desktop shell; authenticated with the agent's token. */
       kind: "desktop";
+      /** Resolves a media path from the API against the agent's address. */
+      mediaUrl: (path: string) => string;
       startAgent: () => Promise<void>;
       revealInFolder: (path: string) => Promise<void>;
       /** The agent rejected the token (it restarted); credentials are re-read. */

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,7 +24,9 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/media"
 	"github.com/vasilistotskas/homecloud/internal/notify"
+	"github.com/vasilistotskas/homecloud/internal/thumbs"
 	"github.com/vasilistotskas/homecloud/internal/web"
 )
 
@@ -42,12 +45,13 @@ type nopNotifier struct{}
 func (nopNotifier) Send(context.Context, notify.Msg) error { return nil }
 
 type env struct {
-	url    string
-	host   string
-	token  string
-	db     *ledger.DB
-	agent  *fakeAgent
-	client agentv1connect.AgentServiceClient
+	renderer *thumbs.Renderer
+	url      string
+	host     string
+	token    string
+	db       *ledger.DB
+	agent    *fakeAgent
+	client   agentv1connect.AgentServiceClient
 }
 
 func setup(t *testing.T) *env {
@@ -74,7 +78,12 @@ func setup(t *testing.T) *env {
 	}
 	authn := auth.New(token, func() time.Time { return t0 })
 	agent := &fakeAgent{hub: app.NewHub(), started: true}
+	signer, err := media.NewSigner(func() time.Time { return t0 })
+	if err != nil {
+		t.Fatal(err)
+	}
 	includeHidden := true
+	renderer := thumbs.New(config.FFmpeg{}, filepath.Join(t.TempDir(), "thumbs"))
 	cfg := &config.Config{
 		Storage:  config.Storage{Root: t.TempDir(), MinFreePercent: 15},
 		ICloud:   config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
@@ -85,15 +94,16 @@ func setup(t *testing.T) *env {
 		Listen: listen,
 		Service: api.New(api.Deps{
 			Config: cfg, ConfigPath: "config.toml", AgentVersion: "test",
-			Ledger: db, Agent: agent, Notifier: nopNotifier{}, Auth: authn,
+			Ledger: db, Agent: agent, Notifier: nopNotifier{}, Auth: authn, Media: signer,
 			Now: func() time.Time { return t0 },
 		}),
 		App: fstest.MapFS{
 			"index.html":        {Data: []byte(`<div id="root"></div>`)},
 			"assets/index-1.js": {Data: []byte("console.log(1)")},
 		},
-		Auth: authn,
-		Log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Media: media.Handler(signer, db, renderer, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		Auth:  authn,
+		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +113,7 @@ func setup(t *testing.T) *env {
 	srv.Start()
 	t.Cleanup(srv.Close)
 	return &env{
-		url: srv.URL, host: listen, token: token, db: db, agent: agent,
+		url: srv.URL, host: listen, token: token, db: db, agent: agent, renderer: renderer,
 		client: agentv1connect.NewAgentServiceClient(srv.Client(), srv.URL, connect.WithInterceptors(auth.Bearer(token))),
 	}
 }
@@ -435,5 +445,40 @@ func TestServesApp(t *testing.T) {
 	}
 	if status, _, _ := get(t, e, "/", "evil.example"); status != http.StatusForbidden {
 		t.Fatalf("GET / with foreign Host = %d", status)
+	}
+}
+
+func TestLibraryAndSignedThumbnails(t *testing.T) {
+	e := setup(t)
+	seed(t, e.db, "A", false)
+	ctx := context.Background()
+	res, err := e.client.ListAssets(ctx, connect.NewRequest(&agentv1.ListAssetsRequest{}))
+	if err != nil || len(res.Msg.GetItems()) != 1 {
+		t.Fatalf("ListAssets = %v, %v", res, err)
+	}
+	item := res.Msg.GetItems()[0]
+	if item.GetKind() != agentv1.AssetKind_ASSET_KIND_VIDEO || item.GetAsset().GetFilename() != "A.MOV" ||
+		!strings.HasPrefix(item.GetThumbnailUrl(), "/media/thumb/PrimarySync/A/original?") {
+		t.Fatalf("item = %v", item)
+	}
+	hidden, err := e.client.ListAssets(ctx, connect.NewRequest(&agentv1.ListAssetsRequest{Hidden: true}))
+	if err != nil || len(hidden.Msg.GetItems()) != 0 {
+		t.Fatalf("hidden page = %v, %v", hidden, err)
+	}
+
+	// A cached rendering stands in for ffmpeg.
+	cached := e.renderer.CachePath(strings.Repeat("a", 64), thumbs.Thumb)
+	if err := os.MkdirAll(filepath.Dir(cached), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cached, []byte("RIFF....WEBP"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	status, header, _ := get(t, e, item.GetThumbnailUrl(), "")
+	if status != http.StatusOK || header.Get("Content-Type") != "image/webp" {
+		t.Fatalf("signed thumbnail = %d %v", status, header)
+	}
+	if status, _, _ := get(t, e, strings.Split(item.GetThumbnailUrl(), "?")[0], ""); status != http.StatusForbidden {
+		t.Fatalf("unsigned thumbnail = %d", status)
 	}
 }

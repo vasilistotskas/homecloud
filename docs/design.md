@@ -146,6 +146,12 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 - **Linux:** udisks2 over D-Bus (`godbus/dbus/v5`): `Manager.ResolveDevice` maps the mounted block device to its `Drive`; NVMe drives use `NVMe.Controller` (udisks ≥ 2.10) properties plus `SmartGetAttributes`, ATA drives `Drive.Ata`. Reading needs no polkit authorization; udisks refreshes SMART every 10 minutes. Interfaces are detected by introspection.
 - **Verdict** (only thresholds the standards define): any critical warning (NVMe critical-warning bits, ATA failure prediction) = failing; media/data-integrity errors or NVMe "percentage used" ≥ 100 = warning; unreadable = unavailable, never treated as healthy. A state change is appended once to the event log (`drive_health_changed`) and warning/failing sends an urgent ntfy alert. P3's deletion gates will require state OK.
 
+## 8c. Library browser (implemented, M4)
+
+- **Thumbnails** (`internal/thumbs`): the pinned FFmpeg build (`[ffmpeg]` in the config pins `ffprobe` and `ffmpeg` together) renders WebP: a 320 px square for the grid, a 1600 px fit for the detail view. Verified on the archive (ffmpeg 9.0.2): tiled iPhone HEIC must be stitched from stream group 0 (`-filter_complex [0:g:0]…`, detected with `ffprobe -show_entries stream_group=index`), everything else uses the first frame; ffmpeg applies HEIF/container rotation and JPEG EXIF orientation itself (a −90° JPEG rendered portrait). 50–160 ms per image. Files are named by the source's SHA-256, so kei moving a file keeps its thumbnail. The cache lives in `<root>/.cache/thumbnails` (hidden), is derived data, and is never consulted for verification. Each cycle ends with a "preparing previews" phase rendering missing grid thumbnails (4 ffmpeg processes at most); failures are logged, never fatal.
+- **Media URLs** (`internal/media`): `GET /media/{size}/{library}/{asset}/{version}?exp=…&sig=…` with an HMAC-SHA256 over path and expiry, keyed per agent start. Image elements cannot send the bearer token, and cookie-free desktop requests need no session; only ledger entries can be addressed, never arbitrary paths. Expiry is rounded to 6-hour windows (valid ≥ 12 h) so repeated listings return identical URLs and browsers cache the images.
+- **API/UI**: `ListAssets` pages assets newest first (keyset on capture time and asset id), filtered by kind and by Hidden (assets under `Photos/.Hidden`), showing the edited version when there is one and the picture of a Live Photo. The web app groups by month, loads more on scroll, and shows the preview, renditions and path; the desktop app adds "Show in folder" and allows `http://127.0.0.1:*` images in its CSP.
+
 ## 9. Dependencies (verified 2026-10-05)
 
 | Dependency | Version | Source |
@@ -177,8 +183,8 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 | Tauri plugins: single-instance / window-state / opener / log | 2.5.2 / 2.5.0 / 2.7.0 / 2.10.0 | https://crates.io/crates/tauri-plugin-opener |
 | Rust | 1.98.1 | https://blog.rust-lang.org/releases/ |
 | github.com/godbus/dbus/v5 | v5.2.2 | https://github.com/godbus/dbus/releases |
+| FFmpeg (ffprobe + ffmpeg, one pin) | 9.0.2 (Gyan build) | https://www.gyan.dev/ffmpeg/builds/ |
 | golangci-lint | v2.14.0 | https://github.com/golangci/golangci-lint/releases |
-| FFmpeg (ffprobe) | 9.0.2 (Gyan build) | https://www.gyan.dev/ffmpeg/builds/ |
 | kei | 0.24.1 | https://github.com/rhoopr/kei/releases/tag/v0.24.1 |
 | pyicloud | 2.7.0 | https://pypi.org/project/pyicloud/ |
 | uv | 0.12.9 | https://github.com/astral-sh/uv |

@@ -13,6 +13,9 @@ import {
   SettingsSchema,
 } from "../gen/homecloud/agent/v1/agent_pb";
 import { App } from "./App";
+import type { Platform } from "./platformContext";
+
+const browser: Platform = { kind: "browser", mediaUrl: (path) => path };
 
 function never(): Promise<never> {
   return new Promise<never>(() => undefined);
@@ -52,7 +55,7 @@ describe("App", () => {
         listRuns: () => create(ListRunsResponseSchema),
       });
     });
-    render(<App transport={transport} platform={{ kind: "browser" }} />);
+    render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();
     expect(screen.getByText("3,661")).toBeInTheDocument();
     expect(screen.getByText("266 GiB")).toBeInTheDocument();
@@ -76,7 +79,7 @@ describe("App", () => {
         listRuns: () => create(ListRunsResponseSchema),
       });
     });
-    render(<App transport={transport} platform={{ kind: "browser" }} />);
+    render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("Your archive drive expects to fail")).toBeInTheDocument();
     expect(screen.getByText("Failing")).toBeInTheDocument();
   });
@@ -88,7 +91,7 @@ describe("App", () => {
         getSettings: () => ({ settings }),
       });
     });
-    render(<App transport={transport} platform={{ kind: "browser" }} />);
+    render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("Can't reach the homecloud agent")).toBeInTheDocument();
     expect(screen.getByText("Agent not reachable")).toBeInTheDocument();
   });
@@ -99,7 +102,7 @@ describe("App", () => {
         watchOverview: () => failingStream(new ConnectError("missing or invalid credentials", Code.Unauthenticated)),
       });
     });
-    render(<App transport={transport} platform={{ kind: "browser" }} />);
+    render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("Connect this browser")).toBeInTheDocument();
   });
 
@@ -125,7 +128,7 @@ describe("App", () => {
       });
     });
     window.location.hash = "#/connect?code=ABCD-EFGH";
-    render(<App transport={transport} platform={{ kind: "browser" }} />);
+    render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();
     expect(exchanged).toEqual(["ABCD-EFGH"]);
   });

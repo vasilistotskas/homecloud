@@ -10,6 +10,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/thumbs"
 	"github.com/vasilistotskas/homecloud/internal/verify"
 )
 
@@ -31,7 +32,8 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		checkSpace(cfg.Storage),
 		checkKeiConfig(cfg),
 		checkPin(ctx, "kei version", kei.Pin(cfg.Kei).Check),
-		checkPin(ctx, "ffprobe version", verify.FFprobePin(cfg.FFprobe).Check),
+		checkPin(ctx, "ffprobe version", verify.FFprobePin(cfg.FFmpeg).Check),
+		checkPin(ctx, "ffmpeg version", thumbs.FFmpegPin(cfg.FFmpeg).Check),
 	}
 }
 

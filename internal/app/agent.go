@@ -21,6 +21,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/thumbs"
 )
 
 // Notifier delivers operator alerts.
@@ -44,6 +45,8 @@ type Agent struct {
 	now    func() time.Time
 	// readDrive reads the archive drive's SMART data.
 	readDrive func(context.Context) (platform.DriveHealth, error)
+	// renderer makes the library browser's thumbnails.
+	renderer *thumbs.Renderer
 
 	hub     *Hub
 	trigger chan struct{}
@@ -53,9 +56,11 @@ type Agent struct {
 }
 
 // NewAgent returns an idle agent. keiLog receives kei's own output.
-func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, keiLog io.Writer, now func() time.Time) *Agent {
+func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, keiLog io.Writer,
+	renderer *thumbs.Renderer, now func() time.Time,
+) *Agent {
 	return &Agent{
-		cfg: cfg, db: db, log: log, notify: n, keiLog: keiLog, now: now,
+		cfg: cfg, db: db, log: log, notify: n, keiLog: keiLog, renderer: renderer, now: now,
 		readDrive: func(ctx context.Context) (platform.DriveHealth, error) {
 			return platform.DriveHealthOf(ctx, cfg.Storage.Root)
 		},
@@ -207,6 +212,7 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	} else {
 		a.log.Info("manifest exported", "files", files)
 	}
+	a.preparePreviews(ctx)
 	return rep, errors.Join(errs...)
 }
 
@@ -276,7 +282,7 @@ func (a *Agent) hideHiddenFolder() error {
 	if !*a.cfg.ICloud.IncludeHidden {
 		return nil
 	}
-	dir := filepath.Join(a.cfg.Storage.Root, kei.PhotosDir, kei.HiddenDir)
+	dir := kei.HiddenPath(a.cfg.Storage.Root)
 	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	} else if err != nil {
@@ -286,4 +292,57 @@ func (a *Agent) hideHiddenFolder() error {
 		return fmt.Errorf("hidden photos folder: %w", err)
 	}
 	return nil
+}
+
+// previewPage is how many assets preparePreviews reads from the ledger at once.
+const previewPage = 200
+
+// ThumbnailDir is where rendered thumbnails and previews are cached: derived
+// data inside the archive root, hidden like the other dot-folders.
+func ThumbnailDir(cfg *config.Config) string {
+	return filepath.Join(cfg.Storage.Root, ".cache", "thumbnails")
+}
+
+// preparePreviews renders the grid thumbnail of every asset that lacks one,
+// so the library browser opens fast. Thumbnails are derived data: failures are
+// logged and retried next cycle, never failing the cycle.
+func (a *Agent) preparePreviews(ctx context.Context) {
+	a.setPhase(PhasePreparingPreviews)
+	hiddenDir := kei.HiddenPath(a.cfg.Storage.Root) + string(filepath.Separator)
+	rendered, failed := 0, 0
+	for _, hidden := range []bool{false, true} {
+		var after *ledger.LibraryCursor
+		for {
+			page, err := a.db.LibraryPage(ctx, ledger.LibraryQuery{HiddenDir: hiddenDir, Hidden: hidden, After: after, Limit: previewPage})
+			if err != nil {
+				a.log.Error("prepare previews: read library", "err", err)
+				return
+			}
+			for _, asset := range page {
+				cached := a.renderer.CachePath(asset.Display.SHA256, thumbs.Thumb)
+				if _, statErr := os.Stat(cached); statErr == nil {
+					continue
+				}
+				if _, err := a.renderer.Ensure(ctx, thumbs.Source{Path: asset.Display.LocalPath, SHA256: asset.Display.SHA256}, thumbs.Thumb); err != nil {
+					if ctx.Err() != nil {
+						return
+					}
+					failed++
+					a.log.Warn("prepare previews: render", "asset", asset.AssetID, "err", err)
+					continue
+				}
+				rendered++
+			}
+			if len(page) < previewPage {
+				break
+			}
+			after = &page[len(page)-1].Cursor
+		}
+	}
+	if err := platform.MarkHidden(filepath.Dir(ThumbnailDir(a.cfg))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		a.log.Warn("prepare previews: hide cache folder", "err", err)
+	}
+	if rendered > 0 || failed > 0 {
+		a.log.Info("previews prepared", "rendered", rendered, "failed", failed)
+	}
 }

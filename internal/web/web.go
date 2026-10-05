@@ -29,6 +29,7 @@ import (
 
 	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1/agentv1connect"
 	"github.com/vasilistotskas/homecloud/internal/auth"
+	"github.com/vasilistotskas/homecloud/internal/media"
 )
 
 // DesktopOrigins are the origins of the Tauri desktop app's webview:
@@ -52,9 +53,11 @@ type Options struct {
 	// Service implements the API.
 	Service agentv1connect.AgentServiceHandler
 	// App is the built web app (index.html plus hashed assets/).
-	App  fs.FS
-	Auth *auth.Authenticator
-	Log  *slog.Logger
+	App fs.FS
+	// Media serves signed thumbnail and preview URLs (package media).
+	Media http.Handler
+	Auth  *auth.Authenticator
+	Log   *slog.Logger
 }
 
 // Handler returns the agent's root HTTP handler.
@@ -83,6 +86,7 @@ func Handler(o Options) (http.Handler, error) {
 	app := serveApp(o.App)
 	mux.Handle("GET /{$}", app)
 	mux.Handle("GET /assets/", app)
+	mux.Handle("GET "+media.Prefix, o.Media)
 
 	c := cors.New(cors.Options{
 		AllowedOrigins:      DesktopOrigins,

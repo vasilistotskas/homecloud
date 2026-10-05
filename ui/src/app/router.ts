@@ -2,6 +2,7 @@ import { createHashHistory, createRootRoute, createRoute, createRouter, Outlet }
 
 import { ActivityPage } from "../pages/Activity";
 import { ConnectPage } from "../pages/Connect";
+import { LibraryPage } from "../pages/Library";
 import { OverviewPage } from "../pages/Overview";
 import { QuarantinePage } from "../pages/Quarantine";
 import { SettingsPage } from "../pages/Settings";
@@ -12,6 +13,7 @@ const rootRoute = createRootRoute({ component: Outlet });
 const shellRoute = createRoute({ getParentRoute: () => rootRoute, id: "shell", component: Shell });
 
 const overviewRoute = createRoute({ getParentRoute: () => shellRoute, path: "/", component: OverviewPage });
+const libraryRoute = createRoute({ getParentRoute: () => shellRoute, path: "library", component: LibraryPage });
 const activityRoute = createRoute({ getParentRoute: () => shellRoute, path: "activity", component: ActivityPage });
 const quarantineRoute = createRoute({
   getParentRoute: () => shellRoute,
@@ -29,7 +31,7 @@ export const connectRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  shellRoute.addChildren([overviewRoute, activityRoute, quarantineRoute, settingsRoute]),
+  shellRoute.addChildren([overviewRoute, libraryRoute, activityRoute, quarantineRoute, settingsRoute]),
   connectRoute,
 ]);
 

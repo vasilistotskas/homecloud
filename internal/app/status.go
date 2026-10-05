@@ -16,6 +16,7 @@ const (
 	PhaseDownloading
 	PhaseIngesting
 	PhaseVerifying
+	PhasePreparingPreviews
 )
 
 // Status is the agent's live, in-memory state. Everything durable lives in
