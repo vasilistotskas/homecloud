@@ -130,6 +130,15 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 - **Download integrity (kei-side):** bytes received must equal both `Content-Length` and the API `size`, otherwise retry (wiki *Download Pipeline*); SHA-256 recorded at download time (`verify --checksums`). Apple's `fileChecksum` is an MMCS signature, not a content hash.
 - **Auth:** SRP + trusted-device 2FA; credentials via Windows Credential Manager (`kei password set`); headless runs exit **3** when 2FA is needed; `kei login get-code` / `submit-code` for non-interactive completion.
 
+### Spike B results (2026-10-05, real account, 300 most recent assets)
+
+- `kei list libraries` → one library, `PrimarySync` (primary). No shared library.
+- **Manifest grain:** one row per `(asset_id, version)`. Observed versions: `original`, `adjusted` (edits, photo and video). Rows carry `download_checksum` = `local_checksum` (lowercase hex SHA-256), exact `size_bytes`, RFC 3339 UTC `created_at` / `added_at` / `downloaded_at` / `last_seen_at`, `media_type` (`photo`/`video`), `status`, `albums`.
+- **Independent verification:** 310/310 files re-hashed by homecloud tooling matched kei's SHA-256 and size.
+- **Throughput:** 27.3 GiB in 7 m 48 s (~60 MB/s) — vs ~1 MB/s through iCloud for Windows.
+- **Write-guard:** one download was rejected with "`.kei-tmp` changed identity" (kei refuses to publish a temp file whose identity changed mid-write; Defender real-time scanning is active on this host — cause unconfirmed) and succeeded on kei's per-asset retry. homecloud must therefore treat kei's per-run failure count as advisory and the manifest + its own hashing as the source of truth.
+- **Open:** Live Photo representation (no Live Photo among the 300 sampled) — answered from the full-library sync.
+
 ### Verification design corrections
 
 - QuickTime `.mov` files may legitimately begin with `wide`, `mdat`, `moov`, `free`, `skip` or `pnot` rather than `ftyp` (wiki *Content Validation*). Tier 2 therefore validates a **contiguous top-level box chain ending exactly at EOF that contains `moov` and `mdat`**, and requires `ftyp` only for ISO-BMFF extensions (`.mp4`, `.m4v`, `.heic`).
