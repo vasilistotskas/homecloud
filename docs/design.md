@@ -139,6 +139,12 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 - **Live Photos** (kei `src/state/types.rs` + 1,814 live manifest rows): one `asset_id` carries the still as `version=original, media_type=live_photo_image` and the motion clip as `version=live_original, media_type=live_photo_video`; edited Live Photos add `adjusted` + `live_adjusted`. Version keys: `original, medium, thumb, adjusted, alternative, live_original, live_medium, live_thumb, live_adjusted`. Statuses: `pending, policy_excluded, downloaded, failed`. Unknown values are rejected (fail closed).
 - **Ordering:** kei enumerates newest-first; pyicloud's `photos.all` yields oldest-first (first 400 = 2022-06..08). Identity comparison (Spike A) therefore runs after the full sync covers both ranges.
 
+### Spike C — background launch (decided 2026-10-05)
+
+- Two entrypoints over the same `internal/` packages: `cmd/homecloud` (console CLI) and `cmd/homecloud-agent` (built with `-ldflags=-H=windowsgui`, so Windows never allocates a console; logs go to file).
+- Started by a Task Scheduler **logon trigger** for the owner, interactive token: the agent runs in the user's session, where kei's credentials live (Windows Credential Manager). A named mutex enforces a single instance.
+- Rejected: `conhost.exe --headless` (undocumented; flagged by EDR rules as defense evasion — Elastic "Proxy Execution via Console Window Host"); a Windows service (Session 0, LocalSystem — no access to the user's credential vault); kei's own `kei install` service mode (same reason, and homecloud must own scheduling to sequence sync → ingest → verify).
+
 ### Verification design corrections
 
 - QuickTime `.mov` files may legitimately begin with `wide`, `mdat`, `moov`, `free`, `skip` or `pnot` rather than `ftyp` (wiki *Content Validation*). Tier 2 therefore validates a **contiguous top-level box chain ending exactly at EOF that contains `moov` and `mdat`**, and requires `ftyp` only for ISO-BMFF extensions (`.mp4`, `.m4v`, `.heic`).
