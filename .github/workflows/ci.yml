@@ -25,5 +25,8 @@ jobs:
           version: v2.14.0
       - uses: golang/govulncheck-action@v1.1.0
         with:
+          # The action defaults go-version-input to "stable", which overrides
+          # go-version-file; clear it so govulncheck uses the go.mod toolchain.
+          go-version-input: ""
           go-version-file: go.mod
           repo-checkout: false
