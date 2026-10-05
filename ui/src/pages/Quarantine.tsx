@@ -2,6 +2,7 @@ import { createConnectQueryKey, useMutation, useQuery } from "@connectrpc/connec
 import {
   Badge,
   Body1,
+  Button,
   Caption1,
   Card,
   makeStyles,
@@ -13,9 +14,11 @@ import {
   ToggleButton,
   tokens,
 } from "@fluentui/react-components";
+import { FolderOpenRegular } from "@fluentui/react-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { usePlatform } from "../app/platformContext";
 import { Page } from "../components/Page";
 import { ReleaseDialog } from "../components/ReleaseDialog";
 import { mediaLabel, tierLabel } from "../components/labels";
@@ -116,6 +119,7 @@ function checks(r: Rendition): string {
 function Detail({ item }: { item: QuarantinedAsset }) {
   const styles = useStyles();
   const notify = useNotify();
+  const platform = usePlatform();
   const queryClient = useQueryClient();
   const ref = item.asset;
   const asset = useQuery(AgentService.method.getAsset, { library: ref?.library ?? "", assetId: ref?.assetId ?? "" });
@@ -157,7 +161,23 @@ function Detail({ item }: { item: QuarantinedAsset }) {
           <dt className={styles.dt}>Size</dt>
           <dd className={styles.dd}>{formatBytes(r.sizeBytes)}</dd>
           <dt className={styles.dt}>On disk</dt>
-          <dd className={`${styles.dd} ${styles.mono}`}>{r.localPath}</dd>
+          <dd className={`${styles.dd} ${styles.mono}`}>
+            {r.localPath}
+            {platform.kind === "desktop" && (
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<FolderOpenRegular />}
+                onClick={() => {
+                  platform.revealInFolder(r.localPath).catch((err: unknown) => {
+                    notify("error", "Couldn't show the file", String(err));
+                  });
+                }}
+              >
+                Show in folder
+              </Button>
+            )}
+          </dd>
           <dt className={styles.dt}>Checks</dt>
           <dd className={styles.dd}>{checks(r)}</dd>
         </dl>

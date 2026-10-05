@@ -10,3 +10,6 @@ coverage.*
 # Web app
 /ui/node_modules/
 /ui/dist/
+
+# Desktop app
+/desktop/node_modules/

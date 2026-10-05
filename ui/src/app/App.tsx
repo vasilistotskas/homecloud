@@ -6,6 +6,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { OverviewProvider } from "../api/overview";
+import { PlatformContext, type Platform } from "./platformContext";
 import { createAppRouter } from "./router";
 import { ThemeStateProvider } from "./theme";
 
@@ -13,8 +14,8 @@ const useStyles = makeStyles({
   root: { minHeight: "100vh", backgroundColor: tokens.colorNeutralBackground3 },
 });
 
-/** The app, talking to the agent through transport. */
-export function App({ transport }: { transport: Transport }) {
+/** The app, talking to the agent through transport, in the given platform. */
+export function App({ transport, platform }: { transport: Transport; platform: Platform }) {
   const styles = useStyles();
   const [router] = useState(createAppRouter);
   const [queryClient] = useState(
@@ -24,13 +25,15 @@ export function App({ transport }: { transport: Transport }) {
     <ThemeStateProvider>
       {(theme) => (
         <FluentProvider theme={theme} className={styles.root}>
-          <TransportProvider transport={transport}>
-            <QueryClientProvider client={queryClient}>
-              <OverviewProvider>
-                <RouterProvider router={router} />
-              </OverviewProvider>
-            </QueryClientProvider>
-          </TransportProvider>
+          <PlatformContext value={platform}>
+            <TransportProvider transport={transport}>
+              <QueryClientProvider client={queryClient}>
+                <OverviewProvider>
+                  <RouterProvider router={router} />
+                </OverviewProvider>
+              </QueryClientProvider>
+            </TransportProvider>
+          </PlatformContext>
         </FluentProvider>
       )}
     </ThemeStateProvider>

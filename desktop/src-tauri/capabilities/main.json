@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "The main window: core window APIs and the app's three commands only.",
+  "windows": ["main"],
+  "permissions": ["core:default", "allow-agent-endpoint", "allow-start-agent", "allow-reveal-in-folder"]
+}

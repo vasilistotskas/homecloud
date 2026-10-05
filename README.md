@@ -4,7 +4,7 @@ Personal, private service that makes a local drive the verified home of my iClou
 (Photos, Drive, iPhone backups) and keeps iCloud itself down to the most recent 30 days.
 
 - Design, decisions, sources and spike findings: [`docs/design.md`](docs/design.md)
-- Status: **P1 done; local API and web app live; desktop app in progress**. No deletion capability exists yet.
+- Status: **P1 done; local API, web app and desktop app live**. No deletion capability exists yet.
 
 ## How it works
 
@@ -36,6 +36,20 @@ go build -trimpath -o "$dest\homecloud.exe" ./cmd/homecloud
 go build -trimpath -ldflags=-H=windowsgui -o "$dest\homecloud-agent.exe" ./cmd/homecloud-agent
 & "$dest\homecloud.exe" doctor
 & "$dest\homecloud.exe" install     # logon task + start now
+```
+
+### Desktop app
+
+The desktop app (Tauri 2, `desktop/`) shows the same web app in a native window and talks to
+the running agent with the token from its discovery file; the agent stays installed and running
+on its own. It needs Rust (pinned in `desktop/src-tauri/rust-toolchain.toml`) and, on Linux, the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+
+```powershell
+pnpm --dir desktop install --frozen-lockfile
+pnpm --dir desktop tauri build --bundles nsis   # per-user installer, no admin rights
+# Installs to %LOCALAPPDATA%\homecloud Desktop (apart from the agent's state in %LOCALAPPDATA%\homecloud).
+& "desktop\src-tauri\target\release\bundle\nsis\homecloud Desktop_0.1.0_x64-setup.exe"
 ```
 
 Configuration lives at `%APPDATA%\homecloud\config.toml` (override with `--config` or

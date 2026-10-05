@@ -54,7 +54,7 @@ it("renders a realistic overview in StrictMode without looping", async () => {
   });
   render(
     <StrictMode>
-      <App transport={transport} />
+      <App transport={transport} platform={{ kind: "browser" }} />
     </StrictMode>,
   );
   expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();

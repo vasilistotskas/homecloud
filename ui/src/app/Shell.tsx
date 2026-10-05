@@ -19,7 +19,13 @@ import { toasterId } from "../components/toast";
 
 const useStyles = makeStyles({
   root: { display: "flex", flexWrap: "wrap", minHeight: "100vh" },
-  nav: { flex: "1 1 232px", maxWidth: "100%", minHeight: "auto" },
+  // Narrow windows stack the navigation above the content; wide ones keep it as
+  // a full-height pane beside it.
+  nav: {
+    flex: "1 1 100%",
+    minHeight: "auto",
+    "@media (min-width: 840px)": { flex: "0 0 248px", position: "sticky", top: 0, height: "100vh" },
+  },
   brand: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS },
   brandIcon: { fontSize: "24px", color: tokens.colorBrandForeground1 },
   main: {

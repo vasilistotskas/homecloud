@@ -36,7 +36,8 @@ const routeTree = rootRoute.addChildren([
 // createAppRouter builds the app's router. Hash history works the same when the
 // agent serves the app and inside the desktop shell, without server-side rewrites.
 export function createAppRouter() {
-  return createRouter({ routeTree, history: createHashHistory() });
+  // scrollRestoration: new pages start at the top; back/forward restore the position.
+  return createRouter({ routeTree, history: createHashHistory(), scrollRestoration: true });
 }
 
 declare module "@tanstack/react-router" {

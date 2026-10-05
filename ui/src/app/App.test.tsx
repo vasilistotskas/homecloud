@@ -51,7 +51,7 @@ describe("App", () => {
         listRuns: () => create(ListRunsResponseSchema),
       });
     });
-    render(<App transport={transport} />);
+    render(<App transport={transport} platform={{ kind: "browser" }} />);
     expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();
     expect(screen.getByText("3,661")).toBeInTheDocument();
     expect(screen.getByText("266 GiB")).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe("App", () => {
         getSettings: () => ({ settings }),
       });
     });
-    render(<App transport={transport} />);
+    render(<App transport={transport} platform={{ kind: "browser" }} />);
     expect(await screen.findByText("Can't reach the homecloud agent")).toBeInTheDocument();
     expect(screen.getByText("Agent not reachable")).toBeInTheDocument();
   });
@@ -76,7 +76,7 @@ describe("App", () => {
         watchOverview: () => failingStream(new ConnectError("missing or invalid credentials", Code.Unauthenticated)),
       });
     });
-    render(<App transport={transport} />);
+    render(<App transport={transport} platform={{ kind: "browser" }} />);
     expect(await screen.findByText("Connect this browser")).toBeInTheDocument();
   });
 
@@ -102,7 +102,7 @@ describe("App", () => {
       });
     });
     window.location.hash = "#/connect?code=ABCD-EFGH";
-    render(<App transport={transport} />);
+    render(<App transport={transport} platform={{ kind: "browser" }} />);
     expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();
     expect(exchanged).toEqual(["ABCD-EFGH"]);
   });

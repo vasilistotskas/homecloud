@@ -32,6 +32,11 @@ const pageSize = 25;
 const useStyles = makeStyles({
   tableBox: { overflowX: "auto" },
   num: { textAlign: "right", fontVariantNumeric: "tabular-nums" },
+  // Header cells wrap their label in a flex container (the `button` slot); align it like the values.
+  numHead: { justifyContent: "flex-end" },
+  // Fluent tables default to equal fixed-width columns; size columns to their content instead.
+  table: { tableLayout: "auto" },
+  nowrap: { whiteSpace: "nowrap" },
   detail: { whiteSpace: "normal", minWidth: "260px" },
   mono: { fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase200 },
   more: { alignSelf: "flex-start" },
@@ -93,24 +98,24 @@ function Runs() {
   return (
     <>
       <Card className={styles.tableBox}>
-        <Table size="small" aria-label="Syncs">
+        <Table size="small" aria-label="Syncs" className={styles.table}>
           <TableHeader>
             <TableRow>
               <TableHeaderCell>Started</TableHeaderCell>
               <TableHeaderCell>Download</TableHeaderCell>
-              <TableHeaderCell className={styles.num}>In iCloud</TableHeaderCell>
-              <TableHeaderCell className={styles.num}>New</TableHeaderCell>
-              <TableHeaderCell className={styles.num}>Changed</TableHeaderCell>
-              <TableHeaderCell className={styles.num}>Checked</TableHeaderCell>
-              <TableHeaderCell className={styles.num}>Failed</TableHeaderCell>
-              <TableHeaderCell className={styles.num}>Took</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>In iCloud</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>New</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Changed</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Checked</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Failed</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
               <TableHeaderCell>Result</TableHeaderCell>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((r) => (
               <TableRow key={r.id}>
-                <TableCell>{r.started}</TableCell>
+                <TableCell className={styles.nowrap}>{r.started}</TableCell>
                 <TableCell>{r.download}</TableCell>
                 <TableCell className={styles.num}>{r.inICloud}</TableCell>
                 <TableCell className={styles.num}>{r.added}</TableCell>
@@ -207,7 +212,7 @@ function Events() {
         <Spinner label="Loading events…" />
       ) : (
         <Card className={styles.tableBox}>
-          <Table size="small" aria-label="Events">
+          <Table size="small" aria-label="Events" className={styles.table}>
             <TableHeader>
               <TableRow>
                 <TableHeaderCell>When</TableHeaderCell>
@@ -222,7 +227,7 @@ function Events() {
                 const at = toDate(e.at);
                 return (
                   <TableRow key={e.id.toString()}>
-                    <TableCell>{at === undefined ? "—" : formatWhen(at)}</TableCell>
+                    <TableCell className={styles.nowrap}>{at === undefined ? "—" : formatWhen(at)}</TableCell>
                     <TableCell>
                       <Badge appearance="tint" color={d.color}>
                         {d.kind}

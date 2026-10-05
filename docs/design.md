@@ -122,7 +122,13 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
   - Credentials: a 256-bit bearer token generated at every agent start and published in `agent.json` (per-user state dir) — created on Windows with a protected owner-only DACL `D:P(A;;FA;;;<user SID>)` via `CreateFile` (Go's file mode bits do not set ACLs on Windows), mode 0600 on Linux, written atomically. Browsers get an in-memory session cookie (`HttpOnly`, `SameSite=Strict`, 7 days) by exchanging a single-use 8-character login code (2 min, issued only to bearer holders; 5 wrong guesses revoke all codes); cookie calls also pass `http.CrossOriginProtection`. No `Secure` attribute: plain HTTP on loopback.
   - `GetInfo` returns `api_version` (MAJOR.MINOR); clients refuse a different major. Destructive actions (P3) will require a per-request confirmation nonce recorded in the ledger.
   - Rejected: Tauri `plugin-http` (Rust-side fetch; server-streaming support undocumented), cookie-only auth inside Tauri (third-party cookie context), h2c (no browser support, not needed).
-- **GUI:** one React + Fluent UI v9 single-page app, hosted (a) in a Tauri 2 desktop shell on Windows (tray, autostart, notifications, single-instance, updater, Mica) and (b) by the agent itself for browsers and Linux/headless hosts. Tauri installs the agent and its logon task but never supervises it. Rejected: Wails v3 (beta, single principal maintainer), WinUI 3 (Windows-only), Fyne/Gio (non-Fluent, low-level), Avalonia/Flutter/Electron (additional stack or weight), MAUI (no Linux).
+- **GUI (implemented, M2–M3):** one React 19 + Fluent UI v9 single-page app (`ui/`), hosted (a) by the agent itself (embedded with `go:embed`) for browsers and Linux/headless hosts, and (b) in a Tauri 2.12 desktop shell (`desktop/`). The design reference is the canvas linked from the plan; Fluent's `webLightTheme`/`webDarkTheme` follow the OS setting (Fluent ships no separate Windows 11 theme).
+  - Routing is hash-based (TanStack Router) so both hosts work without server rewrites. Data: Connect-Query for unary calls; one app-wide `WatchOverview` stream with exponential backoff, which also refetches all queries after a reconnect.
+  - Browser auth: `homecloud open` → one-time code in the link → `ExchangeLoginCode` → session cookie. Desktop auth: the Rust side reads `agent.json` (`agent_endpoint` command) and the web app sends the bearer token directly (native fetch + exact-origin CORS); on `Unauthenticated` (agent restarted with a new token) it re-reads the file and retries.
+  - The shell grants the webview only `core:default` and three app commands: `agent_endpoint`, `start_agent` (runs the logon task / systemd unit), `reveal_in_folder` (reveal only; nothing is opened or executed). Plugins: single-instance, window-state, opener (used from Rust only), log. NSIS installer in `currentUser` mode; WebView2 via the download bootstrapper.
+  - CSP is set in `tauri.conf.json` (`connect-src` limited to IPC and `http://127.0.0.1:*`). Verified on the built app: Griffel's runtime `<style>` injection works with Tauri's CSP handling, so no CSP relaxation beyond `style-src 'unsafe-inline'` is needed.
+  - The agent is installed and started separately (`homecloud install`) and never supervised by the shell. Deferred: tray, updater and Mica (no need yet; the updater needs signed releases). Rejected for now: bundling the agent as a Tauri sidecar (ties its lifecycle to the GUI), the autostart plugin (the agent already starts at logon), the Tauri MCP bridge plugin for testing (WebView2's DevTools port is used instead, no app code).
+  - Rejected stacks: Wails v3 (beta, single principal maintainer), WinUI 3 (Windows-only), Fyne/Gio (non-Fluent, low-level), Avalonia/Flutter/Electron (additional stack or weight), MAUI (no Linux).
 
 ## 9. Dependencies (verified 2026-10-05)
 
@@ -142,6 +148,18 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 | github.com/rs/cors | v1.11.1 | https://proxy.golang.org/github.com/rs/cors/@latest |
 | google.golang.org/protobuf (+ protoc-gen-go) | v1.36.12 | https://github.com/protocolbuffers/protobuf-go/releases |
 | Buf CLI (Go tool) | v1.73.0 | https://github.com/bufbuild/buf/releases |
+| React / react-dom | 19.3.0 | https://www.npmjs.com/package/react |
+| @fluentui/react-components / react-icons | 9.74.9 / 2.0.343 | https://www.npmjs.com/package/@fluentui/react-components |
+| @connectrpc/connect(-web) / connect-query | 2.2.0 / 2.3.1 | https://github.com/connectrpc/connect-es/releases |
+| @bufbuild/protobuf / protoc-gen-es | 2.16.0 | https://github.com/bufbuild/protobuf-es/releases |
+| @tanstack/react-router / react-query | 1.170.41 / 5.104.1 | https://www.npmjs.com/package/@tanstack/react-router |
+| Vite / Vitest | 8.3.2 / 5.0.3 | https://www.npmjs.com/package/vite |
+| TypeScript (tsc) / typed lint | 7.0.2 / 6.0.x via @typescript/typescript6 | https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/ |
+| ESLint / typescript-eslint / Prettier | 10.12.0 / 8.71.0 / 3.9.9 | https://www.npmjs.com/package/eslint |
+| pnpm / Node.js | 12.9.1 / 24 | https://github.com/pnpm/pnpm/releases |
+| Tauri (crate, CLI, api) | 2.12.1 | https://github.com/tauri-apps/tauri/releases |
+| Tauri plugins: single-instance / window-state / opener / log | 2.5.2 / 2.5.0 / 2.7.0 / 2.10.0 | https://crates.io/crates/tauri-plugin-opener |
+| Rust | 1.98.1 | https://blog.rust-lang.org/releases/ |
 | golangci-lint | v2.14.0 | https://github.com/golangci/golangci-lint/releases |
 | FFmpeg (ffprobe) | 9.0.2 (Gyan build) | https://www.gyan.dev/ffmpeg/builds/ |
 | kei | 0.24.1 | https://github.com/rhoopr/kei/releases/tag/v0.24.1 |

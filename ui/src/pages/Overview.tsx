@@ -39,9 +39,10 @@ import {
   ShieldErrorRegular,
 } from "@fluentui/react-icons";
 import { Link as RouterLink, useNavigate } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { useOverview } from "../api/overviewContext";
+import { usePlatform } from "../app/platformContext";
 import { Page } from "../components/Page";
 import { runRow } from "../components/runs";
 import { useNotify } from "../components/toast";
@@ -121,6 +122,10 @@ const useStyles = makeStyles({
     wordBreak: "break-all",
   },
   tableBox: { overflowX: "auto" },
+  nowrap: { whiteSpace: "nowrap" },
+  // Fluent tables default to equal fixed-width columns; size columns to their content instead.
+  table: { tableLayout: "auto" },
+  offlineActions: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: tokens.spacingHorizontalM },
 });
 
 export function OverviewPage() {
@@ -184,6 +189,9 @@ export function OverviewPage() {
 
 function Offline({ lastContact, onRetry }: { lastContact: Date | undefined; onRetry: () => void }) {
   const styles = useStyles();
+  const platform = usePlatform();
+  const notify = useNotify();
+  const [starting, setStarting] = useState(false);
   return (
     <Card className={styles.offline}>
       <div
@@ -197,7 +205,30 @@ function Offline({ lastContact, onRetry }: { lastContact: Date | undefined; onRe
         The agent downloads and checks your files in the background and starts when you sign in. Your files on disk are
         not affected. It may have stopped, or still be starting.
       </Text>
-      <Button onClick={onRetry}>Try again</Button>
+      <div className={styles.offlineActions}>
+        {platform.kind === "desktop" && (
+          <Button
+            appearance="primary"
+            disabled={starting}
+            onClick={() => {
+              setStarting(true);
+              platform.startAgent().then(
+                () => {
+                  setStarting(false);
+                  onRetry();
+                },
+                (err: unknown) => {
+                  setStarting(false);
+                  notify("error", "Couldn't start the agent", String(err));
+                },
+              );
+            }}
+          >
+            {starting ? "Starting…" : "Start agent"}
+          </Button>
+        )}
+        <Button onClick={onRetry}>Try again</Button>
+      </div>
       {lastContact !== undefined && (
         <Caption1 className={styles.muted}>Last contact: {formatWhen(lastContact)}</Caption1>
       )}
@@ -492,7 +523,7 @@ function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
         }
       />
       <div className={styles.tableBox}>
-        <Table size="small" aria-label="Recent syncs">
+        <Table size="small" aria-label="Recent syncs" className={styles.table}>
           <TableHeader>
             <TableRow>
               <TableHeaderCell>Started</TableHeaderCell>
@@ -506,7 +537,7 @@ function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
           <TableBody>
             {(runs.data?.runs ?? []).map(runRow).map((r) => (
               <TableRow key={r.id}>
-                <TableCell>{r.started}</TableCell>
+                <TableCell className={styles.nowrap}>{r.started}</TableCell>
                 <TableCell>{r.download}</TableCell>
                 <TableCell>{r.added}</TableCell>
                 <TableCell>{r.checked}</TableCell>
