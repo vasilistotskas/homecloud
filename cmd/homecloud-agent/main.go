@@ -21,6 +21,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/instance"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
+	"github.com/vasilistotskas/homecloud/internal/web"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -75,6 +76,16 @@ func run() (err error) {
 		return fmt.Errorf("open ledger: %w", err)
 	}
 	defer func() { err = errors.Join(err, db.Close()) }()
+
+	// The status page is non-critical: if it cannot serve, archiving continues.
+	webDone := make(chan struct{})
+	go func() {
+		defer close(webDone)
+		if serveErr := web.Serve(ctx, cfg.Web.Listen, db, log); serveErr != nil {
+			log.Error("status page stopped", "err", serveErr)
+		}
+	}()
+	defer func() { stop(); <-webDone }()
 
 	agent := &app.Agent{Cfg: cfg, DB: db, Log: log, Notify: notify.New(cfg.Notify), KeiLog: keiLog, Now: time.Now}
 	err = agent.Run(ctx)

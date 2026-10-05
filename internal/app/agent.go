@@ -56,10 +56,38 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 }
 
-// Cycle performs one kei sync followed by ingest and verification. kei problems
-// do not skip ingest/verify: the manifest stays authoritative for what is on disk.
+// CycleReport is recorded as the detail of each cycle run.
+type CycleReport struct {
+	KeiOutcome string             `json:"kei_outcome"`
+	Ingested   ledger.IngestStats `json:"ingested"`
+	Verified   VerifyStats        `json:"verified"`
+	Error      string             `json:"error,omitempty"`
+}
+
+// Cycle performs one kei sync followed by ingest and verification and records
+// the run in the ledger.
 func (a *Agent) Cycle(ctx context.Context) error {
-	var errs []error
+	runID, err := a.DB.StartRun(ctx, "cycle", a.Now())
+	if err != nil {
+		return err
+	}
+	rep, cycleErr := a.cycle(ctx)
+	if cycleErr != nil {
+		rep.Error = cycleErr.Error()
+	}
+	ok := cycleErr == nil && rep.Verified.Mismatched == 0
+	// Record the outcome even when ctx was cancelled mid-cycle.
+	finishErr := a.DB.FinishRun(context.WithoutCancel(ctx), runID, ok, rep, a.Now())
+	return errors.Join(cycleErr, finishErr)
+}
+
+// cycle does the work. kei problems do not skip ingest/verify: the manifest
+// stays authoritative for what is on disk.
+func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
+	var (
+		errs []error
+		rep  CycleReport
+	)
 
 	outcome, err := kei.Sync(ctx, a.Cfg.Kei, a.KeiLog)
 	switch {
@@ -74,15 +102,22 @@ func (a *Agent) Cycle(ctx context.Context) error {
 		a.Log.Warn("kei sync partially failed; failed assets retry next cycle")
 	case outcome == kei.OutcomeOK:
 	}
-	a.Log.Info("kei sync finished", "outcome", outcome)
+	if err == nil {
+		rep.KeiOutcome = outcome.String()
+	} else {
+		rep.KeiOutcome = "error"
+	}
+	a.Log.Info("kei sync finished", "outcome", rep.KeiOutcome)
 
 	ingested, err := Ingest(ctx, a.Cfg, a.DB, a.Now())
+	rep.Ingested = ingested
 	if err != nil {
-		return errors.Join(append(errs, err)...)
+		return rep, errors.Join(append(errs, err)...)
 	}
 	a.Log.Info("ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
 
 	verified, err := Verify(ctx, a.Cfg, a.DB, a.Log, a.Now)
+	rep.Verified = verified
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -95,7 +130,7 @@ func (a *Agent) Cycle(ctx context.Context) error {
 			Tags:     []string{"rotating_light"},
 		})
 	}
-	return errors.Join(errs...)
+	return rep, errors.Join(errs...)
 }
 
 func (a *Agent) alertAuth(ctx context.Context) {
