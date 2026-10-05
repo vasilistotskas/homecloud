@@ -19,19 +19,25 @@ import {
   ShieldErrorRegular,
 } from "@fluentui/react-icons";
 import { Outlet, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { toasterId } from "../components/toast";
 
 const useStyles = makeStyles({
-  root: { display: "flex", flexWrap: "wrap", minHeight: "100vh" },
-  // Narrow windows stack the navigation above the content; wide ones keep it as
-  // a full-height pane beside it.
+  // Narrow windows stack the navigation above the content and scroll as a page.
+  // Wide windows are an app layout: the window never scrolls, the navigation is
+  // a fixed full-height pane and only the content pane scrolls.
+  root: {
+    display: "flex",
+    flexWrap: "wrap",
+    minHeight: "100vh",
+    "@media (min-width: 840px)": { flexWrap: "nowrap", height: "100vh", overflow: "hidden" },
+  },
   nav: {
     flex: "1 1 100%",
     minHeight: "auto",
-    "@media (min-width: 840px)": { flex: "0 0 248px", position: "sticky", top: 0, height: "100vh" },
+    "@media (min-width: 840px)": { flex: "0 0 248px", height: "100%" },
   },
   brand: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS },
   brandIcon: { fontSize: "24px", color: tokens.colorBrandForeground1 },
@@ -40,6 +46,7 @@ const useStyles = makeStyles({
     minWidth: 0,
     boxSizing: "border-box",
     padding: `${tokens.spacingVerticalXXL} ${tokens.spacingHorizontalXXXL}`,
+    "@media (min-width: 840px)": { height: "100%", overflowY: "auto" },
   },
   footer: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS, padding: tokens.spacingHorizontalM },
   dot: { width: "8px", height: "8px", borderRadius: tokens.borderRadiusCircular, flex: "none" },
@@ -58,6 +65,13 @@ export function Shell() {
   const styles = useStyles();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  // The content pane is the scroller in the app layout: each page starts at its top.
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (mainRef.current !== null) {
+      mainRef.current.scrollTop = 0;
+    }
+  }, [pathname]);
   const { overview, connection } = useOverview();
 
   // A browser without a session is sent to pair once, when the agent rejects it.
@@ -117,7 +131,7 @@ export function Shell() {
           </div>
         </NavDrawerFooter>
       </NavDrawer>
-      <main className={styles.main}>
+      <main ref={mainRef} className={styles.main}>
         <Outlet />
       </main>
       <Toaster toasterId={toasterId} position="bottom-end" />
