@@ -47,8 +47,12 @@ type Rendition struct {
 
 // IngestStats summarises one ingest.
 type IngestStats struct {
-	Assets, Renditions, NewRenditions, ChangedRenditions int
+	Assets, Renditions, NewRenditions, ChangedRenditions, MovedRenditions int
 }
+
+// RenditionMovedEvent is recorded when the downloader reports a rendition at a
+// new local path; its verification starts over.
+const RenditionMovedEvent = "rendition_moved"
 
 // Ingest records renditions in one transaction. A rendition whose size or hash
 // changed loses its verification evidence. Asset states are recomputed, except
@@ -85,14 +89,21 @@ func (db *DB) Ingest(ctx context.Context, rs []Rendition, now time.Time) (stats 
 			if !r.Downloaded {
 				continue
 			}
-			var changed, created bool
-			if created, changed, err = upsertResource(ctx, tx, r); err != nil {
+			var res upsertResult
+			if res, err = upsertResource(ctx, tx, r); err != nil {
 				return stats, err
 			}
-			if created {
+			if res.created {
 				stats.NewRenditions++
 			}
-			if changed {
+			if res.movedFrom != "" {
+				stats.MovedRenditions++
+				if err = appendEvent(ctx, tx, ts, r.Library, r.AssetID, RenditionMovedEvent,
+					map[string]any{"version": r.Version, "from": res.movedFrom, "to": r.LocalPath}); err != nil {
+					return stats, err
+				}
+			}
+			if res.changed {
 				stats.ChangedRenditions++
 				if err = appendEvent(ctx, tx, ts, r.Library, r.AssetID, "rendition_changed",
 					map[string]any{"version": r.Version, "size": r.SizeBytes, "sha256": r.SHA256}); err != nil {
@@ -142,17 +153,30 @@ func upsertAsset(ctx context.Context, tx *sql.Tx, group []Rendition, ts string) 
 // upsertResource inserts or updates a downloaded rendition. It reports whether
 // the row is new and whether an existing row's size or hash changed (which
 // clears its verification evidence).
-func upsertResource(ctx context.Context, tx *sql.Tx, r Rendition) (created, changed bool, err error) {
+// upsertResult says how an upsert changed a rendition.
+type upsertResult struct {
+	created bool
+	// changed: size or hash differ, the bytes in iCloud changed.
+	changed bool
+	// movedFrom is the previous local path when the downloader moved the file;
+	// the file at the new path has not been verified by homecloud.
+	movedFrom string
+}
+
+// upsertResource records r. Any change of bytes or location clears the
+// rendition's verification evidence, so every tier runs again on the file
+// that is actually at local_path now.
+func upsertResource(ctx context.Context, tx *sql.Tx, r Rendition) (res upsertResult, err error) {
 	if r.SizeBytes > 1<<62 {
-		return false, false, fmt.Errorf("rendition %s/%s/%s: implausible size %d", r.Library, r.AssetID, r.Version, r.SizeBytes)
+		return res, fmt.Errorf("rendition %s/%s/%s: implausible size %d", r.Library, r.AssetID, r.Version, r.SizeBytes)
 	}
 	size := int64(r.SizeBytes)
 
 	var oldSize int64
-	var oldSHA string
+	var oldSHA, oldPath string
 	err = tx.QueryRowContext(ctx,
-		`SELECT size_bytes, kei_sha256 FROM resources WHERE library = ? AND asset_id = ? AND version = ?`,
-		r.Library, r.AssetID, r.Version).Scan(&oldSize, &oldSHA)
+		`SELECT size_bytes, kei_sha256, local_path FROM resources WHERE library = ? AND asset_id = ? AND version = ?`,
+		r.Library, r.AssetID, r.Version).Scan(&oldSize, &oldSHA, &oldPath)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		_, err = tx.ExecContext(ctx, `
@@ -162,14 +186,19 @@ func upsertResource(ctx context.Context, tx *sql.Tx, r Rendition) (created, chan
 			r.Library, r.AssetID, r.Version, r.Filename, r.LocalPath, r.MediaType, size, r.SHA256,
 			r.RequiresStructure, r.RequiresProbe)
 		if err != nil {
-			return false, false, fmt.Errorf("insert rendition %s/%s/%s: %w", r.Library, r.AssetID, r.Version, err)
+			return res, fmt.Errorf("insert rendition %s/%s/%s: %w", r.Library, r.AssetID, r.Version, err)
 		}
-		return true, false, nil
+		res.created = true
+		return res, nil
 	case err != nil:
-		return false, false, fmt.Errorf("read rendition %s/%s/%s: %w", r.Library, r.AssetID, r.Version, err)
+		return res, fmt.Errorf("read rendition %s/%s/%s: %w", r.Library, r.AssetID, r.Version, err)
 	}
 
-	changed = oldSize != size || oldSHA != r.SHA256
+	res.changed = oldSize != size || oldSHA != r.SHA256
+	if oldPath != r.LocalPath {
+		res.movedFrom = oldPath
+	}
+	reset := res.changed || res.movedFrom != ""
 	_, err = tx.ExecContext(ctx, `
 		UPDATE resources SET
 			filename = ?, local_path = ?, media_type = ?, size_bytes = ?, kei_sha256 = ?,
@@ -181,12 +210,12 @@ func upsertResource(ctx context.Context, tx *sql.Tx, r Rendition) (created, chan
 		WHERE library = ? AND asset_id = ? AND version = ?`,
 		r.Filename, r.LocalPath, r.MediaType, size, r.SHA256,
 		r.RequiresStructure, r.RequiresProbe,
-		changed, changed, changed, changed,
+		reset, reset, reset, reset,
 		r.Library, r.AssetID, r.Version)
 	if err != nil {
-		return false, false, fmt.Errorf("update rendition %s/%s/%s: %w", r.Library, r.AssetID, r.Version, err)
+		return res, fmt.Errorf("update rendition %s/%s/%s: %w", r.Library, r.AssetID, r.Version, err)
 	}
-	return false, changed, nil
+	return res, nil
 }
 
 // recomputeState derives the asset state from its renditions. Quarantine is sticky.

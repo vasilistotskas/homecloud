@@ -1,6 +1,8 @@
 # homecloud — design
 
-Status: **P0 (foundation)** · Last reviewed: 2026-10-05
+Status: **P1 done; local API, web app, desktop app and drive health live (M1–M4). No deletion capability exists yet.** · Last reviewed: 2026-10-05
+
+Sections 4–7 mix what is built with what is planned; each planned part is marked *(planned)*.
 
 ## 1. Goal
 
@@ -40,45 +42,51 @@ Packages:
 
 | Package | Responsibility |
 |---|---|
-| `cmd/homecloud` | CLI wiring (urfave/cli v3): `run`, `status`, `sync`, `verify`, `scrub`, `report`, `delete`, `login`, `doctor`, `install`, `uninstall` |
+| `cmd/homecloud` | CLI wiring (urfave/cli v3): `config`, `doctor`, `verify`, `status`, `quarantine list` / `quarantine release`, `open`, `notify-test`, `install`, `uninstall`. *(planned: `scrub`, `report`, `delete`)* |
+| `cmd/homecloud-agent` | The headless agent (scheduler loop); see Spike C |
 | `internal/config` | Strict TOML load + validation |
-| `internal/ledger` | SQLite (WAL), embedded migrations (`PRAGMA user_version`), queries |
+| `internal/ledger` | SQLite (WAL), embedded migrations (`PRAGMA user_version`), queries, `integrity_check` |
 | `internal/kei` | kei process wrapper: version pin, sync, manifest parsing, exit-code mapping |
-| `internal/verify` | Verification tiers + scrub scheduling |
-| `internal/policy` | Pure deletion-eligibility predicate and batch caps (no I/O) |
-| `internal/deleter` | Journal (fsync before any call), sidecar execution, post-delete confirmation |
-| `internal/health` | Volume identity, disk health, free space, ledger integrity, data freshness |
-| `internal/drive` | iCloud Drive mirror |
-| `internal/backup` | Local iPhone backup monitor |
+| `internal/verify` | Verification tiers (`RequiredTiers`, content, box structure, ffprobe). *(planned: scrub scheduling)* |
+| `internal/doctor` | Read-only environment checks behind `homecloud doctor` |
+| `internal/tool` | Version checks of pinned external executables |
+| `internal/platform` | Every OS-specific behaviour (see §8a) |
+| `internal/policy` | *(planned, P3)* Pure deletion-eligibility predicate and batch caps (no I/O) |
+| `internal/deleter` | *(planned, P3)* Journal (fsync before any call), sidecar execution, post-delete confirmation |
+| `internal/health` | Archive-drive health verdict (§8b). *(planned: volume identity, free space, ledger integrity and data freshness as deletion gates)* |
+| `internal/drive` | *(planned, P2)* iCloud Drive mirror |
+| `internal/backup` | *(planned, P2)* Local iPhone backup monitor |
 | `internal/notify` | ntfy client |
 | `internal/api` | `homecloud.agent.v1.AgentService` implementation (Connect) |
 | `internal/auth` | Bearer token + discovery file, browser login codes and sessions |
 | `internal/web` | Loopback HTTP server: Host/Origin checks, CORS for the desktop app, authentication, embedded web app |
 | `ui/` | Web app: React 19 + Fluent UI v9 + TanStack Router (hash) + Connect-Query, built with Vite, embedded via `ui/embed.go` |
 | `internal/app` | Scheduler loop + single global job lock |
-| `sidecar/icloud_delete.py` | PEP 723 script (`uv run --script`), pinned `pyicloud==2.7.0` |
+| `sidecar/icloud_delete.py` | *(planned, P3)* PEP 723 script (`uv run --script`), pinned `pyicloud==2.7.0` |
 
 Process model: a **per-user process launched at logon** by a Task Scheduler user task (`homecloud install`). Not a Windows service: services run in Session 0, which cannot interact with the user's session.
 
-Data layout (root configurable, default `E:\HomeCloud`): `Photos\` (kei-owned), `Drive\`, `kei\` (kei state), `homecloud.db`, `manifest.csv`, `deletions.jsonl`, `logs\`. Nightly `VACUUM INTO` snapshot of the ledger to `%LOCALAPPDATA%\homecloud\snapshots` (14 kept).
+Data layout (root is the required `storage.root`, e.g. `E:\HomeCloud`; no default): `Photos\` (kei-owned), `kei\` (kei state), `homecloud.db`, `logs\` (Windows only). *(planned: `Drive\`, `manifest.csv`, `deletions.jsonl`, and a nightly `VACUUM INTO` snapshot of the ledger to `%LOCALAPPDATA%\homecloud\snapshots` (14 kept).)*
 
 ## 5. Ledger
 
-- `assets(asset_id, library, version, filename, size, added_at_utc, created_at_utc, media_type, pair_key, state, state_at, last_seen_at)`
-- `resources(asset_id, library, role, local_path, size, sha256, kei_sha256, tier1_at, tier2_at, tier3_at, last_scrub_at, ok)`
-- `runs`, `deletion_batches`, and append-only `events` (triggers reject UPDATE/DELETE).
+Schema as of migration 0002 (`internal/ledger/migrations`; STRICT tables, RFC 3339 UTC text timestamps):
 
-State machine: `discovered → downloaded → verified → eligible → delete_requested → delete_confirmed → purged_expected (+30 d)`. Any state → `quarantined` (mismatch, failed scrub, unconfirmed delete). Remote change → `changed_remote → discovered`.
+- `assets(library, asset_id, state, state_changed_at, created_at, added_at, last_seen_at)`
+- `resources(library, asset_id, version, filename, local_path, media_type, size_bytes, kei_sha256, verified_content_at, verified_structure_at, verified_probe_at, last_scrub_at, failure, requires_structure, requires_probe)` — one row per rendition (kei manifest grain)
+- `runs`, and append-only `events` (triggers reject UPDATE/DELETE). *(planned, P3: `deletion_batches`)*
+
+State machine (implemented): `discovered → downloaded → verified`; any state → `quarantined` (mismatch); `quarantine release` returns an asset with an audited reason. *(planned, P3: `→ eligible → delete_requested → delete_confirmed → purged_expected (+30 d)`; quarantine on failed scrub or unconfirmed delete; remote change → `changed_remote → discovered`.)*
 
 ## 6. Verification tiers
 
 1. **Content:** SHA-256 of the file on E: equals kei's recorded download SHA-256; size equals the manifest size.
-2. **Structure (video):** MP4/QuickTime top-level box walk — contiguous chain ending exactly at EOF, containing `moov` and `mdat`; `ftyp` first only for ISO-BMFF extensions (see §10) — catches truncation.
+2. **Structure (`.mov`/`.mp4`/`.m4v` video only, per `verify.RequiredTiers`):** MP4/QuickTime top-level box walk — contiguous chain ending exactly at EOF, containing `moov` and `mdat`; `ftyp` first only for ISO-BMFF extensions (see §10) — catches truncation.
 3. **Probe (video):** `ffprobe` reports streams and a positive duration consistent across container and streams.
 
-Scrub: re-hash a rolling ~5 % of the archive weekly (full cycle ≈ 5 months). A scrub failure quarantines the asset and halts deletion.
+Scrub *(planned; the `schedule.scrub_interval` / `schedule.scrub_fraction` keys and `resources.last_scrub_at` exist, no scrub job runs yet)*: re-hash a rolling ~5 % of the archive weekly (full cycle ≈ 5 months). A scrub failure quarantines the asset and halts deletion.
 
-## 7. Deletion
+## 7. Deletion *(planned, P3; nothing below is implemented)*
 
 Eligibility is a pure function; **all** must hold:
 
@@ -122,7 +130,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
   - Credentials: a 256-bit bearer token generated at every agent start and published in `agent.json` (per-user state dir) — created on Windows with a protected owner-only DACL `D:P(A;;FA;;;<user SID>)` via `CreateFile` (Go's file mode bits do not set ACLs on Windows), mode 0600 on Linux, written atomically. Browsers get an in-memory session cookie (`HttpOnly`, `SameSite=Strict`, 7 days) by exchanging a single-use 8-character login code (2 min, issued only to bearer holders; 5 wrong guesses revoke all codes); cookie calls also pass `http.CrossOriginProtection`. No `Secure` attribute: plain HTTP on loopback.
   - `GetInfo` returns `api_version` (MAJOR.MINOR); clients refuse a different major. Destructive actions (P3) will require a per-request confirmation nonce recorded in the ledger.
   - Rejected: Tauri `plugin-http` (Rust-side fetch; server-streaming support undocumented), cookie-only auth inside Tauri (third-party cookie context), h2c (no browser support, not needed).
-- **GUI (implemented, M2–M3):** one React 19 + Fluent UI v9 single-page app (`ui/`), hosted (a) by the agent itself (embedded with `go:embed`) for browsers and Linux/headless hosts, and (b) in a Tauri 2.12 desktop shell (`desktop/`). The design reference is the canvas linked from the plan; Fluent's `webLightTheme`/`webDarkTheme` follow the OS setting (Fluent ships no separate Windows 11 theme).
+- **GUI (implemented, M2–M3):** one React 19 + Fluent UI v9 single-page app (`ui/`), hosted (a) by the agent itself (embedded with `go:embed`) for browsers and Linux/headless hosts, and (b) in a Tauri 2.12 desktop shell (`desktop/`). The design reference is the canvas linked from the plan; Fluent's `webLightTheme`/`webDarkTheme` follow the OS setting unless the user picks light or dark (Fluent ships no separate Windows 11 theme).
   - Routing is hash-based (TanStack Router) so both hosts work without server rewrites. Data: Connect-Query for unary calls; one app-wide `WatchOverview` stream with exponential backoff, which also refetches all queries after a reconnect.
   - Browser auth: `homecloud open` → one-time code in the link → `ExchangeLoginCode` → session cookie. Desktop auth: the Rust side reads `agent.json` (`agent_endpoint` command) and the web app sends the bearer token directly (native fetch + exact-origin CORS); on `Unauthenticated` (agent restarted with a new token) it re-reads the file and retries.
   - The shell grants the webview only `core:default` and three app commands: `agent_endpoint`, `start_agent` (runs the logon task / systemd unit), `reveal_in_folder` (reveal only; nothing is opened or executed). Plugins: single-instance, window-state, opener (used from Rust only), log. NSIS installer in `currentUser` mode; WebView2 via the download bootstrapper.
@@ -147,9 +155,9 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 | github.com/urfave/cli/v3 | v3.14.0 | https://pkg.go.dev/github.com/urfave/cli/v3?tab=versions |
 | github.com/pelletier/go-toml/v2 | v2.4.3 | https://pkg.go.dev/github.com/pelletier/go-toml/v2?tab=versions |
 | github.com/DeRuina/timberjack | v1.4.8 | https://pkg.go.dev/github.com/DeRuina/timberjack?tab=versions |
-| howett.net/plist | v1.0.1 | https://pkg.go.dev/howett.net/plist |
+| howett.net/plist *(planned, P2; not yet in go.mod)* | v1.0.1 | https://pkg.go.dev/howett.net/plist |
 | golang.org/x/sys | v0.48.0 | https://pkg.go.dev/golang.org/x/sys?tab=versions (monitor GO-2026-5024) |
-| golang.org/x/text | latest | https://pkg.go.dev/golang.org/x/text |
+| golang.org/x/text (indirect) | v0.41.0 | https://pkg.go.dev/golang.org/x/text |
 | github.com/google/go-cmp | v0.7.0 | https://pkg.go.dev/github.com/google/go-cmp?tab=versions |
 | connectrpc.com/connect (+ protoc-gen-connect-go) | v1.21.0 | https://github.com/connectrpc/connect-go/releases |
 | connectrpc.com/cors | v0.1.0 | https://github.com/connectrpc/cors-go/releases |
@@ -183,7 +191,9 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 - **One copy per asset:** `[filters] albums = ["none"]`, `unfiled = true`. The unfiled pass excludes only members of *selected* albums (`compute_unfiled_exclude_ids` in `src/commands/service.rs` returns an empty set when no album is selected), so it enumerates the whole library. Album passes would write one extra copy per album membership (wiki *Folder Structure*).
 - **Completeness for deletion:** `photos.edited = true` and `photos.alternative = true` so edits and RAW siblings are archived before an asset can ever be deleted; `live_photo_mode = "both"`.
 - **Filenames:** `keep_unicode_in_filenames = true` (lossless names); `file_match_policy = "name-id7"` (asset-ID-qualified names, no size-based collision heuristics).
-- **State location:** `data_dir` defaults to the config file's parent; homecloud places kei's config at `<root>\kei\config.toml` so kei state lives beside the archive.
+- **State location:** kei documents `data_dir` as defaulting to the config file's parent, but on this machine `kei status` reports its state DB and session under `%USERPROFILE%\.config\kei\cookies\` (observed 2026-10-05; the config lives at `<root>\kei\config.toml`). kei's state is therefore on the system drive, not with the archive; losing it costs a re-enumeration, not files. Not changed: pointing `data_dir` elsewhere would start kei with an empty state.
+- **Hidden photos are not in the library-wide pass (found 2026-10-05):** with `albums = ["none"]` + `unfiled = true`, kei's only pass is `library.all()` (iCloud's "All Photos"), which excludes Hidden items. An interrupted album/metadata refresh run downloaded 9 Hidden photos that had never been archived. Archiving Hidden needs a smart-folder pass (`smart_folders = ["Hidden"]`, with `folder_structure_smart_folders` keeping them apart).
+- **Sidecars:** `[metadata] xmp_sidecar = true` writes XMP next to newly downloaded files. Backfilling existing files needs `kei sync --refresh-metadata` with a config that has no `albums`/`smart_folders` keys; kei then also runs album passes, which downloads album copies into `{album}` folders and re-points those assets to the copies. Not to be repeated without a folder layout for album passes that avoids duplicates.
 - **Download integrity (kei-side):** bytes received must equal both `Content-Length` and the API `size`, otherwise retry (wiki *Download Pipeline*); SHA-256 recorded at download time (`verify --checksums`). Apple's `fileChecksum` is an MMCS signature, not a content hash.
 - **Auth:** SRP + trusted-device 2FA; credentials via Windows Credential Manager (`kei password set`); headless runs exit **3** when 2FA is needed; `kei login get-code` / `submit-code` for non-interactive completion.
 
@@ -221,6 +231,6 @@ Conclusion: deletion addresses assets by kei `asset_id`, cross-checked against s
 
 ### Verification design corrections
 
-- QuickTime `.mov` files may legitimately begin with `wide`, `mdat`, `moov`, `free`, `skip` or `pnot` rather than `ftyp` (wiki *Content Validation*). Tier 2 therefore validates a **contiguous top-level box chain ending exactly at EOF that contains `moov` and `mdat`**, and requires `ftyp` only for ISO-BMFF extensions (`.mp4`, `.m4v`, `.heic`).
+- QuickTime `.mov` files may legitimately begin with `wide`, `mdat`, `moov`, `free`, `skip` or `pnot` rather than `ftyp` (wiki *Content Validation*). Tier 2 therefore validates a **contiguous top-level box chain ending exactly at EOF that contains `moov` and `mdat`**, and requires `ftyp` only for ISO-BMFF extensions (`.mp4`, `.m4v`; HEIC stills are photos and get no box walk).
 - Tier 2 reads only top-level box headers (ISO/IEC 14496-12 §4.2: 32-bit size + type; size 1 ⇒ 64-bit largesize; size 0 ⇒ to EOF). That is ~60 lines of stdlib code, so the planned `abema/go-mp4` dependency was dropped.
 - Tier 3 (`ffprobe -v error -show_entries format=duration:stream=codec_type,duration -of json`) requires exit 0, empty stderr, positive container duration and a video stream with positive duration. Live Photo clips carry extra `data` streams, which are ignored. Verified: a real iPhone MOV passes tiers 2–3; a copy truncated to 50 % fails both (ffprobe: "moov atom not found").

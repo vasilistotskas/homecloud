@@ -148,6 +148,7 @@ const filters = {
     label: "All events",
     kinds: [
       EventKind.RENDITION_CHANGED,
+      EventKind.RENDITION_MOVED,
       EventKind.QUARANTINED,
       EventKind.QUARANTINE_RELEASED,
       EventKind.DRIVE_HEALTH_CHANGED,
@@ -156,6 +157,7 @@ const filters = {
   quarantined: { label: "Quarantined", kinds: [EventKind.QUARANTINED] },
   released: { label: "Released", kinds: [EventKind.QUARANTINE_RELEASED] },
   changed: { label: "Changed in iCloud", kinds: [EventKind.RENDITION_CHANGED] },
+  moved: { label: "Moved", kinds: [EventKind.RENDITION_MOVED] },
   drive: { label: "Drive health", kinds: [EventKind.DRIVE_HEALTH_CHANGED] },
   states: { label: "State changes", kinds: [EventKind.STATE_CHANGED] },
 } as const;
@@ -186,6 +188,12 @@ function describe(e: Event): { kind: string; color: "danger" | "success" | "info
         kind: "State changed",
         color: "informative",
         text: `${stateLabel[e.detail.value.from]} → ${stateLabel[e.detail.value.to]}`,
+      };
+    case "renditionMoved":
+      return {
+        kind: "Moved",
+        color: "informative",
+        text: `The downloader now keeps the  version at  (was ). It is checked again there.`,
       };
     case "driveHealthChanged":
       return {

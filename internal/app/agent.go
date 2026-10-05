@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
@@ -194,6 +195,11 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	}
 	if err := a.checkDrive(ctx); err != nil {
 		errs = append(errs, err)
+	}
+	if files, err := export.Write(ctx, a.db, a.cfg.Storage.Root); err != nil {
+		errs = append(errs, err)
+	} else {
+		a.log.Info("manifest exported", "files", files)
 	}
 	return rep, errors.Join(errs...)
 }

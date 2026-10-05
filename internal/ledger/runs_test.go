@@ -136,3 +136,21 @@ func TestRecordDriveHealthOnlyOnChange(t *testing.T) {
 		t.Fatalf("events = %+v, %v", events, err)
 	}
 }
+
+func TestEachManifestRow(t *testing.T) {
+	db, _ := openTemp(t)
+	ctx := context.Background()
+	ingest(t, db, rendition("M", "original", "photo", true))
+	pass(t, db, "M", "original", TierContent)
+	var rows []ManifestRow
+	if err := db.EachManifestRow(ctx, func(m ManifestRow) error { rows = append(rows, m); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].AssetID != "M" || rows[0].State != StateVerified || rows[0].VerifiedAt == nil || rows[0].CreatedAt == nil {
+		t.Fatalf("rows = %+v", rows)
+	}
+	stop := errors.New("stop")
+	if err := db.EachManifestRow(ctx, func(ManifestRow) error { return stop }); !errors.Is(err, stop) {
+		t.Fatalf("callback error = %v, want it returned", err)
+	}
+}

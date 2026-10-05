@@ -121,6 +121,7 @@ func runToProto(r ledger.Run) (*agentv1.Run, error) {
 		Renditions:        int64(rep.Ingested.Renditions),
 		NewRenditions:     int64(rep.Ingested.NewRenditions),
 		ChangedRenditions: int64(rep.Ingested.ChangedRenditions),
+		MovedRenditions:   int64(rep.Ingested.MovedRenditions),
 		Checked:           int64(rep.Verified.Checked),
 		Passed:            int64(rep.Verified.Passed),
 		Mismatched:        int64(rep.Verified.Mismatched),
@@ -152,6 +153,7 @@ var eventKindNames = map[agentv1.EventKind]string{
 	agentv1.EventKind_EVENT_KIND_QUARANTINED:          "quarantined",
 	agentv1.EventKind_EVENT_KIND_QUARANTINE_RELEASED:  "quarantine_released",
 	agentv1.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED: ledger.DriveHealthEvent,
+	agentv1.EventKind_EVENT_KIND_RENDITION_MOVED:      ledger.RenditionMovedEvent,
 }
 
 var assetStates = map[ledger.AssetState]agentv1.AssetState{
@@ -231,6 +233,15 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
 			out.Detail = &agentv1.Event_QuarantineReleased{QuarantineReleased: &agentv1.QuarantineReleased{Reason: d.Reason}}
+		}
+	case ledger.RenditionMovedEvent:
+		var d struct {
+			Version string `json:"version"`
+			From    string `json:"from"`
+			To      string `json:"to"`
+		}
+		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
+			out.Detail = &agentv1.Event_RenditionMoved{RenditionMoved: &agentv1.RenditionMoved{Version: d.Version, From: d.From, To: d.To}}
 		}
 	case ledger.DriveHealthEvent:
 		var d struct {

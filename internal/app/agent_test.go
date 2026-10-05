@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
@@ -125,11 +126,17 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 	})
 	n := &recordingNotifier{}
 	cfg := &config.Config{
+		Storage:  config.Storage{Root: filepath.Dir(manifest)},
 		Kei:      config.Kei{Binary: exe, Config: "unused.toml"},
 		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
 	}
-	return NewAgent(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), n, io.Discard,
-		func() time.Time { return *clock }), n
+	agent := NewAgent(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), n, io.Discard,
+		func() time.Time { return *clock })
+	// Tests judge a healthy drive unless they say otherwise.
+	agent.readDrive = func(context.Context) (platform.DriveHealth, error) {
+		return platform.DriveHealth{Protocol: "NVMe"}, nil
+	}
+	return agent, n
 }
 
 func TestCycleVerifiesEvenWhenAuthRequired(t *testing.T) {
@@ -275,5 +282,18 @@ func TestCycleAlertsOnceWhenDriveFails(t *testing.T) {
 	events, err := agent.db.Events(ctx, []string{ledger.DriveHealthEvent}, 0, 10)
 	if err != nil || len(events) != 2 {
 		t.Fatalf("drive events = %+v, %v; want failing then ok", events, err)
+	}
+}
+
+func TestCycleExportsManifest(t *testing.T) {
+	clock := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	manifest := fixture(t, false)
+	agent, _ := newTestAgent(t, manifest, "0", &clock)
+	if err := agent.Cycle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(filepath.Dir(manifest), export.ManifestFile)) //nolint:gosec // test temp path
+	if err != nil || !strings.Contains(string(data), "IMG_0001_QUFBQTA.HEIC,photo") {
+		t.Fatalf("manifest = %q, %v", data, err)
 	}
 }

@@ -316,6 +316,7 @@ const (
 	EventKind_EVENT_KIND_QUARANTINED          EventKind = 3
 	EventKind_EVENT_KIND_QUARANTINE_RELEASED  EventKind = 4
 	EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED EventKind = 5
+	EventKind_EVENT_KIND_RENDITION_MOVED      EventKind = 6
 )
 
 // Enum value maps for EventKind.
@@ -327,6 +328,7 @@ var (
 		3: "EVENT_KIND_QUARANTINED",
 		4: "EVENT_KIND_QUARANTINE_RELEASED",
 		5: "EVENT_KIND_DRIVE_HEALTH_CHANGED",
+		6: "EVENT_KIND_RENDITION_MOVED",
 	}
 	EventKind_value = map[string]int32{
 		"EVENT_KIND_UNSPECIFIED":          0,
@@ -335,6 +337,7 @@ var (
 		"EVENT_KIND_QUARANTINED":          3,
 		"EVENT_KIND_QUARANTINE_RELEASED":  4,
 		"EVENT_KIND_DRIVE_HEALTH_CHANGED": 5,
+		"EVENT_KIND_RENDITION_MOVED":      6,
 	}
 )
 
@@ -1416,9 +1419,11 @@ type CycleReport struct {
 	Mismatched        int64                  `protobuf:"varint,8,opt,name=mismatched,proto3" json:"mismatched,omitempty"`
 	Errored           int64                  `protobuf:"varint,9,opt,name=errored,proto3" json:"errored,omitempty"`
 	// Set when the cycle failed.
-	Error         string `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Error string `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
+	// Renditions the downloader reported at a new local path; they are verified again.
+	MovedRenditions int64 `protobuf:"varint,11,opt,name=moved_renditions,json=movedRenditions,proto3" json:"moved_renditions,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *CycleReport) Reset() {
@@ -1519,6 +1524,13 @@ func (x *CycleReport) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *CycleReport) GetMovedRenditions() int64 {
+	if x != nil {
+		return x.MovedRenditions
+	}
+	return 0
 }
 
 type ListRunsRequest struct {
@@ -1641,6 +1653,7 @@ type Event struct {
 	//	*Event_Quarantined
 	//	*Event_QuarantineReleased
 	//	*Event_DriveHealthChanged
+	//	*Event_RenditionMoved
 	Detail        isEvent_Detail `protobuf_oneof:"detail"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1749,6 +1762,15 @@ func (x *Event) GetDriveHealthChanged() *DriveHealthChanged {
 	return nil
 }
 
+func (x *Event) GetRenditionMoved() *RenditionMoved {
+	if x != nil {
+		if x, ok := x.Detail.(*Event_RenditionMoved); ok {
+			return x.RenditionMoved
+		}
+	}
+	return nil
+}
+
 type isEvent_Detail interface {
 	isEvent_Detail()
 }
@@ -1773,6 +1795,10 @@ type Event_DriveHealthChanged struct {
 	DriveHealthChanged *DriveHealthChanged `protobuf:"bytes,8,opt,name=drive_health_changed,json=driveHealthChanged,proto3,oneof"`
 }
 
+type Event_RenditionMoved struct {
+	RenditionMoved *RenditionMoved `protobuf:"bytes,9,opt,name=rendition_moved,json=renditionMoved,proto3,oneof"`
+}
+
 func (*Event_RenditionChanged) isEvent_Detail() {}
 
 func (*Event_StateChanged) isEvent_Detail() {}
@@ -1782,6 +1808,8 @@ func (*Event_Quarantined) isEvent_Detail() {}
 func (*Event_QuarantineReleased) isEvent_Detail() {}
 
 func (*Event_DriveHealthChanged) isEvent_Detail() {}
+
+func (*Event_RenditionMoved) isEvent_Detail() {}
 
 // AssetRef identifies an asset and names it for display.
 type AssetRef struct {
@@ -2063,6 +2091,68 @@ func (x *QuarantineReleased) GetReason() string {
 	return ""
 }
 
+// RenditionMoved: the downloader now keeps a rendition at a different path; its
+// verification evidence was cleared so the file at the new path is checked.
+type RenditionMoved struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Version       string                 `protobuf:"bytes,1,opt,name=version,proto3" json:"version,omitempty"`
+	From          string                 `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
+	To            string                 `protobuf:"bytes,3,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenditionMoved) Reset() {
+	*x = RenditionMoved{}
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenditionMoved) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenditionMoved) ProtoMessage() {}
+
+func (x *RenditionMoved) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenditionMoved.ProtoReflect.Descriptor instead.
+func (*RenditionMoved) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *RenditionMoved) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *RenditionMoved) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *RenditionMoved) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
 // DriveHealthChanged: the archive drive's health state changed.
 type DriveHealthChanged struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2075,7 +2165,7 @@ type DriveHealthChanged struct {
 
 func (x *DriveHealthChanged) Reset() {
 	*x = DriveHealthChanged{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2087,7 +2177,7 @@ func (x *DriveHealthChanged) String() string {
 func (*DriveHealthChanged) ProtoMessage() {}
 
 func (x *DriveHealthChanged) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[23]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2100,7 +2190,7 @@ func (x *DriveHealthChanged) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DriveHealthChanged.ProtoReflect.Descriptor instead.
 func (*DriveHealthChanged) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{23}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *DriveHealthChanged) GetFrom() DriveHealthState {
@@ -2137,7 +2227,7 @@ type ListEventsRequest struct {
 
 func (x *ListEventsRequest) Reset() {
 	*x = ListEventsRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2149,7 +2239,7 @@ func (x *ListEventsRequest) String() string {
 func (*ListEventsRequest) ProtoMessage() {}
 
 func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[24]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2162,7 +2252,7 @@ func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsRequest.ProtoReflect.Descriptor instead.
 func (*ListEventsRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{24}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListEventsRequest) GetKinds() []EventKind {
@@ -2196,7 +2286,7 @@ type ListEventsResponse struct {
 
 func (x *ListEventsResponse) Reset() {
 	*x = ListEventsResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2208,7 +2298,7 @@ func (x *ListEventsResponse) String() string {
 func (*ListEventsResponse) ProtoMessage() {}
 
 func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[25]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2221,7 +2311,7 @@ func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListEventsResponse.ProtoReflect.Descriptor instead.
 func (*ListEventsResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{25}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListEventsResponse) GetEvents() []*Event {
@@ -2246,7 +2336,7 @@ type ListQuarantineRequest struct {
 
 func (x *ListQuarantineRequest) Reset() {
 	*x = ListQuarantineRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2258,7 +2348,7 @@ func (x *ListQuarantineRequest) String() string {
 func (*ListQuarantineRequest) ProtoMessage() {}
 
 func (x *ListQuarantineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[26]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2271,7 +2361,7 @@ func (x *ListQuarantineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListQuarantineRequest.ProtoReflect.Descriptor instead.
 func (*ListQuarantineRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{26}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{27}
 }
 
 type ListQuarantineResponse struct {
@@ -2283,7 +2373,7 @@ type ListQuarantineResponse struct {
 
 func (x *ListQuarantineResponse) Reset() {
 	*x = ListQuarantineResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2295,7 +2385,7 @@ func (x *ListQuarantineResponse) String() string {
 func (*ListQuarantineResponse) ProtoMessage() {}
 
 func (x *ListQuarantineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[27]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2308,7 +2398,7 @@ func (x *ListQuarantineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListQuarantineResponse.ProtoReflect.Descriptor instead.
 func (*ListQuarantineResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{27}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListQuarantineResponse) GetAssets() []*QuarantinedAsset {
@@ -2329,7 +2419,7 @@ type QuarantinedAsset struct {
 
 func (x *QuarantinedAsset) Reset() {
 	*x = QuarantinedAsset{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2341,7 +2431,7 @@ func (x *QuarantinedAsset) String() string {
 func (*QuarantinedAsset) ProtoMessage() {}
 
 func (x *QuarantinedAsset) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[28]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2354,7 +2444,7 @@ func (x *QuarantinedAsset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuarantinedAsset.ProtoReflect.Descriptor instead.
 func (*QuarantinedAsset) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{28}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *QuarantinedAsset) GetAsset() *AssetRef {
@@ -2390,7 +2480,7 @@ type Failure struct {
 
 func (x *Failure) Reset() {
 	*x = Failure{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2402,7 +2492,7 @@ func (x *Failure) String() string {
 func (*Failure) ProtoMessage() {}
 
 func (x *Failure) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[29]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2415,7 +2505,7 @@ func (x *Failure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Failure.ProtoReflect.Descriptor instead.
 func (*Failure) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{29}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *Failure) GetVersion() string {
@@ -2449,7 +2539,7 @@ type GetAssetRequest struct {
 
 func (x *GetAssetRequest) Reset() {
 	*x = GetAssetRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2461,7 +2551,7 @@ func (x *GetAssetRequest) String() string {
 func (*GetAssetRequest) ProtoMessage() {}
 
 func (x *GetAssetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[30]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2474,7 +2564,7 @@ func (x *GetAssetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssetRequest.ProtoReflect.Descriptor instead.
 func (*GetAssetRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{30}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetAssetRequest) GetLibrary() string {
@@ -2500,7 +2590,7 @@ type GetAssetResponse struct {
 
 func (x *GetAssetResponse) Reset() {
 	*x = GetAssetResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2512,7 +2602,7 @@ func (x *GetAssetResponse) String() string {
 func (*GetAssetResponse) ProtoMessage() {}
 
 func (x *GetAssetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[31]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2525,7 +2615,7 @@ func (x *GetAssetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAssetResponse.ProtoReflect.Descriptor instead.
 func (*GetAssetResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{31}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetAssetResponse) GetAsset() *Asset {
@@ -2550,7 +2640,7 @@ type Asset struct {
 
 func (x *Asset) Reset() {
 	*x = Asset{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[32]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2562,7 +2652,7 @@ func (x *Asset) String() string {
 func (*Asset) ProtoMessage() {}
 
 func (x *Asset) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[32]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2575,7 +2665,7 @@ func (x *Asset) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Asset.ProtoReflect.Descriptor instead.
 func (*Asset) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{32}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Asset) GetRef() *AssetRef {
@@ -2647,7 +2737,7 @@ type Rendition struct {
 
 func (x *Rendition) Reset() {
 	*x = Rendition{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[33]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2659,7 +2749,7 @@ func (x *Rendition) String() string {
 func (*Rendition) ProtoMessage() {}
 
 func (x *Rendition) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[33]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2672,7 +2762,7 @@ func (x *Rendition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Rendition.ProtoReflect.Descriptor instead.
 func (*Rendition) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{33}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Rendition) GetVersion() string {
@@ -2748,7 +2838,7 @@ type TierPass struct {
 
 func (x *TierPass) Reset() {
 	*x = TierPass{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[34]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2760,7 +2850,7 @@ func (x *TierPass) String() string {
 func (*TierPass) ProtoMessage() {}
 
 func (x *TierPass) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[34]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2773,7 +2863,7 @@ func (x *TierPass) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TierPass.ProtoReflect.Descriptor instead.
 func (*TierPass) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{34}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *TierPass) GetTier() Tier {
@@ -2802,7 +2892,7 @@ type ReleaseQuarantineRequest struct {
 
 func (x *ReleaseQuarantineRequest) Reset() {
 	*x = ReleaseQuarantineRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[35]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2814,7 +2904,7 @@ func (x *ReleaseQuarantineRequest) String() string {
 func (*ReleaseQuarantineRequest) ProtoMessage() {}
 
 func (x *ReleaseQuarantineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[35]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2827,7 +2917,7 @@ func (x *ReleaseQuarantineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseQuarantineRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseQuarantineRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{35}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ReleaseQuarantineRequest) GetLibrary() string {
@@ -2859,7 +2949,7 @@ type ReleaseQuarantineResponse struct {
 
 func (x *ReleaseQuarantineResponse) Reset() {
 	*x = ReleaseQuarantineResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[36]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2871,7 +2961,7 @@ func (x *ReleaseQuarantineResponse) String() string {
 func (*ReleaseQuarantineResponse) ProtoMessage() {}
 
 func (x *ReleaseQuarantineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[36]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2884,7 +2974,7 @@ func (x *ReleaseQuarantineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseQuarantineResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseQuarantineResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{36}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{37}
 }
 
 type StartSyncRequest struct {
@@ -2895,7 +2985,7 @@ type StartSyncRequest struct {
 
 func (x *StartSyncRequest) Reset() {
 	*x = StartSyncRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[37]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2907,7 +2997,7 @@ func (x *StartSyncRequest) String() string {
 func (*StartSyncRequest) ProtoMessage() {}
 
 func (x *StartSyncRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[37]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2920,7 +3010,7 @@ func (x *StartSyncRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSyncRequest.ProtoReflect.Descriptor instead.
 func (*StartSyncRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{37}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{38}
 }
 
 type StartSyncResponse struct {
@@ -2933,7 +3023,7 @@ type StartSyncResponse struct {
 
 func (x *StartSyncResponse) Reset() {
 	*x = StartSyncResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[38]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2945,7 +3035,7 @@ func (x *StartSyncResponse) String() string {
 func (*StartSyncResponse) ProtoMessage() {}
 
 func (x *StartSyncResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[38]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2958,7 +3048,7 @@ func (x *StartSyncResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartSyncResponse.ProtoReflect.Descriptor instead.
 func (*StartSyncResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{38}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *StartSyncResponse) GetStarted() bool {
@@ -2976,7 +3066,7 @@ type SendTestNotificationRequest struct {
 
 func (x *SendTestNotificationRequest) Reset() {
 	*x = SendTestNotificationRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[39]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2988,7 +3078,7 @@ func (x *SendTestNotificationRequest) String() string {
 func (*SendTestNotificationRequest) ProtoMessage() {}
 
 func (x *SendTestNotificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[39]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3001,7 +3091,7 @@ func (x *SendTestNotificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendTestNotificationRequest.ProtoReflect.Descriptor instead.
 func (*SendTestNotificationRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{39}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{40}
 }
 
 type SendTestNotificationResponse struct {
@@ -3012,7 +3102,7 @@ type SendTestNotificationResponse struct {
 
 func (x *SendTestNotificationResponse) Reset() {
 	*x = SendTestNotificationResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[40]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3024,7 +3114,7 @@ func (x *SendTestNotificationResponse) String() string {
 func (*SendTestNotificationResponse) ProtoMessage() {}
 
 func (x *SendTestNotificationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[40]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3037,7 +3127,7 @@ func (x *SendTestNotificationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendTestNotificationResponse.ProtoReflect.Descriptor instead.
 func (*SendTestNotificationResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{40}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{41}
 }
 
 type GetSettingsRequest struct {
@@ -3048,7 +3138,7 @@ type GetSettingsRequest struct {
 
 func (x *GetSettingsRequest) Reset() {
 	*x = GetSettingsRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[41]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3060,7 +3150,7 @@ func (x *GetSettingsRequest) String() string {
 func (*GetSettingsRequest) ProtoMessage() {}
 
 func (x *GetSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[41]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3073,7 +3163,7 @@ func (x *GetSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSettingsRequest.ProtoReflect.Descriptor instead.
 func (*GetSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{41}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{42}
 }
 
 type GetSettingsResponse struct {
@@ -3085,7 +3175,7 @@ type GetSettingsResponse struct {
 
 func (x *GetSettingsResponse) Reset() {
 	*x = GetSettingsResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[42]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3097,7 +3187,7 @@ func (x *GetSettingsResponse) String() string {
 func (*GetSettingsResponse) ProtoMessage() {}
 
 func (x *GetSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[42]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3110,7 +3200,7 @@ func (x *GetSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSettingsResponse.ProtoReflect.Descriptor instead.
 func (*GetSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{42}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetSettingsResponse) GetSettings() *Settings {
@@ -3143,7 +3233,7 @@ type Settings struct {
 
 func (x *Settings) Reset() {
 	*x = Settings{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[43]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3155,7 +3245,7 @@ func (x *Settings) String() string {
 func (*Settings) ProtoMessage() {}
 
 func (x *Settings) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[43]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3168,7 +3258,7 @@ func (x *Settings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Settings.ProtoReflect.Descriptor instead.
 func (*Settings) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{43}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *Settings) GetConfigPath() string {
@@ -3273,7 +3363,7 @@ type ToolPin struct {
 
 func (x *ToolPin) Reset() {
 	*x = ToolPin{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[44]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3285,7 +3375,7 @@ func (x *ToolPin) String() string {
 func (*ToolPin) ProtoMessage() {}
 
 func (x *ToolPin) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[44]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3298,7 +3388,7 @@ func (x *ToolPin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ToolPin.ProtoReflect.Descriptor instead.
 func (*ToolPin) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{44}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *ToolPin) GetBinary() string {
@@ -3323,7 +3413,7 @@ type CreateLoginCodeRequest struct {
 
 func (x *CreateLoginCodeRequest) Reset() {
 	*x = CreateLoginCodeRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[45]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3335,7 +3425,7 @@ func (x *CreateLoginCodeRequest) String() string {
 func (*CreateLoginCodeRequest) ProtoMessage() {}
 
 func (x *CreateLoginCodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[45]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3348,7 +3438,7 @@ func (x *CreateLoginCodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateLoginCodeRequest.ProtoReflect.Descriptor instead.
 func (*CreateLoginCodeRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{45}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{46}
 }
 
 type CreateLoginCodeResponse struct {
@@ -3362,7 +3452,7 @@ type CreateLoginCodeResponse struct {
 
 func (x *CreateLoginCodeResponse) Reset() {
 	*x = CreateLoginCodeResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[46]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3374,7 +3464,7 @@ func (x *CreateLoginCodeResponse) String() string {
 func (*CreateLoginCodeResponse) ProtoMessage() {}
 
 func (x *CreateLoginCodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[46]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3387,7 +3477,7 @@ func (x *CreateLoginCodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateLoginCodeResponse.ProtoReflect.Descriptor instead.
 func (*CreateLoginCodeResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{46}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *CreateLoginCodeResponse) GetCode() string {
@@ -3413,7 +3503,7 @@ type ExchangeLoginCodeRequest struct {
 
 func (x *ExchangeLoginCodeRequest) Reset() {
 	*x = ExchangeLoginCodeRequest{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[47]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3425,7 +3515,7 @@ func (x *ExchangeLoginCodeRequest) String() string {
 func (*ExchangeLoginCodeRequest) ProtoMessage() {}
 
 func (x *ExchangeLoginCodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[47]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3438,7 +3528,7 @@ func (x *ExchangeLoginCodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeLoginCodeRequest.ProtoReflect.Descriptor instead.
 func (*ExchangeLoginCodeRequest) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{47}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *ExchangeLoginCodeRequest) GetCode() string {
@@ -3456,7 +3546,7 @@ type ExchangeLoginCodeResponse struct {
 
 func (x *ExchangeLoginCodeResponse) Reset() {
 	*x = ExchangeLoginCodeResponse{}
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[48]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3468,7 +3558,7 @@ func (x *ExchangeLoginCodeResponse) String() string {
 func (*ExchangeLoginCodeResponse) ProtoMessage() {}
 
 func (x *ExchangeLoginCodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[48]
+	mi := &file_homecloud_agent_v1_agent_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3481,7 +3571,7 @@ func (x *ExchangeLoginCodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExchangeLoginCodeResponse.ProtoReflect.Descriptor instead.
 func (*ExchangeLoginCodeResponse) Descriptor() ([]byte, []int) {
-	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{48}
+	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{49}
 }
 
 var File_homecloud_agent_v1_agent_proto protoreflect.FileDescriptor
@@ -3562,7 +3652,7 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\vfinished_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"finishedAt\x125\n" +
 	"\x06result\x18\x05 \x01(\x0e2\x1d.homecloud.agent.v1.RunResultR\x06result\x125\n" +
-	"\x05cycle\x18\x06 \x01(\v2\x1f.homecloud.agent.v1.CycleReportR\x05cycle\"\xde\x02\n" +
+	"\x05cycle\x18\x06 \x01(\v2\x1f.homecloud.agent.v1.CycleReportR\x05cycle\"\x89\x03\n" +
 	"\vCycleReport\x12?\n" +
 	"\bdownload\x18\x01 \x01(\x0e2#.homecloud.agent.v1.DownloadOutcomeR\bdownload\x12\x16\n" +
 	"\x06assets\x18\x02 \x01(\x03R\x06assets\x12\x1e\n" +
@@ -3578,14 +3668,15 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"mismatched\x12\x18\n" +
 	"\aerrored\x18\t \x01(\x03R\aerrored\x12\x14\n" +
 	"\x05error\x18\n" +
-	" \x01(\tR\x05error\"M\n" +
+	" \x01(\tR\x05error\x12)\n" +
+	"\x10moved_renditions\x18\v \x01(\x03R\x0fmovedRenditions\"M\n" +
 	"\x0fListRunsRequest\x12\x1b\n" +
 	"\tpage_size\x18\x01 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x02 \x01(\tR\tpageToken\"g\n" +
 	"\x10ListRunsResponse\x12+\n" +
 	"\x04runs\x18\x01 \x03(\v2\x17.homecloud.agent.v1.RunR\x04runs\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x9b\x04\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xea\x04\n" +
 	"\x05Event\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12*\n" +
 	"\x02at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x122\n" +
@@ -3594,7 +3685,8 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\rstate_changed\x18\x05 \x01(\v2 .homecloud.agent.v1.StateChangedH\x00R\fstateChanged\x12C\n" +
 	"\vquarantined\x18\x06 \x01(\v2\x1f.homecloud.agent.v1.QuarantinedH\x00R\vquarantined\x12Y\n" +
 	"\x13quarantine_released\x18\a \x01(\v2&.homecloud.agent.v1.QuarantineReleasedH\x00R\x12quarantineReleased\x12Z\n" +
-	"\x14drive_health_changed\x18\b \x01(\v2&.homecloud.agent.v1.DriveHealthChangedH\x00R\x12driveHealthChangedB\b\n" +
+	"\x14drive_health_changed\x18\b \x01(\v2&.homecloud.agent.v1.DriveHealthChangedH\x00R\x12driveHealthChanged\x12M\n" +
+	"\x0frendition_moved\x18\t \x01(\v2\".homecloud.agent.v1.RenditionMovedH\x00R\x0erenditionMovedB\b\n" +
 	"\x06detail\"[\n" +
 	"\bAssetRef\x12\x18\n" +
 	"\alibrary\x18\x01 \x01(\tR\alibrary\x12\x19\n" +
@@ -3613,7 +3705,11 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x04tier\x18\x02 \x01(\x0e2\x18.homecloud.agent.v1.TierR\x04tier\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\",\n" +
 	"\x12QuarantineReleased\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"\x9e\x01\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"N\n" +
+	"\x0eRenditionMoved\x12\x18\n" +
+	"\aversion\x18\x01 \x01(\tR\aversion\x12\x12\n" +
+	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
+	"\x02to\x18\x03 \x01(\tR\x02to\"\x9e\x01\n" +
 	"\x12DriveHealthChanged\x128\n" +
 	"\x04from\x18\x01 \x01(\x0e2$.homecloud.agent.v1.DriveHealthStateR\x04from\x124\n" +
 	"\x02to\x18\x02 \x01(\x0e2$.homecloud.agent.v1.DriveHealthStateR\x02to\x12\x18\n" +
@@ -3742,14 +3838,15 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x18DOWNLOAD_OUTCOME_PARTIAL\x10\x02\x12%\n" +
 	"!DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED\x10\x03\x12$\n" +
 	" DOWNLOAD_OUTCOME_NEEDS_ATTENTION\x10\x04\x12\x1a\n" +
-	"\x16DOWNLOAD_OUTCOME_ERROR\x10\x05*\xcc\x01\n" +
+	"\x16DOWNLOAD_OUTCOME_ERROR\x10\x05*\xec\x01\n" +
 	"\tEventKind\x12\x1a\n" +
 	"\x16EVENT_KIND_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cEVENT_KIND_RENDITION_CHANGED\x10\x01\x12\x1c\n" +
 	"\x18EVENT_KIND_STATE_CHANGED\x10\x02\x12\x1a\n" +
 	"\x16EVENT_KIND_QUARANTINED\x10\x03\x12\"\n" +
 	"\x1eEVENT_KIND_QUARANTINE_RELEASED\x10\x04\x12#\n" +
-	"\x1fEVENT_KIND_DRIVE_HEALTH_CHANGED\x10\x05*\x98\x01\n" +
+	"\x1fEVENT_KIND_DRIVE_HEALTH_CHANGED\x10\x05\x12\x1e\n" +
+	"\x1aEVENT_KIND_RENDITION_MOVED\x10\x06*\x98\x01\n" +
 	"\n" +
 	"AssetState\x12\x1b\n" +
 	"\x17ASSET_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
@@ -3801,7 +3898,7 @@ func file_homecloud_agent_v1_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_homecloud_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
-var file_homecloud_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_homecloud_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 50)
 var file_homecloud_agent_v1_agent_proto_goTypes = []any{
 	(DriveHealthState)(0),                // 0: homecloud.agent.v1.DriveHealthState
 	(AppleAccountState)(0),               // 1: homecloud.agent.v1.AppleAccountState
@@ -3835,33 +3932,34 @@ var file_homecloud_agent_v1_agent_proto_goTypes = []any{
 	(*StateChanged)(nil),                 // 29: homecloud.agent.v1.StateChanged
 	(*Quarantined)(nil),                  // 30: homecloud.agent.v1.Quarantined
 	(*QuarantineReleased)(nil),           // 31: homecloud.agent.v1.QuarantineReleased
-	(*DriveHealthChanged)(nil),           // 32: homecloud.agent.v1.DriveHealthChanged
-	(*ListEventsRequest)(nil),            // 33: homecloud.agent.v1.ListEventsRequest
-	(*ListEventsResponse)(nil),           // 34: homecloud.agent.v1.ListEventsResponse
-	(*ListQuarantineRequest)(nil),        // 35: homecloud.agent.v1.ListQuarantineRequest
-	(*ListQuarantineResponse)(nil),       // 36: homecloud.agent.v1.ListQuarantineResponse
-	(*QuarantinedAsset)(nil),             // 37: homecloud.agent.v1.QuarantinedAsset
-	(*Failure)(nil),                      // 38: homecloud.agent.v1.Failure
-	(*GetAssetRequest)(nil),              // 39: homecloud.agent.v1.GetAssetRequest
-	(*GetAssetResponse)(nil),             // 40: homecloud.agent.v1.GetAssetResponse
-	(*Asset)(nil),                        // 41: homecloud.agent.v1.Asset
-	(*Rendition)(nil),                    // 42: homecloud.agent.v1.Rendition
-	(*TierPass)(nil),                     // 43: homecloud.agent.v1.TierPass
-	(*ReleaseQuarantineRequest)(nil),     // 44: homecloud.agent.v1.ReleaseQuarantineRequest
-	(*ReleaseQuarantineResponse)(nil),    // 45: homecloud.agent.v1.ReleaseQuarantineResponse
-	(*StartSyncRequest)(nil),             // 46: homecloud.agent.v1.StartSyncRequest
-	(*StartSyncResponse)(nil),            // 47: homecloud.agent.v1.StartSyncResponse
-	(*SendTestNotificationRequest)(nil),  // 48: homecloud.agent.v1.SendTestNotificationRequest
-	(*SendTestNotificationResponse)(nil), // 49: homecloud.agent.v1.SendTestNotificationResponse
-	(*GetSettingsRequest)(nil),           // 50: homecloud.agent.v1.GetSettingsRequest
-	(*GetSettingsResponse)(nil),          // 51: homecloud.agent.v1.GetSettingsResponse
-	(*Settings)(nil),                     // 52: homecloud.agent.v1.Settings
-	(*ToolPin)(nil),                      // 53: homecloud.agent.v1.ToolPin
-	(*CreateLoginCodeRequest)(nil),       // 54: homecloud.agent.v1.CreateLoginCodeRequest
-	(*CreateLoginCodeResponse)(nil),      // 55: homecloud.agent.v1.CreateLoginCodeResponse
-	(*ExchangeLoginCodeRequest)(nil),     // 56: homecloud.agent.v1.ExchangeLoginCodeRequest
-	(*ExchangeLoginCodeResponse)(nil),    // 57: homecloud.agent.v1.ExchangeLoginCodeResponse
-	(*timestamppb.Timestamp)(nil),        // 58: google.protobuf.Timestamp
+	(*RenditionMoved)(nil),               // 32: homecloud.agent.v1.RenditionMoved
+	(*DriveHealthChanged)(nil),           // 33: homecloud.agent.v1.DriveHealthChanged
+	(*ListEventsRequest)(nil),            // 34: homecloud.agent.v1.ListEventsRequest
+	(*ListEventsResponse)(nil),           // 35: homecloud.agent.v1.ListEventsResponse
+	(*ListQuarantineRequest)(nil),        // 36: homecloud.agent.v1.ListQuarantineRequest
+	(*ListQuarantineResponse)(nil),       // 37: homecloud.agent.v1.ListQuarantineResponse
+	(*QuarantinedAsset)(nil),             // 38: homecloud.agent.v1.QuarantinedAsset
+	(*Failure)(nil),                      // 39: homecloud.agent.v1.Failure
+	(*GetAssetRequest)(nil),              // 40: homecloud.agent.v1.GetAssetRequest
+	(*GetAssetResponse)(nil),             // 41: homecloud.agent.v1.GetAssetResponse
+	(*Asset)(nil),                        // 42: homecloud.agent.v1.Asset
+	(*Rendition)(nil),                    // 43: homecloud.agent.v1.Rendition
+	(*TierPass)(nil),                     // 44: homecloud.agent.v1.TierPass
+	(*ReleaseQuarantineRequest)(nil),     // 45: homecloud.agent.v1.ReleaseQuarantineRequest
+	(*ReleaseQuarantineResponse)(nil),    // 46: homecloud.agent.v1.ReleaseQuarantineResponse
+	(*StartSyncRequest)(nil),             // 47: homecloud.agent.v1.StartSyncRequest
+	(*StartSyncResponse)(nil),            // 48: homecloud.agent.v1.StartSyncResponse
+	(*SendTestNotificationRequest)(nil),  // 49: homecloud.agent.v1.SendTestNotificationRequest
+	(*SendTestNotificationResponse)(nil), // 50: homecloud.agent.v1.SendTestNotificationResponse
+	(*GetSettingsRequest)(nil),           // 51: homecloud.agent.v1.GetSettingsRequest
+	(*GetSettingsResponse)(nil),          // 52: homecloud.agent.v1.GetSettingsResponse
+	(*Settings)(nil),                     // 53: homecloud.agent.v1.Settings
+	(*ToolPin)(nil),                      // 54: homecloud.agent.v1.ToolPin
+	(*CreateLoginCodeRequest)(nil),       // 55: homecloud.agent.v1.CreateLoginCodeRequest
+	(*CreateLoginCodeResponse)(nil),      // 56: homecloud.agent.v1.CreateLoginCodeResponse
+	(*ExchangeLoginCodeRequest)(nil),     // 57: homecloud.agent.v1.ExchangeLoginCodeRequest
+	(*ExchangeLoginCodeResponse)(nil),    // 58: homecloud.agent.v1.ExchangeLoginCodeResponse
+	(*timestamppb.Timestamp)(nil),        // 59: google.protobuf.Timestamp
 }
 var file_homecloud_agent_v1_agent_proto_depIdxs = []int32{
 	15, // 0: homecloud.agent.v1.GetOverviewResponse.overview:type_name -> homecloud.agent.v1.Overview
@@ -3874,85 +3972,86 @@ var file_homecloud_agent_v1_agent_proto_depIdxs = []int32{
 	22, // 7: homecloud.agent.v1.Overview.last_cycle:type_name -> homecloud.agent.v1.Run
 	16, // 8: homecloud.agent.v1.Overview.drive:type_name -> homecloud.agent.v1.DriveHealth
 	0,  // 9: homecloud.agent.v1.DriveHealth.state:type_name -> homecloud.agent.v1.DriveHealthState
-	58, // 10: homecloud.agent.v1.DriveHealth.checked_at:type_name -> google.protobuf.Timestamp
+	59, // 10: homecloud.agent.v1.DriveHealth.checked_at:type_name -> google.protobuf.Timestamp
 	1,  // 11: homecloud.agent.v1.AppleAccount.state:type_name -> homecloud.agent.v1.AppleAccountState
 	2,  // 12: homecloud.agent.v1.Activity.phase:type_name -> homecloud.agent.v1.Phase
-	58, // 13: homecloud.agent.v1.Activity.phase_started_at:type_name -> google.protobuf.Timestamp
-	58, // 14: homecloud.agent.v1.Activity.next_cycle_at:type_name -> google.protobuf.Timestamp
-	58, // 15: homecloud.agent.v1.Run.started_at:type_name -> google.protobuf.Timestamp
-	58, // 16: homecloud.agent.v1.Run.finished_at:type_name -> google.protobuf.Timestamp
+	59, // 13: homecloud.agent.v1.Activity.phase_started_at:type_name -> google.protobuf.Timestamp
+	59, // 14: homecloud.agent.v1.Activity.next_cycle_at:type_name -> google.protobuf.Timestamp
+	59, // 15: homecloud.agent.v1.Run.started_at:type_name -> google.protobuf.Timestamp
+	59, // 16: homecloud.agent.v1.Run.finished_at:type_name -> google.protobuf.Timestamp
 	3,  // 17: homecloud.agent.v1.Run.result:type_name -> homecloud.agent.v1.RunResult
 	23, // 18: homecloud.agent.v1.Run.cycle:type_name -> homecloud.agent.v1.CycleReport
 	4,  // 19: homecloud.agent.v1.CycleReport.download:type_name -> homecloud.agent.v1.DownloadOutcome
 	22, // 20: homecloud.agent.v1.ListRunsResponse.runs:type_name -> homecloud.agent.v1.Run
-	58, // 21: homecloud.agent.v1.Event.at:type_name -> google.protobuf.Timestamp
+	59, // 21: homecloud.agent.v1.Event.at:type_name -> google.protobuf.Timestamp
 	27, // 22: homecloud.agent.v1.Event.asset:type_name -> homecloud.agent.v1.AssetRef
 	28, // 23: homecloud.agent.v1.Event.rendition_changed:type_name -> homecloud.agent.v1.RenditionChanged
 	29, // 24: homecloud.agent.v1.Event.state_changed:type_name -> homecloud.agent.v1.StateChanged
 	30, // 25: homecloud.agent.v1.Event.quarantined:type_name -> homecloud.agent.v1.Quarantined
 	31, // 26: homecloud.agent.v1.Event.quarantine_released:type_name -> homecloud.agent.v1.QuarantineReleased
-	32, // 27: homecloud.agent.v1.Event.drive_health_changed:type_name -> homecloud.agent.v1.DriveHealthChanged
-	6,  // 28: homecloud.agent.v1.StateChanged.from:type_name -> homecloud.agent.v1.AssetState
-	6,  // 29: homecloud.agent.v1.StateChanged.to:type_name -> homecloud.agent.v1.AssetState
-	7,  // 30: homecloud.agent.v1.Quarantined.tier:type_name -> homecloud.agent.v1.Tier
-	0,  // 31: homecloud.agent.v1.DriveHealthChanged.from:type_name -> homecloud.agent.v1.DriveHealthState
-	0,  // 32: homecloud.agent.v1.DriveHealthChanged.to:type_name -> homecloud.agent.v1.DriveHealthState
-	5,  // 33: homecloud.agent.v1.ListEventsRequest.kinds:type_name -> homecloud.agent.v1.EventKind
-	26, // 34: homecloud.agent.v1.ListEventsResponse.events:type_name -> homecloud.agent.v1.Event
-	37, // 35: homecloud.agent.v1.ListQuarantineResponse.assets:type_name -> homecloud.agent.v1.QuarantinedAsset
-	27, // 36: homecloud.agent.v1.QuarantinedAsset.asset:type_name -> homecloud.agent.v1.AssetRef
-	58, // 37: homecloud.agent.v1.QuarantinedAsset.quarantined_at:type_name -> google.protobuf.Timestamp
-	38, // 38: homecloud.agent.v1.QuarantinedAsset.failures:type_name -> homecloud.agent.v1.Failure
-	7,  // 39: homecloud.agent.v1.Failure.tier:type_name -> homecloud.agent.v1.Tier
-	41, // 40: homecloud.agent.v1.GetAssetResponse.asset:type_name -> homecloud.agent.v1.Asset
-	27, // 41: homecloud.agent.v1.Asset.ref:type_name -> homecloud.agent.v1.AssetRef
-	6,  // 42: homecloud.agent.v1.Asset.state:type_name -> homecloud.agent.v1.AssetState
-	58, // 43: homecloud.agent.v1.Asset.state_changed_at:type_name -> google.protobuf.Timestamp
-	58, // 44: homecloud.agent.v1.Asset.created_at:type_name -> google.protobuf.Timestamp
-	58, // 45: homecloud.agent.v1.Asset.added_at:type_name -> google.protobuf.Timestamp
-	58, // 46: homecloud.agent.v1.Asset.last_seen_at:type_name -> google.protobuf.Timestamp
-	42, // 47: homecloud.agent.v1.Asset.renditions:type_name -> homecloud.agent.v1.Rendition
-	8,  // 48: homecloud.agent.v1.Rendition.media_type:type_name -> homecloud.agent.v1.MediaType
-	7,  // 49: homecloud.agent.v1.Rendition.required_tiers:type_name -> homecloud.agent.v1.Tier
-	43, // 50: homecloud.agent.v1.Rendition.passes:type_name -> homecloud.agent.v1.TierPass
-	38, // 51: homecloud.agent.v1.Rendition.failure:type_name -> homecloud.agent.v1.Failure
-	7,  // 52: homecloud.agent.v1.TierPass.tier:type_name -> homecloud.agent.v1.Tier
-	58, // 53: homecloud.agent.v1.TierPass.at:type_name -> google.protobuf.Timestamp
-	52, // 54: homecloud.agent.v1.GetSettingsResponse.settings:type_name -> homecloud.agent.v1.Settings
-	53, // 55: homecloud.agent.v1.Settings.downloader:type_name -> homecloud.agent.v1.ToolPin
-	53, // 56: homecloud.agent.v1.Settings.video_probe:type_name -> homecloud.agent.v1.ToolPin
-	58, // 57: homecloud.agent.v1.CreateLoginCodeResponse.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // 58: homecloud.agent.v1.AgentService.GetInfo:input_type -> homecloud.agent.v1.GetInfoRequest
-	11, // 59: homecloud.agent.v1.AgentService.GetOverview:input_type -> homecloud.agent.v1.GetOverviewRequest
-	13, // 60: homecloud.agent.v1.AgentService.WatchOverview:input_type -> homecloud.agent.v1.WatchOverviewRequest
-	24, // 61: homecloud.agent.v1.AgentService.ListRuns:input_type -> homecloud.agent.v1.ListRunsRequest
-	33, // 62: homecloud.agent.v1.AgentService.ListEvents:input_type -> homecloud.agent.v1.ListEventsRequest
-	35, // 63: homecloud.agent.v1.AgentService.ListQuarantine:input_type -> homecloud.agent.v1.ListQuarantineRequest
-	39, // 64: homecloud.agent.v1.AgentService.GetAsset:input_type -> homecloud.agent.v1.GetAssetRequest
-	44, // 65: homecloud.agent.v1.AgentService.ReleaseQuarantine:input_type -> homecloud.agent.v1.ReleaseQuarantineRequest
-	46, // 66: homecloud.agent.v1.AgentService.StartSync:input_type -> homecloud.agent.v1.StartSyncRequest
-	48, // 67: homecloud.agent.v1.AgentService.SendTestNotification:input_type -> homecloud.agent.v1.SendTestNotificationRequest
-	50, // 68: homecloud.agent.v1.AgentService.GetSettings:input_type -> homecloud.agent.v1.GetSettingsRequest
-	54, // 69: homecloud.agent.v1.AgentService.CreateLoginCode:input_type -> homecloud.agent.v1.CreateLoginCodeRequest
-	56, // 70: homecloud.agent.v1.AgentService.ExchangeLoginCode:input_type -> homecloud.agent.v1.ExchangeLoginCodeRequest
-	10, // 71: homecloud.agent.v1.AgentService.GetInfo:output_type -> homecloud.agent.v1.GetInfoResponse
-	12, // 72: homecloud.agent.v1.AgentService.GetOverview:output_type -> homecloud.agent.v1.GetOverviewResponse
-	14, // 73: homecloud.agent.v1.AgentService.WatchOverview:output_type -> homecloud.agent.v1.WatchOverviewResponse
-	25, // 74: homecloud.agent.v1.AgentService.ListRuns:output_type -> homecloud.agent.v1.ListRunsResponse
-	34, // 75: homecloud.agent.v1.AgentService.ListEvents:output_type -> homecloud.agent.v1.ListEventsResponse
-	36, // 76: homecloud.agent.v1.AgentService.ListQuarantine:output_type -> homecloud.agent.v1.ListQuarantineResponse
-	40, // 77: homecloud.agent.v1.AgentService.GetAsset:output_type -> homecloud.agent.v1.GetAssetResponse
-	45, // 78: homecloud.agent.v1.AgentService.ReleaseQuarantine:output_type -> homecloud.agent.v1.ReleaseQuarantineResponse
-	47, // 79: homecloud.agent.v1.AgentService.StartSync:output_type -> homecloud.agent.v1.StartSyncResponse
-	49, // 80: homecloud.agent.v1.AgentService.SendTestNotification:output_type -> homecloud.agent.v1.SendTestNotificationResponse
-	51, // 81: homecloud.agent.v1.AgentService.GetSettings:output_type -> homecloud.agent.v1.GetSettingsResponse
-	55, // 82: homecloud.agent.v1.AgentService.CreateLoginCode:output_type -> homecloud.agent.v1.CreateLoginCodeResponse
-	57, // 83: homecloud.agent.v1.AgentService.ExchangeLoginCode:output_type -> homecloud.agent.v1.ExchangeLoginCodeResponse
-	71, // [71:84] is the sub-list for method output_type
-	58, // [58:71] is the sub-list for method input_type
-	58, // [58:58] is the sub-list for extension type_name
-	58, // [58:58] is the sub-list for extension extendee
-	0,  // [0:58] is the sub-list for field type_name
+	33, // 27: homecloud.agent.v1.Event.drive_health_changed:type_name -> homecloud.agent.v1.DriveHealthChanged
+	32, // 28: homecloud.agent.v1.Event.rendition_moved:type_name -> homecloud.agent.v1.RenditionMoved
+	6,  // 29: homecloud.agent.v1.StateChanged.from:type_name -> homecloud.agent.v1.AssetState
+	6,  // 30: homecloud.agent.v1.StateChanged.to:type_name -> homecloud.agent.v1.AssetState
+	7,  // 31: homecloud.agent.v1.Quarantined.tier:type_name -> homecloud.agent.v1.Tier
+	0,  // 32: homecloud.agent.v1.DriveHealthChanged.from:type_name -> homecloud.agent.v1.DriveHealthState
+	0,  // 33: homecloud.agent.v1.DriveHealthChanged.to:type_name -> homecloud.agent.v1.DriveHealthState
+	5,  // 34: homecloud.agent.v1.ListEventsRequest.kinds:type_name -> homecloud.agent.v1.EventKind
+	26, // 35: homecloud.agent.v1.ListEventsResponse.events:type_name -> homecloud.agent.v1.Event
+	38, // 36: homecloud.agent.v1.ListQuarantineResponse.assets:type_name -> homecloud.agent.v1.QuarantinedAsset
+	27, // 37: homecloud.agent.v1.QuarantinedAsset.asset:type_name -> homecloud.agent.v1.AssetRef
+	59, // 38: homecloud.agent.v1.QuarantinedAsset.quarantined_at:type_name -> google.protobuf.Timestamp
+	39, // 39: homecloud.agent.v1.QuarantinedAsset.failures:type_name -> homecloud.agent.v1.Failure
+	7,  // 40: homecloud.agent.v1.Failure.tier:type_name -> homecloud.agent.v1.Tier
+	42, // 41: homecloud.agent.v1.GetAssetResponse.asset:type_name -> homecloud.agent.v1.Asset
+	27, // 42: homecloud.agent.v1.Asset.ref:type_name -> homecloud.agent.v1.AssetRef
+	6,  // 43: homecloud.agent.v1.Asset.state:type_name -> homecloud.agent.v1.AssetState
+	59, // 44: homecloud.agent.v1.Asset.state_changed_at:type_name -> google.protobuf.Timestamp
+	59, // 45: homecloud.agent.v1.Asset.created_at:type_name -> google.protobuf.Timestamp
+	59, // 46: homecloud.agent.v1.Asset.added_at:type_name -> google.protobuf.Timestamp
+	59, // 47: homecloud.agent.v1.Asset.last_seen_at:type_name -> google.protobuf.Timestamp
+	43, // 48: homecloud.agent.v1.Asset.renditions:type_name -> homecloud.agent.v1.Rendition
+	8,  // 49: homecloud.agent.v1.Rendition.media_type:type_name -> homecloud.agent.v1.MediaType
+	7,  // 50: homecloud.agent.v1.Rendition.required_tiers:type_name -> homecloud.agent.v1.Tier
+	44, // 51: homecloud.agent.v1.Rendition.passes:type_name -> homecloud.agent.v1.TierPass
+	39, // 52: homecloud.agent.v1.Rendition.failure:type_name -> homecloud.agent.v1.Failure
+	7,  // 53: homecloud.agent.v1.TierPass.tier:type_name -> homecloud.agent.v1.Tier
+	59, // 54: homecloud.agent.v1.TierPass.at:type_name -> google.protobuf.Timestamp
+	53, // 55: homecloud.agent.v1.GetSettingsResponse.settings:type_name -> homecloud.agent.v1.Settings
+	54, // 56: homecloud.agent.v1.Settings.downloader:type_name -> homecloud.agent.v1.ToolPin
+	54, // 57: homecloud.agent.v1.Settings.video_probe:type_name -> homecloud.agent.v1.ToolPin
+	59, // 58: homecloud.agent.v1.CreateLoginCodeResponse.expires_at:type_name -> google.protobuf.Timestamp
+	9,  // 59: homecloud.agent.v1.AgentService.GetInfo:input_type -> homecloud.agent.v1.GetInfoRequest
+	11, // 60: homecloud.agent.v1.AgentService.GetOverview:input_type -> homecloud.agent.v1.GetOverviewRequest
+	13, // 61: homecloud.agent.v1.AgentService.WatchOverview:input_type -> homecloud.agent.v1.WatchOverviewRequest
+	24, // 62: homecloud.agent.v1.AgentService.ListRuns:input_type -> homecloud.agent.v1.ListRunsRequest
+	34, // 63: homecloud.agent.v1.AgentService.ListEvents:input_type -> homecloud.agent.v1.ListEventsRequest
+	36, // 64: homecloud.agent.v1.AgentService.ListQuarantine:input_type -> homecloud.agent.v1.ListQuarantineRequest
+	40, // 65: homecloud.agent.v1.AgentService.GetAsset:input_type -> homecloud.agent.v1.GetAssetRequest
+	45, // 66: homecloud.agent.v1.AgentService.ReleaseQuarantine:input_type -> homecloud.agent.v1.ReleaseQuarantineRequest
+	47, // 67: homecloud.agent.v1.AgentService.StartSync:input_type -> homecloud.agent.v1.StartSyncRequest
+	49, // 68: homecloud.agent.v1.AgentService.SendTestNotification:input_type -> homecloud.agent.v1.SendTestNotificationRequest
+	51, // 69: homecloud.agent.v1.AgentService.GetSettings:input_type -> homecloud.agent.v1.GetSettingsRequest
+	55, // 70: homecloud.agent.v1.AgentService.CreateLoginCode:input_type -> homecloud.agent.v1.CreateLoginCodeRequest
+	57, // 71: homecloud.agent.v1.AgentService.ExchangeLoginCode:input_type -> homecloud.agent.v1.ExchangeLoginCodeRequest
+	10, // 72: homecloud.agent.v1.AgentService.GetInfo:output_type -> homecloud.agent.v1.GetInfoResponse
+	12, // 73: homecloud.agent.v1.AgentService.GetOverview:output_type -> homecloud.agent.v1.GetOverviewResponse
+	14, // 74: homecloud.agent.v1.AgentService.WatchOverview:output_type -> homecloud.agent.v1.WatchOverviewResponse
+	25, // 75: homecloud.agent.v1.AgentService.ListRuns:output_type -> homecloud.agent.v1.ListRunsResponse
+	35, // 76: homecloud.agent.v1.AgentService.ListEvents:output_type -> homecloud.agent.v1.ListEventsResponse
+	37, // 77: homecloud.agent.v1.AgentService.ListQuarantine:output_type -> homecloud.agent.v1.ListQuarantineResponse
+	41, // 78: homecloud.agent.v1.AgentService.GetAsset:output_type -> homecloud.agent.v1.GetAssetResponse
+	46, // 79: homecloud.agent.v1.AgentService.ReleaseQuarantine:output_type -> homecloud.agent.v1.ReleaseQuarantineResponse
+	48, // 80: homecloud.agent.v1.AgentService.StartSync:output_type -> homecloud.agent.v1.StartSyncResponse
+	50, // 81: homecloud.agent.v1.AgentService.SendTestNotification:output_type -> homecloud.agent.v1.SendTestNotificationResponse
+	52, // 82: homecloud.agent.v1.AgentService.GetSettings:output_type -> homecloud.agent.v1.GetSettingsResponse
+	56, // 83: homecloud.agent.v1.AgentService.CreateLoginCode:output_type -> homecloud.agent.v1.CreateLoginCodeResponse
+	58, // 84: homecloud.agent.v1.AgentService.ExchangeLoginCode:output_type -> homecloud.agent.v1.ExchangeLoginCodeResponse
+	72, // [72:85] is the sub-list for method output_type
+	59, // [59:72] is the sub-list for method input_type
+	59, // [59:59] is the sub-list for extension type_name
+	59, // [59:59] is the sub-list for extension extendee
+	0,  // [0:59] is the sub-list for field type_name
 }
 
 func init() { file_homecloud_agent_v1_agent_proto_init() }
@@ -3967,6 +4066,7 @@ func file_homecloud_agent_v1_agent_proto_init() {
 		(*Event_Quarantined)(nil),
 		(*Event_QuarantineReleased)(nil),
 		(*Event_DriveHealthChanged)(nil),
+		(*Event_RenditionMoved)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3974,7 +4074,7 @@ func file_homecloud_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_homecloud_agent_v1_agent_proto_rawDesc), len(file_homecloud_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      9,
-			NumMessages:   49,
+			NumMessages:   50,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

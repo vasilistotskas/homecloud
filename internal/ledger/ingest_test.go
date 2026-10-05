@@ -162,6 +162,32 @@ func TestChangedRenditionLosesEvidence(t *testing.T) {
 	}
 }
 
+func TestMovedRenditionIsVerifiedAgain(t *testing.T) {
+	db, _ := openTemp(t)
+	ingest(t, db, rendition("V", "original", "photo", true))
+	pass(t, db, "V", "original", TierContent)
+	if got := state(t, db, "V"); got != StateVerified {
+		t.Fatalf("state = %s, want verified", got)
+	}
+
+	moved := rendition("V", "original", "photo", true)
+	moved.LocalPath += ".album-copy"
+	stats := ingest(t, db, moved)
+	if stats.MovedRenditions != 1 || stats.ChangedRenditions != 0 {
+		t.Fatalf("stats = %+v, want 1 moved", stats)
+	}
+	if got := state(t, db, "V"); got != StateDownloaded {
+		t.Fatalf("state = %s, want downloaded until the new file is verified", got)
+	}
+	if p := pendingFor(t, db, "V"); len(p) != 1 || !p[0].NeedsContent || p[0].LocalPath != moved.LocalPath {
+		t.Fatalf("pending = %+v, want content check of the new path", p)
+	}
+	events, err := db.Events(context.Background(), []string{RenditionMovedEvent}, 0, 5)
+	if err != nil || len(events) != 1 || !strings.Contains(events[0].Detail, "album-copy") {
+		t.Fatalf("events = %+v, %v", events, err)
+	}
+}
+
 func TestQuarantineIsSticky(t *testing.T) {
 	db, _ := openTemp(t)
 	ctx := context.Background()

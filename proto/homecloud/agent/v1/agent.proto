@@ -212,6 +212,8 @@ message CycleReport {
   int64 errored = 9;
   // Set when the cycle failed.
   string error = 10;
+  // Renditions the downloader reported at a new local path; they are verified again.
+  int64 moved_renditions = 11;
 }
 
 enum DownloadOutcome {
@@ -249,6 +251,7 @@ message Event {
     Quarantined quarantined = 6;
     QuarantineReleased quarantine_released = 7;
     DriveHealthChanged drive_health_changed = 8;
+    RenditionMoved rendition_moved = 9;
   }
 }
 
@@ -259,6 +262,7 @@ enum EventKind {
   EVENT_KIND_QUARANTINED = 3;
   EVENT_KIND_QUARANTINE_RELEASED = 4;
   EVENT_KIND_DRIVE_HEALTH_CHANGED = 5;
+  EVENT_KIND_RENDITION_MOVED = 6;
 }
 
 // AssetRef identifies an asset and names it for display.
@@ -290,6 +294,14 @@ message Quarantined {
 
 message QuarantineReleased {
   string reason = 1;
+}
+
+// RenditionMoved: the downloader now keeps a rendition at a different path; its
+// verification evidence was cleared so the file at the new path is checked.
+message RenditionMoved {
+  string version = 1;
+  string from = 2;
+  string to = 3;
 }
 
 // DriveHealthChanged: the archive drive's health state changed.
