@@ -248,7 +248,7 @@ func runNotifyTest(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	msg := notify.Msg{Title: "homecloud test", Body: "Notifications from homecloud reach this device.", Priority: notify.PriorityDefault, Tags: []string{"white_check_mark"}}
+	msg := notify.TestMsg()
 	if sendErr := notify.New(cfg.Notify).Send(ctx, msg); sendErr != nil {
 		return fmt.Errorf("notify-test: %w", sendErr)
 	}

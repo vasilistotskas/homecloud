@@ -4,15 +4,20 @@ Personal, private service that makes a local drive the verified home of my iClou
 (Photos, Drive, iPhone backups) and keeps iCloud itself down to the most recent 30 days.
 
 - Design, decisions, sources and spike findings: [`docs/design.md`](docs/design.md)
-- Status: **P1 — ingest, verification, agent, status page**. No deletion capability exists yet.
+- Status: **P1 done; local API (Connect) in place, web app and desktop app in progress**. No deletion capability exists yet.
 
 ## How it works
 
 `homecloud-agent` runs at logon. Every `schedule.sync_interval` it runs
 [kei](https://github.com/rhoopr/kei) to download new iCloud Photos to the archive, ingests kei's
 manifest into a SQLite ledger, and verifies every file (exact size + SHA-256, MP4/QuickTime box
-structure, `ffprobe`). A mismatch quarantines the asset and sends an ntfy alert. A local status
-page is served on `web.listen`.
+structure, `ffprobe`). A mismatch quarantines the asset and sends an ntfy alert.
+
+The agent serves a local API ([Connect](https://connectrpc.com), contract in
+`proto/homecloud/agent/v1`) on the loopback address `web.listen`. Same-user clients read the
+bearer token from the owner-only discovery file `agent.json` in the per-user state directory
+(`%LOCALAPPDATA%homecloud` on Windows, `$XDG_STATE_HOME/homecloud` on Linux); the token changes
+every time the agent starts.
 
 ## Requirements
 

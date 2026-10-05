@@ -1,0 +1,10 @@
+# Buf workspace for homecloud's API contract. See docs/design.md §8a.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

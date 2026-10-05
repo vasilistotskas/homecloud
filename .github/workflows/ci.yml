@@ -9,7 +9,34 @@ permissions:
   contents: read
 
 jobs:
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Lint
+        run: go tool buf lint
+      - name: Generated code is current
+        run: |
+          go tool buf generate
+          test -z "$(git status --porcelain)" || { git status --porcelain; exit 1; }
+      - name: No breaking changes
+        env:
+          # Pull requests compare with their base branch, pushes with the previous commit.
+          AGAINST: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        run: |
+          if git cat-file -e "$AGAINST:proto" 2>/dev/null; then
+            go tool buf breaking --against ".git#ref=$AGAINST"
+          else
+            echo "$AGAINST has no API contract yet; nothing to compare against."
+          fi
+
   check:
+    needs: proto
     strategy:
       fail-fast: false
       matrix:

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -91,7 +92,7 @@ func (db *DB) RecordPass(ctx context.Context, k Key, tier Tier, now time.Time) (
 	if err != nil {
 		return err
 	}
-	ts := now.UTC().Format(time.RFC3339Nano)
+	ts := formatTime(now)
 	tx, err := db.w.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("record pass: begin: %w", err)
@@ -139,7 +140,7 @@ func (db *DB) RecordMismatch(ctx context.Context, k Key, tier Tier, reason strin
 	if _, err = tier.passStatement(); err != nil {
 		return err
 	}
-	ts := now.UTC().Format(time.RFC3339Nano)
+	ts := formatTime(now)
 	tx, err := db.w.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("record mismatch: begin: %w", err)
@@ -150,7 +151,7 @@ func (db *DB) RecordMismatch(ctx context.Context, k Key, tier Tier, reason strin
 		}
 	}()
 
-	failure := string(tier) + ": " + reason
+	failure := Failure{Tier: tier, Reason: reason}.String()
 	res, err := tx.ExecContext(ctx, `UPDATE resources SET failure = ? WHERE library = ? AND asset_id = ? AND version = ?`,
 		failure, k.Library, k.AssetID, k.Version)
 	if err != nil {
@@ -177,10 +178,10 @@ func (db *DB) RecordMismatch(ctx context.Context, k Key, tier Tier, reason strin
 // The asset returns to downloaded with its failures cleared, so every required
 // tier runs again before it can count as verified. The reason is audited.
 func (db *DB) ReleaseQuarantine(ctx context.Context, library, assetID, reason string, now time.Time) (err error) {
-	if reason == "" {
-		return errors.New("release quarantine: a reason is required")
+	if strings.TrimSpace(reason) == "" {
+		return ErrReasonRequired
 	}
-	ts := now.UTC().Format(time.RFC3339Nano)
+	ts := formatTime(now)
 	tx, err := db.w.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("release quarantine: begin: %w", err)
@@ -197,7 +198,7 @@ func (db *DB) ReleaseQuarantine(ctx context.Context, library, assetID, reason st
 		return fmt.Errorf("release quarantine %s/%s: %w", library, assetID, err)
 	}
 	if n, nerr := res.RowsAffected(); nerr != nil || n != 1 {
-		return errors.Join(fmt.Errorf("release quarantine %s/%s: asset is not quarantined", library, assetID), nerr)
+		return errors.Join(fmt.Errorf("release quarantine %s/%s: %w", library, assetID, ErrNotQuarantined), nerr)
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE resources SET failure = NULL WHERE library = ? AND asset_id = ?`,
 		library, assetID); err != nil {
@@ -212,27 +213,58 @@ func (db *DB) ReleaseQuarantine(ctx context.Context, library, assetID, reason st
 	return nil
 }
 
+// Failure is a recorded verification failure of one rendition.
+type Failure struct {
+	Tier   Tier
+	Reason string
+}
+
+func (f Failure) String() string { return string(f.Tier) + ": " + f.Reason }
+
+// parseFailure decodes the stored "tier: reason" form written by RecordMismatch.
+func parseFailure(s string) (Failure, error) {
+	tier, reason, ok := strings.Cut(s, ": ")
+	if !ok {
+		return Failure{}, fmt.Errorf("malformed failure %q", s)
+	}
+	f := Failure{Tier: Tier(tier), Reason: reason}
+	if _, err := f.Tier.passStatement(); err != nil {
+		return Failure{}, fmt.Errorf("failure %q: %w", s, err)
+	}
+	return f, nil
+}
+
 // QuarantinedRendition is a failing rendition of a quarantined asset.
 type QuarantinedRendition struct {
 	Key
-	LocalPath, Failure string
+	Filename, LocalPath string
+	// QuarantinedAt is when the asset entered quarantine.
+	QuarantinedAt time.Time
+	Failure       Failure
 }
 
 // Quarantined lists the failing renditions of all quarantined assets.
 func (db *DB) Quarantined(ctx context.Context) (out []QuarantinedRendition, err error) {
 	rows, err := db.r.QueryContext(ctx, `
-		SELECT r.library, r.asset_id, r.version, r.local_path, r.failure
+		SELECT r.library, r.asset_id, r.version, r.filename, r.local_path, a.state_changed_at, r.failure
 		FROM resources r JOIN assets a USING (library, asset_id)
 		WHERE a.state = ? AND r.failure IS NOT NULL
-		ORDER BY r.library, r.asset_id, r.version`, StateQuarantined)
+		ORDER BY a.state_changed_at DESC, r.library, r.asset_id, r.version`, StateQuarantined)
 	if err != nil {
 		return nil, fmt.Errorf("query quarantined: %w", err)
 	}
 	defer func() { err = errors.Join(err, rows.Close()) }()
 	for rows.Next() {
 		var q QuarantinedRendition
-		if scanErr := rows.Scan(&q.Library, &q.AssetID, &q.Version, &q.LocalPath, &q.Failure); scanErr != nil {
+		var at, failure string
+		if scanErr := rows.Scan(&q.Library, &q.AssetID, &q.Version, &q.Filename, &q.LocalPath, &at, &failure); scanErr != nil {
 			return nil, fmt.Errorf("scan quarantined: %w", scanErr)
+		}
+		if q.QuarantinedAt, err = parseTime(at); err != nil {
+			return nil, fmt.Errorf("quarantined %v: %w", q.Key, err)
+		}
+		if q.Failure, err = parseFailure(failure); err != nil {
+			return nil, err
 		}
 		out = append(out, q)
 	}

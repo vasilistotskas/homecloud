@@ -51,7 +51,9 @@ Packages:
 | `internal/drive` | iCloud Drive mirror |
 | `internal/backup` | Local iPhone backup monitor |
 | `internal/notify` | ntfy client |
-| `internal/web` | Read-only status page + kill switch |
+| `internal/api` | `homecloud.agent.v1.AgentService` implementation (Connect) |
+| `internal/auth` | Bearer token + discovery file, browser login codes and sessions |
+| `internal/web` | Loopback HTTP server: Host/Origin checks, CORS for the desktop app, authentication |
 | `internal/app` | Scheduler loop + single global job lock |
 | `sidecar/icloud_delete.py` | PEP 723 script (`uv run --script`), pinned `pyicloud==2.7.0` |
 
@@ -113,7 +115,12 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 
   kei's Linux binaries require glibc ≥ 2.39 (Ubuntu 24.04 / Debian 13+).
 - **Process model:** the agent is always a separate, headless process that owns the ledger, kei, verification, notifications and (later) deletion. No GUI ever hosts it.
-- **Local API:** Connect-RPC (connect-go, protobuf package `homecloud.agent.v1`, `buf breaking` in CI) over loopback HTTP. Authentication: 256-bit bearer token in a per-user file (owner-only ACL on Windows, mode 0600 on Linux), exact Host check, Origin allow-list, no wildcard CORS. A version/capabilities handshake gates clients. Destructive actions require a per-request confirmation nonce recorded in the ledger.
+- **Local API (implemented, M1):** Connect-RPC (connect-go v1.21.0; v2 is only a release candidate), contract `proto/homecloud/agent/v1/agent.proto`, Buf v2 config with local plugins pinned as Go `tool` dependencies; generated Go code committed under `gen/`; CI runs `buf lint`, a generated-code drift check and `buf breaking` (PR base, or the previous commit on push).
+  - Transport: plain HTTP/1.1 on the loopback `web.listen` (Connect unary + server streaming work over HTTP/1.1; browsers never use h2c). No server-wide write timeout because `WatchOverview` streams; read timeouts stay.
+  - Request pipeline: exact Host allow-list (`web.listen`, `localhost:port`) → Origin allow-list (own origins + the Tauri webview origins `http://tauri.localhost` on Windows and `tauri://localhost` on Linux) → CORS (rs/cors, desktop origins only, `Authorization` added to connect-cors' header lists) → security headers → authentication.
+  - Credentials: a 256-bit bearer token generated at every agent start and published in `agent.json` (per-user state dir) — created on Windows with a protected owner-only DACL `D:P(A;;FA;;;<user SID>)` via `CreateFile` (Go's file mode bits do not set ACLs on Windows), mode 0600 on Linux, written atomically. Browsers get an in-memory session cookie (`HttpOnly`, `SameSite=Strict`, 7 days) by exchanging a single-use 8-character login code (2 min, issued only to bearer holders; 5 wrong guesses revoke all codes); cookie calls also pass `http.CrossOriginProtection`. No `Secure` attribute: plain HTTP on loopback.
+  - `GetInfo` returns `api_version` (MAJOR.MINOR); clients refuse a different major. Destructive actions (P3) will require a per-request confirmation nonce recorded in the ledger.
+  - Rejected: Tauri `plugin-http` (Rust-side fetch; server-streaming support undocumented), cookie-only auth inside Tauri (third-party cookie context), h2c (no browser support, not needed).
 - **GUI:** one React + Fluent UI v9 single-page app, hosted (a) in a Tauri 2 desktop shell on Windows (tray, autostart, notifications, single-instance, updater, Mica) and (b) by the agent itself for browsers and Linux/headless hosts. Tauri installs the agent and its logon task but never supervises it. Rejected: Wails v3 (beta, single principal maintainer), WinUI 3 (Windows-only), Fyne/Gio (non-Fluent, low-level), Avalonia/Flutter/Electron (additional stack or weight), MAUI (no Linux).
 
 ## 9. Dependencies (verified 2026-10-05)
@@ -129,6 +136,11 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 | golang.org/x/sys | v0.48.0 | https://pkg.go.dev/golang.org/x/sys?tab=versions (monitor GO-2026-5024) |
 | golang.org/x/text | latest | https://pkg.go.dev/golang.org/x/text |
 | github.com/google/go-cmp | v0.7.0 | https://pkg.go.dev/github.com/google/go-cmp?tab=versions |
+| connectrpc.com/connect (+ protoc-gen-connect-go) | v1.21.0 | https://github.com/connectrpc/connect-go/releases |
+| connectrpc.com/cors | v0.1.0 | https://github.com/connectrpc/cors-go/releases |
+| github.com/rs/cors | v1.11.1 | https://proxy.golang.org/github.com/rs/cors/@latest |
+| google.golang.org/protobuf (+ protoc-gen-go) | v1.36.12 | https://github.com/protocolbuffers/protobuf-go/releases |
+| Buf CLI (Go tool) | v1.73.0 | https://github.com/bufbuild/buf/releases |
 | golangci-lint | v2.14.0 | https://github.com/golangci/golangci-lint/releases |
 | FFmpeg (ffprobe) | 9.0.2 (Gyan build) | https://www.gyan.dev/ffmpeg/builds/ |
 | kei | 0.24.1 | https://github.com/rhoopr/kei/releases/tag/v0.24.1 |

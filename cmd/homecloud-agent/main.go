@@ -9,14 +9,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/vasilistotskas/homecloud/internal/api"
 	"github.com/vasilistotskas/homecloud/internal/app"
+	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/doctor"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
@@ -72,12 +76,15 @@ func run() (err error) {
 	}
 	defer func() { err = errors.Join(err, db.Close()) }()
 
-	// The status page is non-critical: if it cannot serve, archiving continues.
+	notifier := notify.New(cfg.Notify)
+	agent := app.NewAgent(cfg, db, log, notifier, logs.kei, time.Now)
+
+	// The local API is non-critical: if it cannot serve, archiving continues.
 	webDone := make(chan struct{})
 	go func() {
 		defer close(webDone)
-		if serveErr := web.Serve(ctx, cfg.Web.Listen, db, log); serveErr != nil {
-			log.Error("status page stopped", "err", serveErr)
+		if serveErr := serveAPI(ctx, cfg, cfgPath, db, agent, notifier, log); serveErr != nil {
+			log.Error("local API stopped", "err", serveErr)
 		}
 	}()
 	defer func() { stop(); <-webDone }()
@@ -85,7 +92,6 @@ func run() (err error) {
 	if readyErr := platform.NotifyReady(); readyErr != nil {
 		log.Error("service manager readiness notification failed", "err", readyErr)
 	}
-	agent := &app.Agent{Cfg: cfg, DB: db, Log: log, Notify: notify.New(cfg.Notify), KeiLog: logs.kei, Now: time.Now}
 	runErr := agent.Run(ctx)
 	if stopErr := platform.NotifyStopping(); stopErr != nil {
 		log.Error("service manager stopping notification failed", "err", stopErr)
@@ -106,4 +112,45 @@ func configPath() (string, error) {
 		return "", fmt.Errorf("locate config dir: %w", err)
 	}
 	return filepath.Join(dir, "homecloud", "config.toml"), nil
+}
+
+// serveAPI serves the local API until ctx ends. Clients find it through the
+// discovery file, which is published only once the listener is bound and
+// removed again on shutdown.
+func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledger.DB, agent *app.Agent, n app.Notifier, log *slog.Logger) (err error) {
+	token, err := auth.NewToken()
+	if err != nil {
+		return err
+	}
+	authn := auth.New(token, time.Now)
+	h, err := web.Handler(web.Options{
+		Listen: cfg.Web.Listen,
+		Service: api.New(api.Deps{
+			Config: cfg, ConfigPath: cfgPath, AgentVersion: version,
+			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Now: time.Now,
+		}),
+		Auth: authn,
+		Log:  log,
+	})
+	if err != nil {
+		return err
+	}
+	var lc net.ListenConfig
+	ln, err := lc.Listen(ctx, "tcp", cfg.Web.Listen)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.Web.Listen, err)
+	}
+	endpoint, err := auth.Publish(auth.Endpoint{
+		URL: "http://" + cfg.Web.Listen, Token: token, AgentVersion: version, PID: os.Getpid(),
+	})
+	if err != nil {
+		return errors.Join(err, ln.Close())
+	}
+	defer func() {
+		if rmErr := os.Remove(endpoint); rmErr != nil && !errors.Is(rmErr, fs.ErrNotExist) {
+			err = errors.Join(err, fmt.Errorf("remove endpoint file: %w", rmErr))
+		}
+	}()
+	log.Info("local API listening", "addr", cfg.Web.Listen, "endpoint", endpoint)
+	return web.Serve(ctx, ln, h, log)
 }

@@ -56,7 +56,7 @@ type FFprobe struct {
 	Version string `toml:"version"`
 }
 
-// Web configures the local status page.
+// Web configures the local API and web app endpoint.
 type Web struct {
 	Listen string `toml:"listen"`
 }
@@ -150,7 +150,7 @@ func (c *Config) Validate() error {
 	if ap, err := netip.ParseAddrPort(c.Web.Listen); err != nil {
 		add("web.listen must be ip:port, got %q: %w", c.Web.Listen, err)
 	} else if !ap.Addr().IsLoopback() {
-		add("web.listen must be a loopback address (the status page is unauthenticated), got %q", c.Web.Listen)
+		add("web.listen must be a loopback address, got %q", c.Web.Listen)
 	}
 
 	if u, err := url.Parse(c.Notify.Server); err != nil || u.Scheme != "https" || u.Host == "" || strings.TrimSuffix(u.Path, "/") != "" {

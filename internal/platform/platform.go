@@ -11,6 +11,8 @@
 //	InstallAgent(ctx, AgentService)      start the agent at logon, and now
 //	UninstallAgent(ctx, name)            remove that registration
 //	NotifyReady() / NotifyStopping()     service-manager readiness protocol
+//	StateDir() (string, error)           per-user runtime state directory
+//	WriteSecretFile(path, data) error    atomic write readable only by the current user
 package platform
 
 import (

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -23,35 +24,72 @@ type Notifier interface {
 // authAlertEvery throttles repeated "sign-in needed" alerts.
 const authAlertEvery = 24 * time.Hour
 
+// CycleRunKind is the ledger run kind of a sync cycle.
+const CycleRunKind = "cycle"
+
 // Agent runs the periodic sync → ingest → verify cycle.
 type Agent struct {
-	Cfg    *config.Config
-	DB     *ledger.DB
-	Log    *slog.Logger
-	Notify Notifier
-	// KeiLog receives kei's own output.
-	KeiLog io.Writer
-	Now    func() time.Time
+	cfg    *config.Config
+	db     *ledger.DB
+	log    *slog.Logger
+	notify Notifier
+	keiLog io.Writer
+	now    func() time.Time
+
+	hub     *Hub
+	trigger chan struct{}
 
 	mu            sync.Mutex
 	lastAuthAlert time.Time
 }
 
-// Run executes a cycle immediately and then every schedule.sync_interval until ctx ends.
+// NewAgent returns an idle agent. keiLog receives kei's own output.
+func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, keiLog io.Writer, now func() time.Time) *Agent {
+	return &Agent{
+		cfg: cfg, db: db, log: log, notify: n, keiLog: keiLog, now: now,
+		hub:     NewHub(),
+		trigger: make(chan struct{}, 1),
+	}
+}
+
+// Hub exposes the agent's live status.
+func (a *Agent) Hub() *Hub { return a.hub }
+
+// RequestCycle asks for a cycle to start now. It reports false, and does
+// nothing, when a cycle is already running or requested.
+func (a *Agent) RequestCycle() bool {
+	if st, _ := a.hub.Snapshot(); st.Phase != PhaseIdle {
+		return false
+	}
+	select {
+	case a.trigger <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+// Run executes a cycle immediately, then again schedule.sync_interval after
+// each cycle ends or as soon as one is requested, until ctx ends.
 func (a *Agent) Run(ctx context.Context) error {
-	ticker := time.NewTicker(a.Cfg.Schedule.SyncInterval.Std())
-	defer ticker.Stop()
+	interval := a.cfg.Schedule.SyncInterval.Std()
 	for {
 		if err := a.Cycle(ctx); err != nil {
 			if ctx.Err() != nil {
 				return fmt.Errorf("agent stopped: %w", ctx.Err())
 			}
-			a.Log.Error("cycle failed", "err", err)
+			a.log.Error("cycle failed", "err", err)
 		}
+		next := a.now().Add(interval)
+		a.hub.update(func(s *Status) { s.NextCycleAt = next })
+		timer := time.NewTimer(interval)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return fmt.Errorf("agent stopped: %w", ctx.Err())
-		case <-ticker.C:
+		case <-timer.C:
+		case <-a.trigger:
+			timer.Stop()
 		}
 	}
 }
@@ -64,10 +102,15 @@ type CycleReport struct {
 	Error      string             `json:"error,omitempty"`
 }
 
+// KeiOutcomeError is CycleReport.KeiOutcome when kei could not run or exited
+// with an unexpected code.
+const KeiOutcomeError = "error"
+
 // Cycle performs one kei sync followed by ingest and verification and records
 // the run in the ledger.
 func (a *Agent) Cycle(ctx context.Context) error {
-	runID, err := a.DB.StartRun(ctx, "cycle", a.Now())
+	defer a.setPhase(PhaseIdle)
+	runID, err := a.db.StartRun(ctx, CycleRunKind, a.now())
 	if err != nil {
 		return err
 	}
@@ -77,8 +120,16 @@ func (a *Agent) Cycle(ctx context.Context) error {
 	}
 	ok := cycleErr == nil && rep.Verified.Mismatched == 0
 	// Record the outcome even when ctx was cancelled mid-cycle.
-	finishErr := a.DB.FinishRun(context.WithoutCancel(ctx), runID, ok, rep, a.Now())
+	finishErr := a.db.FinishRun(context.WithoutCancel(ctx), runID, ok, rep, a.now())
 	return errors.Join(cycleErr, finishErr)
+}
+
+func (a *Agent) setPhase(p Phase) {
+	started := a.now()
+	if p == PhaseIdle {
+		started = time.Time{}
+	}
+	a.hub.update(func(s *Status) { s.Phase, s.PhaseStartedAt = p, started })
 }
 
 // cycle does the work. kei problems do not skip ingest/verify: the manifest
@@ -89,7 +140,8 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 		rep  CycleReport
 	)
 
-	outcome, err := kei.Sync(ctx, a.Cfg.Kei, a.KeiLog)
+	a.setPhase(PhaseDownloading)
+	outcome, err := kei.Sync(ctx, a.cfg.Kei, a.keiLog)
 	switch {
 	case err != nil:
 		errs = append(errs, fmt.Errorf("kei sync: %w", err))
@@ -99,29 +151,31 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	case outcome == kei.OutcomeAuthTerminal:
 		a.alert(ctx, notify.Msg{Title: "homecloud: Apple account needs attention", Body: "Apple reported an account state that needs you (kei exit 4). Run kei login and check appleid.apple.com.", Priority: notify.PriorityUrgent, Tags: []string{"rotating_light"}})
 	case outcome == kei.OutcomePartial:
-		a.Log.Warn("kei sync partially failed; failed assets retry next cycle")
+		a.log.Warn("kei sync partially failed; failed assets retry next cycle")
 	case outcome == kei.OutcomeOK:
 	}
 	if err == nil {
 		rep.KeiOutcome = outcome.String()
 	} else {
-		rep.KeiOutcome = "error"
+		rep.KeiOutcome = KeiOutcomeError
 	}
-	a.Log.Info("kei sync finished", "outcome", rep.KeiOutcome)
+	a.log.Info("kei sync finished", "outcome", rep.KeiOutcome)
 
-	ingested, err := Ingest(ctx, a.Cfg, a.DB, a.Now())
+	a.setPhase(PhaseIngesting)
+	ingested, err := Ingest(ctx, a.cfg, a.db, a.now())
 	rep.Ingested = ingested
 	if err != nil {
 		return rep, errors.Join(append(errs, err)...)
 	}
-	a.Log.Info("ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
+	a.log.Info("ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
 
-	verified, err := Verify(ctx, a.Cfg, a.DB, a.Log, a.Now)
+	a.setPhase(PhaseVerifying)
+	verified, err := Verify(ctx, a.cfg, a.db, a.log, a.now)
 	rep.Verified = verified
 	if err != nil {
 		errs = append(errs, err)
 	}
-	a.Log.Info("verified", "checked", verified.Checked, "passed", verified.Passed, "mismatched", verified.Mismatched, "errored", verified.Errored)
+	a.log.Info("verified", "checked", verified.Checked, "passed", verified.Passed, "mismatched", verified.Mismatched, "errored", verified.Errored)
 	if verified.Mismatched > 0 {
 		a.alert(ctx, notify.Msg{
 			Title:    "homecloud: files failed verification",
@@ -135,12 +189,12 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 
 func (a *Agent) alertAuth(ctx context.Context) {
 	a.mu.Lock()
-	due := a.lastAuthAlert.IsZero() || a.Now().Sub(a.lastAuthAlert) >= authAlertEvery
+	due := a.lastAuthAlert.IsZero() || a.now().Sub(a.lastAuthAlert) >= authAlertEvery
 	if due {
-		a.lastAuthAlert = a.Now()
+		a.lastAuthAlert = a.now()
 	}
 	a.mu.Unlock()
-	a.Log.Warn("kei needs Apple sign-in (2FA)")
+	a.log.Warn("kei needs Apple sign-in (2FA)")
 	if due {
 		a.alert(ctx, notify.Msg{
 			Title:    "homecloud: Apple sign-in needed",
@@ -152,7 +206,16 @@ func (a *Agent) alertAuth(ctx context.Context) {
 }
 
 func (a *Agent) alert(ctx context.Context, m notify.Msg) {
-	if err := a.Notify.Send(ctx, m); err != nil {
-		a.Log.Error("notification failed", "title", m.Title, "err", err)
+	if err := a.notify.Send(ctx, m); err != nil {
+		a.log.Error("notification failed", "title", m.Title, "err", err)
 	}
+}
+
+// ParseCycleReport decodes the detail recorded for a finished cycle run.
+func ParseCycleReport(detail string) (CycleReport, error) {
+	var rep CycleReport
+	if err := json.Unmarshal([]byte(detail), &rep); err != nil {
+		return CycleReport{}, fmt.Errorf("decode cycle report: %w", err)
+	}
+	return rep, nil
 }

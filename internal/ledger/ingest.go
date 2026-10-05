@@ -64,7 +64,7 @@ func (db *DB) Ingest(ctx context.Context, rs []Rendition, now time.Time) (stats 
 		}
 	}()
 
-	ts := now.UTC().Format(time.RFC3339Nano)
+	ts := formatTime(now)
 	byAsset := map[[2]string][]Rendition{}
 	var order [][2]string
 	for _, r := range rs {
@@ -114,12 +114,12 @@ func (db *DB) Ingest(ctx context.Context, rs []Rendition, now time.Time) (stats 
 
 func upsertAsset(ctx context.Context, tx *sql.Tx, group []Rendition, ts string) error {
 	first := group[0]
-	created := first.CreatedAt.UTC().Format(time.RFC3339Nano)
+	created := formatTime(first.CreatedAt)
 	var added sql.NullString
 	seen := first.SeenAt
 	for _, r := range group {
 		if r.AddedAt != nil && !added.Valid {
-			added = sql.NullString{String: r.AddedAt.UTC().Format(time.RFC3339Nano), Valid: true}
+			added = sql.NullString{String: formatTime(*r.AddedAt), Valid: true}
 		}
 		if r.SeenAt.After(seen) {
 			seen = r.SeenAt
@@ -132,7 +132,7 @@ func upsertAsset(ctx context.Context, tx *sql.Tx, group []Rendition, ts string) 
 			created_at   = excluded.created_at,
 			added_at     = COALESCE(excluded.added_at, assets.added_at),
 			last_seen_at = excluded.last_seen_at`,
-		first.Library, first.AssetID, StateDiscovered, ts, created, added, seen.UTC().Format(time.RFC3339Nano))
+		first.Library, first.AssetID, StateDiscovered, ts, created, added, formatTime(seen))
 	if err != nil {
 		return fmt.Errorf("upsert asset %s/%s: %w", first.Library, first.AssetID, err)
 	}

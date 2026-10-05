@@ -1,0 +1,418 @@
+syntax = "proto3";
+
+// Package homecloud.agent.v1 is the local API of the homecloud agent. It is
+// served on the loopback address configured as web.listen. Clients
+// authenticate with the bearer token from the agent's discovery file, or (in a
+// browser) with a session cookie obtained through a one-time login code.
+package homecloud.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// AgentService exposes the agent's state and the operator actions it accepts.
+service AgentService {
+  // GetInfo identifies the agent. Clients call it first and refuse to work
+  // with an agent whose api_version major differs from their own.
+  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // GetOverview returns the current archive overview.
+  rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // WatchOverview sends the current overview, then a new one whenever it changes.
+  rpc WatchOverview(WatchOverviewRequest) returns (stream WatchOverviewResponse);
+  // ListRuns pages through recorded runs, newest first.
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // ListEvents pages through the append-only audit log, newest first.
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // ListQuarantine lists quarantined assets with their failing renditions.
+  rpc ListQuarantine(ListQuarantineRequest) returns (ListQuarantineResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // GetAsset returns one asset with every rendition and its verification evidence.
+  rpc GetAsset(GetAssetRequest) returns (GetAssetResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // ReleaseQuarantine returns a quarantined asset to verification. The reason
+  // is required and recorded in the audit log.
+  rpc ReleaseQuarantine(ReleaseQuarantineRequest) returns (ReleaseQuarantineResponse);
+  // StartSync asks the agent to run a cycle now.
+  rpc StartSync(StartSyncRequest) returns (StartSyncResponse);
+  // SendTestNotification sends a test alert through the configured channel.
+  rpc SendTestNotification(SendTestNotificationRequest) returns (SendTestNotificationResponse);
+  // GetSettings returns the agent's effective configuration.
+  rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // CreateLoginCode issues a short-lived, single-use code that a browser can
+  // exchange for a session. Requires the bearer token.
+  rpc CreateLoginCode(CreateLoginCodeRequest) returns (CreateLoginCodeResponse);
+  // ExchangeLoginCode trades a login code for a session cookie. It is the only
+  // method callable without credentials.
+  rpc ExchangeLoginCode(ExchangeLoginCodeRequest) returns (ExchangeLoginCodeResponse);
+}
+
+message GetInfoRequest {}
+
+message GetInfoResponse {
+  // Build version of the agent, e.g. a git revision.
+  string agent_version = 1;
+  // Semantic version of this API, "MAJOR.MINOR".
+  string api_version = 2;
+  // Operating system the agent runs on, as Go's GOOS (e.g. "windows", "linux").
+  string os = 3;
+}
+
+message GetOverviewRequest {}
+
+message GetOverviewResponse {
+  Overview overview = 1;
+}
+
+message WatchOverviewRequest {}
+
+message WatchOverviewResponse {
+  Overview overview = 1;
+}
+
+// Overview is the archive at a glance.
+message Overview {
+  AssetCounts assets = 1;
+  ArchiveTotals archive = 2;
+  Storage storage = 3;
+  AppleAccount apple_account = 4;
+  Activity activity = 5;
+  // The most recent finished cycle; absent before the first one finishes.
+  Run last_cycle = 6;
+}
+
+// AssetCounts counts assets by lifecycle state.
+message AssetCounts {
+  int64 discovered = 1;
+  int64 downloaded = 2;
+  int64 verified = 3;
+  int64 quarantined = 4;
+}
+
+// ArchiveTotals sums the downloaded renditions on disk.
+message ArchiveTotals {
+  int64 files = 1;
+  int64 bytes = 2;
+}
+
+// Storage describes the volume holding the archive.
+message Storage {
+  string root = 1;
+  int64 total_bytes = 2;
+  int64 free_bytes = 3;
+  // Configured minimum free space, in percent of total_bytes.
+  double min_free_percent = 4;
+}
+
+// AppleAccount reports whether the downloader could use the Apple session in
+// the most recent cycle.
+message AppleAccount {
+  AppleAccountState state = 1;
+}
+
+enum AppleAccountState {
+  // No cycle has reported on the account yet.
+  APPLE_ACCOUNT_STATE_UNSPECIFIED = 0;
+  APPLE_ACCOUNT_STATE_SIGNED_IN = 1;
+  // The session expired; the operator must sign in again (kei exit 3).
+  APPLE_ACCOUNT_STATE_SIGN_IN_REQUIRED = 2;
+  // Apple reported an account state that needs the operator (kei exit 4).
+  APPLE_ACCOUNT_STATE_NEEDS_ATTENTION = 3;
+}
+
+// Activity is what the agent is doing now.
+message Activity {
+  Phase phase = 1;
+  // When the current phase started; absent while idle.
+  google.protobuf.Timestamp phase_started_at = 2;
+  // When the next scheduled cycle starts.
+  google.protobuf.Timestamp next_cycle_at = 3;
+}
+
+enum Phase {
+  PHASE_UNSPECIFIED = 0;
+  PHASE_IDLE = 1;
+  PHASE_DOWNLOADING = 2;
+  PHASE_INGESTING = 3;
+  PHASE_VERIFYING = 4;
+}
+
+// Run is one recorded job execution.
+message Run {
+  int64 id = 1;
+  string kind = 2;
+  google.protobuf.Timestamp started_at = 3;
+  // Absent while the run is in progress.
+  google.protobuf.Timestamp finished_at = 4;
+  RunResult result = 5;
+  // Present for kind "cycle" once finished.
+  CycleReport cycle = 6;
+}
+
+enum RunResult {
+  RUN_RESULT_UNSPECIFIED = 0;
+  RUN_RESULT_RUNNING = 1;
+  RUN_RESULT_OK = 2;
+  RUN_RESULT_FAILED = 3;
+}
+
+// CycleReport is what one sync cycle did.
+message CycleReport {
+  DownloadOutcome download = 1;
+  int64 assets = 2;
+  int64 renditions = 3;
+  int64 new_renditions = 4;
+  int64 changed_renditions = 5;
+  int64 checked = 6;
+  int64 passed = 7;
+  int64 mismatched = 8;
+  int64 errored = 9;
+  // Set when the cycle failed.
+  string error = 10;
+}
+
+enum DownloadOutcome {
+  DOWNLOAD_OUTCOME_UNSPECIFIED = 0;
+  DOWNLOAD_OUTCOME_OK = 1;
+  // Some assets failed and are retried next cycle.
+  DOWNLOAD_OUTCOME_PARTIAL = 2;
+  DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED = 3;
+  DOWNLOAD_OUTCOME_NEEDS_ATTENTION = 4;
+  // The downloader could not be run or exited unexpectedly.
+  DOWNLOAD_OUTCOME_ERROR = 5;
+}
+
+message ListRunsRequest {
+  // Maximum runs to return, at most 200; 0 selects the default of 50.
+  int32 page_size = 1;
+  // From a previous response's next_page_token; empty for the first page.
+  string page_token = 2;
+}
+
+message ListRunsResponse {
+  repeated Run runs = 1;
+  // Empty when there are no more runs.
+  string next_page_token = 2;
+}
+
+// Event is one entry of the audit log.
+message Event {
+  int64 id = 1;
+  google.protobuf.Timestamp at = 2;
+  AssetRef asset = 3;
+  oneof detail {
+    RenditionChanged rendition_changed = 4;
+    StateChanged state_changed = 5;
+    Quarantined quarantined = 6;
+    QuarantineReleased quarantine_released = 7;
+  }
+}
+
+enum EventKind {
+  EVENT_KIND_UNSPECIFIED = 0;
+  EVENT_KIND_RENDITION_CHANGED = 1;
+  EVENT_KIND_STATE_CHANGED = 2;
+  EVENT_KIND_QUARANTINED = 3;
+  EVENT_KIND_QUARANTINE_RELEASED = 4;
+}
+
+// AssetRef identifies an asset and names it for display.
+message AssetRef {
+  string library = 1;
+  string asset_id = 2;
+  // File name of the asset's original rendition; empty if unknown.
+  string filename = 3;
+}
+
+// RenditionChanged: a rendition's size or hash changed in iCloud; its
+// verification evidence was cleared.
+message RenditionChanged {
+  string version = 1;
+  int64 size_bytes = 2;
+  string sha256 = 3;
+}
+
+message StateChanged {
+  AssetState from = 1;
+  AssetState to = 2;
+}
+
+message Quarantined {
+  string version = 1;
+  Tier tier = 2;
+  string reason = 3;
+}
+
+message QuarantineReleased {
+  string reason = 1;
+}
+
+enum AssetState {
+  ASSET_STATE_UNSPECIFIED = 0;
+  ASSET_STATE_DISCOVERED = 1;
+  ASSET_STATE_DOWNLOADED = 2;
+  ASSET_STATE_VERIFIED = 3;
+  ASSET_STATE_QUARANTINED = 4;
+}
+
+enum Tier {
+  TIER_UNSPECIFIED = 0;
+  // Size and SHA-256 match the downloader's checksum.
+  TIER_CONTENT = 1;
+  // The MP4/MOV container's top-level boxes are complete.
+  TIER_STRUCTURE = 2;
+  // ffprobe can read the video's streams and duration.
+  TIER_PROBE = 3;
+}
+
+message ListEventsRequest {
+  // Kinds to include; at least one.
+  repeated EventKind kinds = 1;
+  // Maximum events to return, at most 200; 0 selects the default of 50.
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListEventsResponse {
+  repeated Event events = 1;
+  string next_page_token = 2;
+}
+
+message ListQuarantineRequest {}
+
+message ListQuarantineResponse {
+  repeated QuarantinedAsset assets = 1;
+}
+
+message QuarantinedAsset {
+  AssetRef asset = 1;
+  google.protobuf.Timestamp quarantined_at = 2;
+  repeated Failure failures = 3;
+}
+
+// Failure is a rendition's recorded verification failure.
+message Failure {
+  string version = 1;
+  Tier tier = 2;
+  string reason = 3;
+}
+
+message GetAssetRequest {
+  string library = 1;
+  string asset_id = 2;
+}
+
+message GetAssetResponse {
+  Asset asset = 1;
+}
+
+message Asset {
+  AssetRef ref = 1;
+  AssetState state = 2;
+  google.protobuf.Timestamp state_changed_at = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp added_at = 5;
+  google.protobuf.Timestamp last_seen_at = 6;
+  repeated Rendition renditions = 7;
+}
+
+message Rendition {
+  string version = 1;
+  string filename = 2;
+  string local_path = 3;
+  MediaType media_type = 4;
+  int64 size_bytes = 5;
+  string sha256 = 6;
+  // Tiers this rendition needs; content is always required.
+  repeated Tier required_tiers = 7;
+  // Tiers that passed, with when.
+  repeated TierPass passes = 8;
+  // Present while the rendition fails verification.
+  Failure failure = 9;
+}
+
+message TierPass {
+  Tier tier = 1;
+  google.protobuf.Timestamp at = 2;
+}
+
+enum MediaType {
+  MEDIA_TYPE_UNSPECIFIED = 0;
+  MEDIA_TYPE_PHOTO = 1;
+  MEDIA_TYPE_VIDEO = 2;
+  MEDIA_TYPE_LIVE_PHOTO_IMAGE = 3;
+  MEDIA_TYPE_LIVE_PHOTO_VIDEO = 4;
+}
+
+message ReleaseQuarantineRequest {
+  string library = 1;
+  string asset_id = 2;
+  // Why the operator judged the asset safe to re-verify; must not be blank.
+  string reason = 3;
+}
+
+message ReleaseQuarantineResponse {}
+
+message StartSyncRequest {}
+
+message StartSyncResponse {
+  // False when a cycle was already running or queued; the request joined it.
+  bool started = 1;
+}
+
+message SendTestNotificationRequest {}
+
+message SendTestNotificationResponse {}
+
+message GetSettingsRequest {}
+
+message GetSettingsResponse {
+  Settings settings = 1;
+}
+
+// Settings mirrors the agent's validated configuration file.
+message Settings {
+  string config_path = 1;
+  string storage_root = 2;
+  string storage_volume_id = 3;
+  double min_free_percent = 4;
+  ToolPin downloader = 5;
+  string downloader_config = 6;
+  ToolPin video_probe = 7;
+  string listen = 8;
+  string notify_server = 9;
+  string notify_topic = 10;
+  // Seconds between scheduled cycles.
+  int64 sync_interval_seconds = 11;
+  int64 scrub_interval_seconds = 12;
+  double scrub_fraction = 13;
+}
+
+// ToolPin is an external tool and the exact version homecloud requires.
+message ToolPin {
+  string binary = 1;
+  string version = 2;
+}
+
+message CreateLoginCodeRequest {}
+
+message CreateLoginCodeResponse {
+  // Eight characters from an unambiguous alphabet, shown as XXXX-XXXX.
+  string code = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+message ExchangeLoginCodeRequest {
+  string code = 1;
+}
+
+message ExchangeLoginCodeResponse {}

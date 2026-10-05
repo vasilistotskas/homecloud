@@ -1,93 +1,118 @@
-// Package web serves homecloud's read-only local status page.
+// Package web serves the agent's local HTTP endpoint: the Connect API and
+// (from the SPA milestone) the web app, on a loopback address.
+//
+// Every request passes, in order:
+//
+//  1. an exact Host allow-list (defeats DNS rebinding),
+//  2. an Origin allow-list (the agent's own origins and the desktop app's),
+//  3. CORS, granted only to the desktop app's origins,
+//  4. security headers,
+//  5. for the API: authentication (bearer token or session cookie, with CSRF
+//     protection for cookies).
 package web
 
 import (
 	"context"
-	"embed"
 	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
-	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"connectrpc.com/connect"
+	connectcors "connectrpc.com/cors"
+	"github.com/rs/cors"
+
+	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1/agentv1connect"
+	"github.com/vasilistotskas/homecloud/internal/auth"
 )
 
-//go:embed status.html
-var templates embed.FS
-
-var page = template.Must(template.New("status.html").
-	Funcs(template.FuncMap{"deref": func(b *bool) bool { return b != nil && *b }}).
-	ParseFS(templates, "status.html"))
+// DesktopOrigins are the origins of the Tauri desktop app's webview:
+// http://tauri.localhost on Windows, tauri://localhost on Linux and macOS
+// (tauri-utils config, useHttpsScheme = false).
+var DesktopOrigins = []string{"http://tauri.localhost", "tauri://localhost"}
 
 const (
-	recentRuns   = 10
-	recentEvents = 20
-	readTimeout  = 10 * time.Second
-	writeTimeout = 30 * time.Second
-	shutdownWait = 5 * time.Second
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	idleTimeout       = 2 * time.Minute
+	shutdownWait      = 5 * time.Second
+	corsMaxAge        = 2 * time.Hour
+	maxRequestBytes   = 1 << 20
 )
 
-// Ledger is the read-only view the status page needs.
-type Ledger interface {
-	StateCounts(ctx context.Context) (map[ledger.AssetState]int, error)
-	RecentRuns(ctx context.Context, limit int) ([]ledger.Run, error)
-	RecentEvents(ctx context.Context, kinds []string, limit int) ([]ledger.Event, error)
+// Options configures Handler.
+type Options struct {
+	// Listen is the loopback host:port the server is reachable at.
+	Listen string
+	// Service implements the API.
+	Service agentv1connect.AgentServiceHandler
+	Auth    *auth.Authenticator
+	Log     *slog.Logger
 }
 
-type view struct {
-	Now    time.Time
-	States []stateCount
-	Runs   []ledger.Run
-	Events []ledger.Event
-}
+// Handler returns the agent's root HTTP handler.
+func Handler(o Options) (http.Handler, error) {
+	_, port, err := net.SplitHostPort(o.Listen)
+	if err != nil {
+		return nil, fmt.Errorf("listen address %q: %w", o.Listen, err)
+	}
+	hosts := []string{o.Listen, net.JoinHostPort("localhost", port)}
+	self := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		self = append(self, "http://"+h)
+	}
+	origins := slices.Concat(self, DesktopOrigins)
 
-type stateCount struct {
-	State ledger.AssetState
-	Count int
-}
+	csrf := http.NewCrossOriginProtection()
+	for _, o := range self {
+		if err := csrf.AddTrustedOrigin(o); err != nil {
+			return nil, fmt.Errorf("trusted origin %q: %w", o, err)
+		}
+	}
 
-// Handler returns the status page handler. allowedHost is the exact Host header
-// accepted (the listen address), which defeats DNS-rebinding attacks.
-func Handler(db Ledger, allowedHost string, log *slog.Logger) http.Handler {
+	apiPath, apiHandler := agentv1connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		counts, err := db.StateCounts(r.Context())
-		if err != nil {
-			serverError(w, log, err)
-			return
-		}
-		runs, err := db.RecentRuns(r.Context(), recentRuns)
-		if err != nil {
-			serverError(w, log, err)
-			return
-		}
-		events, err := db.RecentEvents(r.Context(), []string{"quarantined", "rendition_changed"}, recentEvents)
-		if err != nil {
-			serverError(w, log, err)
-			return
-		}
-		v := view{Now: time.Now(), Runs: runs, Events: events}
-		for _, s := range []ledger.AssetState{ledger.StateVerified, ledger.StateDownloaded, ledger.StateDiscovered, ledger.StateQuarantined} {
-			v.States = append(v.States, stateCount{s, counts[s]})
-		}
-		if err := page.Execute(w, v); err != nil {
-			log.Error("render status page", "err", err)
-		}
+	mux.Handle(apiPath, authenticate(o.Auth, csrf, apiHandler))
+
+	c := cors.New(cors.Options{
+		AllowedOrigins:      DesktopOrigins,
+		AllowedMethods:      connectcors.AllowedMethods(),
+		AllowedHeaders:      append(connectcors.AllowedHeaders(), "Authorization"),
+		ExposedHeaders:      connectcors.ExposedHeaders(),
+		MaxAge:              int(corsMaxAge / time.Second),
+		AllowPrivateNetwork: true,
 	})
-	return secure(allowedHost, mux)
+	return checkHost(hosts, checkOrigin(origins, c.Handler(secureHeaders(mux)))), nil
 }
 
-func secure(allowedHost string, next http.Handler) http.Handler {
+func checkHost(allowed []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Host != allowedHost {
+		if !slices.Contains(allowed, r.Host) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func checkOrigin(allowed []string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if o := r.Header.Get("Origin"); o != "" && !slices.Contains(allowed, o) {
+			http.Error(w, "forbidden origin", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func secureHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")
@@ -95,34 +120,70 @@ func secure(allowedHost string, next http.Handler) http.Handler {
 	})
 }
 
-func serverError(w http.ResponseWriter, log *slog.Logger, err error) {
-	log.Error("status page query", "err", err)
-	http.Error(w, "internal error", http.StatusInternalServerError)
+// authenticate admits API calls with a valid credential. ExchangeLoginCode is
+// open (it is how a browser obtains a credential); CreateLoginCode requires the
+// bearer token; cookie-authenticated calls must also pass CSRF checks.
+func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next http.Handler) http.Handler {
+	errs := connect.NewErrorWriter()
+	deny := func(w http.ResponseWriter, r *http.Request, code connect.Code, msg string) {
+		if err := errs.Write(w, r, connect.NewError(code, errors.New(msg))); err != nil {
+			http.Error(w, msg, http.StatusInternalServerError)
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		procedure := strings.TrimSuffix(r.URL.Path, "/")
+		if procedure == agentv1connect.AgentServiceExchangeLoginCodeProcedure {
+			if err := csrf.Check(r); err != nil {
+				deny(w, r, connect.CodePermissionDenied, "cross-origin request rejected")
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		switch a.Authenticate(r) {
+		case auth.KindBearer:
+		case auth.KindSession:
+			if procedure == agentv1connect.AgentServiceCreateLoginCodeProcedure {
+				deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")
+				return
+			}
+			if err := csrf.Check(r); err != nil {
+				deny(w, r, connect.CodePermissionDenied, "cross-origin request rejected")
+				return
+			}
+		case auth.KindNone:
+			deny(w, r, connect.CodeUnauthenticated, "missing or invalid credentials")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
-// Serve runs the status page on addr until ctx ends.
-func Serve(ctx context.Context, addr string, db Ledger, log *slog.Logger) error {
+// Serve serves h on ln until ctx ends. Streaming responses (WatchOverview) are
+// long-lived, so there is no server-wide write timeout; the listener is
+// loopback-only.
+func Serve(ctx context.Context, ln net.Listener, h http.Handler, log *slog.Logger) error {
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           Handler(db, addr, log),
-		ReadHeaderTimeout: readTimeout,
+		Handler:           h,
+		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
-		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
 		BaseContext:       func(net.Listener) context.Context { return ctx },
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 	errCh := make(chan error, 1)
-	go func() { errCh <- srv.ListenAndServe() }()
+	go func() { errCh <- srv.Serve(ln) }()
 	select {
 	case err := <-errCh:
-		return fmt.Errorf("status page: %w", err)
+		return fmt.Errorf("http server: %w", err)
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownWait)
 		defer cancel()
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return fmt.Errorf("status page shutdown: %w", err)
+			return fmt.Errorf("http server shutdown: %w", err)
 		}
 		if err := <-errCh; !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("status page: %w", err)
+			return fmt.Errorf("http server: %w", err)
 		}
 		return nil
 	}

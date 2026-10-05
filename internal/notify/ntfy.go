@@ -78,3 +78,13 @@ func (n *Ntfy) Send(ctx context.Context, m Msg) error {
 	}
 	return nil
 }
+
+// TestMsg returns the message sent to confirm that notifications arrive.
+func TestMsg() Msg {
+	return Msg{
+		Title:    "homecloud test",
+		Body:     "Notifications from homecloud reach this device.",
+		Priority: PriorityDefault,
+		Tags:     []string{"white_check_mark"},
+	}
+}

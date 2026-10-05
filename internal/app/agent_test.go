@@ -126,11 +126,8 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 		Kei:      config.Kei{Binary: exe, Config: "unused.toml"},
 		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
 	}
-	return &Agent{
-		Cfg: cfg, DB: db, Notify: n, KeiLog: io.Discard,
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Now: func() time.Time { return *clock },
-	}, n
+	return NewAgent(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), n, io.Discard,
+		func() time.Time { return *clock }), n
 }
 
 func TestCycleVerifiesEvenWhenAuthRequired(t *testing.T) {
@@ -142,7 +139,7 @@ func TestCycleVerifiesEvenWhenAuthRequired(t *testing.T) {
 	if err := agent.Cycle(ctx); err != nil {
 		t.Fatalf("Cycle: %v", err)
 	}
-	counts, err := agent.DB.StateCounts(ctx)
+	counts, err := agent.db.StateCounts(ctx)
 	if err != nil || counts[ledger.StateVerified] != 1 {
 		t.Fatalf("states = %v, %v; want 1 verified despite auth-required sync", counts, err)
 	}
@@ -176,7 +173,7 @@ func TestCycleQuarantinesAndAlertsOnMismatch(t *testing.T) {
 	if err := agent.Cycle(ctx); err != nil {
 		t.Fatalf("Cycle: %v", err)
 	}
-	counts, err := agent.DB.StateCounts(ctx)
+	counts, err := agent.db.StateCounts(ctx)
 	if err != nil || counts[ledger.StateQuarantined] != 1 {
 		t.Fatalf("states = %v, %v; want 1 quarantined", counts, err)
 	}
@@ -198,8 +195,53 @@ func TestCycleSurfacesUnexpectedKeiFailure(t *testing.T) {
 	if got := notes.titles(); len(got) != 1 || !strings.Contains(got[0], "download failed") {
 		t.Fatalf("alerts = %v, want download-failed alert", got)
 	}
-	counts, _ := agent.DB.StateCounts(context.Background())
+	counts, _ := agent.db.StateCounts(context.Background())
 	if counts[ledger.StateVerified] != 1 {
 		t.Fatalf("ingest/verify must still run after kei failure; states = %v", counts)
+	}
+}
+
+func TestRequestCycleCoalesces(t *testing.T) {
+	clock := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	agent, _ := newTestAgent(t, fixture(t, false), "0", &clock)
+	_, changed := agent.Hub().Snapshot()
+	if !agent.RequestCycle() {
+		t.Fatal("first request on an idle agent must be accepted")
+	}
+	if agent.RequestCycle() {
+		t.Fatal("a second request while one is pending must be refused")
+	}
+	<-agent.trigger
+	agent.setPhase(PhaseVerifying)
+	select {
+	case <-changed:
+	default:
+		t.Fatal("a phase change must wake watchers")
+	}
+	if st, _ := agent.Hub().Snapshot(); st.Phase != PhaseVerifying || !st.PhaseStartedAt.Equal(clock) {
+		t.Fatalf("status = %+v", st)
+	}
+	if agent.RequestCycle() {
+		t.Fatal("a request while a cycle runs must be refused")
+	}
+}
+
+func TestCycleRecordsParsableReportAndEndsIdle(t *testing.T) {
+	clock := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	agent, _ := newTestAgent(t, fixture(t, false), "2", &clock)
+	ctx := context.Background()
+	if err := agent.Cycle(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := agent.Hub().Snapshot(); st.Phase != PhaseIdle || !st.PhaseStartedAt.IsZero() {
+		t.Fatalf("status after cycle = %+v, want idle", st)
+	}
+	run, err := agent.db.LastFinishedRun(ctx, CycleRunKind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := ParseCycleReport(run.Detail)
+	if err != nil || rep.KeiOutcome != "partial" || rep.Ingested.Assets != 1 || rep.Verified.Passed != 1 {
+		t.Fatalf("report = %+v, %v", rep, err)
 	}
 }

@@ -22,7 +22,7 @@ type Run struct {
 // StartRun records the start of a job and returns its id.
 func (db *DB) StartRun(ctx context.Context, kind string, now time.Time) (int64, error) {
 	res, err := db.w.ExecContext(ctx, `INSERT INTO runs (kind, started_at) VALUES (?, ?)`,
-		kind, now.UTC().Format(time.RFC3339Nano))
+		kind, formatTime(now))
 	if err != nil {
 		return 0, fmt.Errorf("start run %s: %w", kind, err)
 	}
@@ -40,7 +40,7 @@ func (db *DB) FinishRun(ctx context.Context, id int64, ok bool, detail any, now 
 		return fmt.Errorf("encode run detail: %w", err)
 	}
 	res, err := db.w.ExecContext(ctx, `UPDATE runs SET finished_at = ?, ok = ?, detail = ? WHERE id = ? AND finished_at IS NULL`,
-		now.UTC().Format(time.RFC3339Nano), ok, string(payload), id)
+		formatTime(now), ok, string(payload), id)
 	if err != nil {
 		return fmt.Errorf("finish run %d: %w", id, err)
 	}
@@ -50,10 +50,28 @@ func (db *DB) FinishRun(ctx context.Context, id int64, ok bool, detail any, now 
 	return nil
 }
 
-// RecentRuns returns the latest runs, newest first.
-func (db *DB) RecentRuns(ctx context.Context, limit int) (out []Run, err error) {
-	rows, err := db.r.QueryContext(ctx,
-		`SELECT id, kind, started_at, finished_at, ok, detail FROM runs ORDER BY id DESC LIMIT ?`, limit)
+// Runs returns up to limit runs older than beforeID (all runs when beforeID is
+// 0), newest first.
+func (db *DB) Runs(ctx context.Context, beforeID int64, limit int) ([]Run, error) {
+	return db.queryRuns(ctx, `SELECT id, kind, started_at, finished_at, ok, detail FROM runs
+		WHERE ? = 0 OR id < ? ORDER BY id DESC LIMIT ?`, beforeID, beforeID, limit)
+}
+
+// LastFinishedRun returns the most recent finished run of kind, or ErrNotFound.
+func (db *DB) LastFinishedRun(ctx context.Context, kind string) (Run, error) {
+	runs, err := db.queryRuns(ctx, `SELECT id, kind, started_at, finished_at, ok, detail FROM runs
+		WHERE kind = ? AND finished_at IS NOT NULL ORDER BY id DESC LIMIT 1`, kind)
+	if err != nil {
+		return Run{}, err
+	}
+	if len(runs) == 0 {
+		return Run{}, fmt.Errorf("last finished %s run: %w", kind, ErrNotFound)
+	}
+	return runs[0], nil
+}
+
+func (db *DB) queryRuns(ctx context.Context, query string, args ...any) (out []Run, err error) {
+	rows, err := db.r.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query runs: %w", err)
 	}
@@ -66,15 +84,11 @@ func (db *DB) RecentRuns(ctx context.Context, limit int) (out []Run, err error) 
 		if scanErr := rows.Scan(&r.ID, &r.Kind, &started, &finished, &ok, &r.Detail); scanErr != nil {
 			return nil, fmt.Errorf("scan run: %w", scanErr)
 		}
-		if r.StartedAt, err = time.Parse(time.RFC3339Nano, started); err != nil {
-			return nil, fmt.Errorf("parse run %d start: %w", r.ID, err)
+		if r.StartedAt, err = parseTime(started); err != nil {
+			return nil, fmt.Errorf("run %d start: %w", r.ID, err)
 		}
-		if finished.Valid {
-			t, perr := time.Parse(time.RFC3339Nano, finished.String)
-			if perr != nil {
-				return nil, fmt.Errorf("parse run %d finish: %w", r.ID, perr)
-			}
-			r.FinishedAt = &t
+		if r.FinishedAt, err = parseNullTime(finished); err != nil {
+			return nil, fmt.Errorf("run %d finish: %w", r.ID, err)
 		}
 		if ok.Valid {
 			r.OK = &ok.Bool
@@ -87,23 +101,28 @@ func (db *DB) RecentRuns(ctx context.Context, limit int) (out []Run, err error) 
 	return out, nil
 }
 
-// Event is one audit entry.
+// Event is one audit entry. Filename is the asset's original rendition file
+// name, empty when the event has no asset or the asset has no original.
 type Event struct {
-	At             time.Time
-	Library, Asset string
-	Kind, Detail   string
+	ID                       int64
+	At                       time.Time
+	Library, Asset, Filename string
+	Kind, Detail             string
 }
 
-// RecentEvents returns the latest events of the given kinds, newest first.
-func (db *DB) RecentEvents(ctx context.Context, kinds []string, limit int) (out []Event, err error) {
+// Events returns up to limit events of the given kinds older than beforeID
+// (all events when beforeID is 0), newest first.
+func (db *DB) Events(ctx context.Context, kinds []string, beforeID int64, limit int) (out []Event, err error) {
 	payload, err := json.Marshal(kinds)
 	if err != nil {
 		return nil, fmt.Errorf("encode kinds: %w", err)
 	}
 	rows, err := db.r.QueryContext(ctx, `
-		SELECT at, coalesce(library, ''), coalesce(asset_id, ''), kind, detail FROM events
-		WHERE kind IN (SELECT value FROM json_each(?))
-		ORDER BY id DESC LIMIT ?`, string(payload), limit)
+		SELECT e.id, e.at, coalesce(e.library, ''), coalesce(e.asset_id, ''), coalesce(r.filename, ''), e.kind, e.detail
+		FROM events e
+		LEFT JOIN resources r ON r.library = e.library AND r.asset_id = e.asset_id AND r.version = 'original'
+		WHERE e.kind IN (SELECT value FROM json_each(?)) AND (? = 0 OR e.id < ?)
+		ORDER BY e.id DESC LIMIT ?`, string(payload), beforeID, beforeID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query events: %w", err)
 	}
@@ -111,11 +130,11 @@ func (db *DB) RecentEvents(ctx context.Context, kinds []string, limit int) (out 
 	for rows.Next() {
 		var e Event
 		var at string
-		if scanErr := rows.Scan(&at, &e.Library, &e.Asset, &e.Kind, &e.Detail); scanErr != nil {
+		if scanErr := rows.Scan(&e.ID, &at, &e.Library, &e.Asset, &e.Filename, &e.Kind, &e.Detail); scanErr != nil {
 			return nil, fmt.Errorf("scan event: %w", scanErr)
 		}
-		if e.At, err = time.Parse(time.RFC3339Nano, at); err != nil {
-			return nil, fmt.Errorf("parse event time: %w", err)
+		if e.At, err = parseTime(at); err != nil {
+			return nil, fmt.Errorf("event %d time: %w", e.ID, err)
 		}
 		out = append(out, e)
 	}

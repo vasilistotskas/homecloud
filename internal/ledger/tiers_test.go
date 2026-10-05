@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -77,17 +78,17 @@ func TestReleaseQuarantine(t *testing.T) {
 	db, _ := openTemp(t)
 	ctx := context.Background()
 	ingest(t, db, rendition("R", "original", "video", true))
-	if err := db.ReleaseQuarantine(ctx, "PrimarySync", "R", "reviewed", t0); err == nil {
-		t.Fatal("releasing a non-quarantined asset must fail")
+	if err := db.ReleaseQuarantine(ctx, "PrimarySync", "R", "reviewed", t0); !errors.Is(err, ErrNotQuarantined) {
+		t.Fatalf("releasing a non-quarantined asset = %v, want ErrNotQuarantined", err)
 	}
 	if err := db.RecordMismatch(ctx, Key{"PrimarySync", "R", "original"}, TierStructure, "bad", t0); err != nil {
 		t.Fatal(err)
 	}
-	if q, err := db.Quarantined(ctx); err != nil || len(q) != 1 || q[0].AssetID != "R" || !strings.Contains(q[0].Failure, "structure: bad") {
+	if q, err := db.Quarantined(ctx); err != nil || len(q) != 1 || q[0].AssetID != "R" || q[0].Failure != (Failure{TierStructure, "bad"}) {
 		t.Fatalf("Quarantined = %+v, %v", q, err)
 	}
-	if err := db.ReleaseQuarantine(ctx, "PrimarySync", "R", "", t0); err == nil {
-		t.Fatal("release without a reason must fail")
+	if err := db.ReleaseQuarantine(ctx, "PrimarySync", "R", "  ", t0); !errors.Is(err, ErrReasonRequired) {
+		t.Fatalf("release with a blank reason = %v, want ErrReasonRequired", err)
 	}
 	if err := db.ReleaseQuarantine(ctx, "PrimarySync", "R", "false positive: rule fixed", t0); err != nil {
 		t.Fatal(err)
@@ -98,7 +99,7 @@ func TestReleaseQuarantine(t *testing.T) {
 	if p := pendingFor(t, db, "R"); len(p) != 1 {
 		t.Fatalf("released asset must be re-verified; pending = %+v", p)
 	}
-	events, err := db.RecentEvents(ctx, []string{"quarantine_released"}, 5)
+	events, err := db.Events(ctx, []string{"quarantine_released"}, 0, 5)
 	if err != nil || len(events) != 1 || !strings.Contains(events[0].Detail, "rule fixed") {
 		t.Fatalf("events = %+v, %v", events, err)
 	}
