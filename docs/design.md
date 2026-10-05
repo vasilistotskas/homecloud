@@ -107,7 +107,6 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 | github.com/urfave/cli/v3 | v3.14.0 | https://pkg.go.dev/github.com/urfave/cli/v3?tab=versions |
 | github.com/pelletier/go-toml/v2 | v2.4.3 | https://pkg.go.dev/github.com/pelletier/go-toml/v2?tab=versions |
 | github.com/DeRuina/timberjack | v1.4.8 | https://pkg.go.dev/github.com/DeRuina/timberjack?tab=versions |
-| github.com/abema/go-mp4 | v1.7.3 | https://github.com/abema/go-mp4 |
 | howett.net/plist | v1.0.1 | https://pkg.go.dev/howett.net/plist |
 | golang.org/x/sys | v0.48.0 | https://pkg.go.dev/golang.org/x/sys?tab=versions (monitor GO-2026-5024) |
 | golang.org/x/text | latest | https://pkg.go.dev/golang.org/x/text |
@@ -143,3 +142,5 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 ### Verification design corrections
 
 - QuickTime `.mov` files may legitimately begin with `wide`, `mdat`, `moov`, `free`, `skip` or `pnot` rather than `ftyp` (wiki *Content Validation*). Tier 2 therefore validates a **contiguous top-level box chain ending exactly at EOF that contains `moov` and `mdat`**, and requires `ftyp` only for ISO-BMFF extensions (`.mp4`, `.m4v`, `.heic`).
+- Tier 2 reads only top-level box headers (ISO/IEC 14496-12 §4.2: 32-bit size + type; size 1 ⇒ 64-bit largesize; size 0 ⇒ to EOF). That is ~60 lines of stdlib code, so the planned `abema/go-mp4` dependency was dropped.
+- Tier 3 (`ffprobe -v error -show_entries format=duration:stream=codec_type,duration -of json`) requires exit 0, empty stderr, positive container duration and a video stream with positive duration. Live Photo clips carry extra `data` streams, which are ignored. Verified: a real iPhone MOV passes tiers 2–3; a copy truncated to 50 % fails both (ffprobe: "moov atom not found").
