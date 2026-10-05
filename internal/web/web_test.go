@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"connectrpc.com/connect"
@@ -85,6 +86,10 @@ func setup(t *testing.T) *env {
 			Ledger: db, Agent: agent, Notifier: nopNotifier{}, Auth: authn,
 			Now: func() time.Time { return t0 },
 		}),
+		App: fstest.MapFS{
+			"index.html":        {Data: []byte(`<div id="root"></div>`)},
+			"assets/index-1.js": {Data: []byte("console.log(1)")},
+		},
 		Auth: authn,
 		Log:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
@@ -97,34 +102,8 @@ func setup(t *testing.T) *env {
 	t.Cleanup(srv.Close)
 	return &env{
 		url: srv.URL, host: listen, token: token, db: db, agent: agent,
-		client: agentv1connect.NewAgentServiceClient(srv.Client(), srv.URL, connect.WithInterceptors(bearer(token))),
+		client: agentv1connect.NewAgentServiceClient(srv.Client(), srv.URL, connect.WithInterceptors(auth.Bearer(token))),
 	}
-}
-
-func bearer(token string) connect.Interceptor {
-	return connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
-		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-			req.Header().Set("Authorization", "Bearer "+token)
-			return next(ctx, req)
-		}
-	})
-}
-
-// streamBearer adds the token to streaming calls, which unary interceptors skip.
-type streamBearer struct{ token string }
-
-func (streamBearer) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc { return next }
-
-func (s streamBearer) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
-		conn := next(ctx, spec)
-		conn.RequestHeader().Set("Authorization", "Bearer "+s.token)
-		return conn
-	}
-}
-
-func (streamBearer) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return next
 }
 
 func code(err error) connect.Code {
@@ -162,7 +141,7 @@ func TestRequiresCredentials(t *testing.T) {
 	if code(err) != connect.CodeUnauthenticated {
 		t.Fatalf("anonymous GetInfo = %v, want unauthenticated", err)
 	}
-	wrong := agentv1connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(bearer("nope")))
+	wrong := agentv1connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(auth.Bearer("nope")))
 	if _, wrongErr := wrong.GetInfo(context.Background(), connect.NewRequest(&agentv1.GetInfoRequest{})); code(wrongErr) != connect.CodeUnauthenticated {
 		t.Fatalf("wrong token = %v, want unauthenticated", wrongErr)
 	}
@@ -203,16 +182,16 @@ func rawPost(t *testing.T, e *env, procedure string, hdr map[string]string) rawR
 
 func TestHostAndOriginChecks(t *testing.T) {
 	e := setup(t)
-	auth := "Bearer " + e.token
+	bearer := "Bearer " + e.token
 	cases := []struct {
 		name string
 		hdr  map[string]string
 		want int
 	}{
-		{"own host", map[string]string{"Authorization": auth}, http.StatusOK},
-		{"rebinding host", map[string]string{"Authorization": auth, "Host": "evil.example:80"}, http.StatusForbidden},
-		{"foreign origin", map[string]string{"Authorization": auth, "Origin": "https://evil.example"}, http.StatusForbidden},
-		{"desktop origin", map[string]string{"Authorization": auth, "Origin": "http://tauri.localhost"}, http.StatusOK},
+		{"own host", map[string]string{"Authorization": bearer}, http.StatusOK},
+		{"rebinding host", map[string]string{"Authorization": bearer, "Host": "evil.example:80"}, http.StatusForbidden},
+		{"foreign origin", map[string]string{"Authorization": bearer, "Origin": "https://evil.example"}, http.StatusForbidden},
+		{"desktop origin", map[string]string{"Authorization": bearer, "Origin": "http://tauri.localhost"}, http.StatusOK},
 	}
 	for _, c := range cases {
 		res := rawPost(t, e, agentv1connect.AgentServiceGetInfoProcedure, c.hdr)
@@ -312,7 +291,7 @@ func TestOverviewAndWatch(t *testing.T) {
 		t.Fatalf("overview = %v", o)
 	}
 
-	streamClient := agentv1connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(streamBearer{e.token}))
+	streamClient := agentv1connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(auth.Bearer(e.token)))
 	stream, err := streamClient.WatchOverview(ctx, connect.NewRequest(&agentv1.WatchOverviewRequest{}))
 	if err != nil {
 		t.Fatal(err)
@@ -414,5 +393,45 @@ func TestRunsPagingAndSync(t *testing.T) {
 	sync, err := e.client.StartSync(ctx, connect.NewRequest(&agentv1.StartSyncRequest{}))
 	if err != nil || !sync.Msg.GetStarted() {
 		t.Fatalf("StartSync = %v, %v", sync, err)
+	}
+}
+
+func get(t *testing.T, e *env, path, host string) (int, http.Header, string) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, e.url+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if host != "" {
+		req.Host = host
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(res.Body)
+	if closeErr := res.Body.Close(); err != nil || closeErr != nil {
+		t.Fatal(err, closeErr)
+	}
+	return res.StatusCode, res.Header, string(body)
+}
+
+func TestServesApp(t *testing.T) {
+	e := setup(t)
+	status, header, body := get(t, e, "/", "")
+	if status != http.StatusOK || !strings.Contains(body, `id="root"`) {
+		t.Fatalf("GET / = %d %q", status, body)
+	}
+	if !strings.Contains(header.Get("Content-Security-Policy"), "default-src 'self'") || header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("index headers = %v", header)
+	}
+	if status, header, _ := get(t, e, "/assets/index-1.js", ""); status != http.StatusOK || !strings.Contains(header.Get("Cache-Control"), "immutable") {
+		t.Fatalf("asset = %d %v", status, header)
+	}
+	if status, _, _ := get(t, e, "/nope", ""); status != http.StatusNotFound {
+		t.Fatalf("GET /nope = %d", status)
+	}
+	if status, _, _ := get(t, e, "/", "evil.example"); status != http.StatusForbidden {
+		t.Fatalf("GET / with foreign Host = %d", status)
 	}
 }

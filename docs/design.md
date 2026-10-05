@@ -53,7 +53,8 @@ Packages:
 | `internal/notify` | ntfy client |
 | `internal/api` | `homecloud.agent.v1.AgentService` implementation (Connect) |
 | `internal/auth` | Bearer token + discovery file, browser login codes and sessions |
-| `internal/web` | Loopback HTTP server: Host/Origin checks, CORS for the desktop app, authentication |
+| `internal/web` | Loopback HTTP server: Host/Origin checks, CORS for the desktop app, authentication, embedded web app |
+| `ui/` | Web app: React 19 + Fluent UI v9 + TanStack Router (hash) + Connect-Query, built with Vite, embedded via `ui/embed.go` |
 | `internal/app` | Scheduler loop + single global job lock |
 | `sidecar/icloud_delete.py` | PEP 723 script (`uv run --script`), pinned `pyicloud==2.7.0` |
 

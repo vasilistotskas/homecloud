@@ -9,6 +9,37 @@ permissions:
   contents: read
 
 jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          package_json_file: ui/package.json
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      # The Go build embeds the web app (ui/embed.go), so later jobs need it.
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ui-dist
+          path: ui/dist
+          if-no-files-found: error
+
   proto:
     runs-on: ubuntu-latest
     steps:
@@ -18,6 +49,17 @@ jobs:
       - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
+      - uses: pnpm/action-setup@v6.1.0
+        with:
+          package_json_file: ui/package.json
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      # protoc-gen-es is pinned in ui/package.json.
+      - run: pnpm install --frozen-lockfile
+        working-directory: ui
       - name: Lint
         run: go tool buf lint
       - name: Generated code is current
@@ -36,7 +78,7 @@ jobs:
           fi
 
   check:
-    needs: proto
+    needs: [web, proto]
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +86,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: ui-dist
+          path: ui/dist
       - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod

@@ -6,14 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/urfave/cli/v3"
 
+	agentv1 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1"
+	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1/agentv1connect"
 	"github.com/vasilistotskas/homecloud/internal/app"
+	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/doctor"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
@@ -84,6 +90,11 @@ func newApp() *cli.Command {
 						Action: runQuarantineRelease,
 					},
 				},
+			},
+			{
+				Name:   "open",
+				Usage:  "open the web app in your browser, signed in to the running agent",
+				Action: runOpen,
 			},
 			{
 				Name:   "notify-test",
@@ -315,4 +326,24 @@ func runDoctor(ctx context.Context, cmd *cli.Command) error {
 		return cli.Exit("doctor: one or more checks failed", 1)
 	}
 	return nil
+}
+
+// runOpen asks the running agent for a one-time login code and opens the web
+// app with it, so the browser gets its own session without seeing the token.
+func runOpen(ctx context.Context, cmd *cli.Command) error {
+	ep, err := auth.ReadEndpoint()
+	if err != nil {
+		return err
+	}
+	client := agentv1connect.NewAgentServiceClient(http.DefaultClient, ep.URL, connect.WithInterceptors(auth.Bearer(ep.Token)))
+	res, err := client.CreateLoginCode(ctx, connect.NewRequest(&agentv1.CreateLoginCodeRequest{}))
+	if err != nil {
+		return fmt.Errorf("request login code: %w", err)
+	}
+	link := ep.URL + "/#/connect?code=" + url.QueryEscape(res.Msg.GetCode())
+	if err := printf(cmd, "Opening %s\nIf the browser does not open, enter code %s on that page (valid for %s, works once).\n",
+		ep.URL, res.Msg.GetCode(), auth.CodeTTL); err != nil {
+		return err
+	}
+	return platform.OpenURL(link)
 }

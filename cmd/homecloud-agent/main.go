@@ -27,6 +27,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/web"
+	"github.com/vasilistotskas/homecloud/ui"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -123,8 +124,13 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 		return err
 	}
 	authn := auth.New(token, time.Now)
+	assets, err := ui.Assets()
+	if err != nil {
+		return err
+	}
 	h, err := web.Handler(web.Options{
 		Listen: cfg.Web.Listen,
+		App:    assets,
 		Service: api.New(api.Deps{
 			Config: cfg, ConfigPath: cfgPath, AgentVersion: version,
 			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Now: time.Now,

@@ -1,5 +1,6 @@
-# Code generation for the API contract. Plugins run locally at the versions
-# pinned in go.mod (tool directives), so generation needs no network access.
+# Code generation for the API contract. Plugins run locally at pinned versions:
+# the Go plugins from go.mod tool directives, protoc-gen-es from ui/package.json
+# (run `pnpm install` in ui/ first). Generation needs no network access.
 version: v2
 clean: true
 managed:
@@ -14,5 +15,8 @@ plugins:
   - local: ["go", "tool", "protoc-gen-connect-go"]
     out: gen
     opt: paths=source_relative
+  - local: ["node", "ui/node_modules/@bufbuild/protoc-gen-es/bin/protoc-gen-es"]
+    out: ui/src/gen
+    opt: target=ts
 inputs:
   - directory: proto

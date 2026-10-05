@@ -6,3 +6,7 @@
 coverage.*
 .env
 *.local.toml
+
+# Web app
+/ui/node_modules/
+/ui/dist/

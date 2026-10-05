@@ -1,5 +1,5 @@
-// Package web serves the agent's local HTTP endpoint: the Connect API and
-// (from the SPA milestone) the web app, on a loopback address.
+// Package web serves the agent's local HTTP endpoint on a loopback address:
+// the Connect API and the web app.
 //
 // Every request passes, in order:
 //
@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -50,8 +51,10 @@ type Options struct {
 	Listen string
 	// Service implements the API.
 	Service agentv1connect.AgentServiceHandler
-	Auth    *auth.Authenticator
-	Log     *slog.Logger
+	// App is the built web app (index.html plus hashed assets/).
+	App  fs.FS
+	Auth *auth.Authenticator
+	Log  *slog.Logger
 }
 
 // Handler returns the agent's root HTTP handler.
@@ -77,6 +80,9 @@ func Handler(o Options) (http.Handler, error) {
 	apiPath, apiHandler := agentv1connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
 	mux := http.NewServeMux()
 	mux.Handle(apiPath, authenticate(o.Auth, csrf, apiHandler))
+	app := serveApp(o.App)
+	mux.Handle("GET /{$}", app)
+	mux.Handle("GET /assets/", app)
 
 	c := cors.New(cors.Options{
 		AllowedOrigins:      DesktopOrigins,
@@ -187,4 +193,22 @@ func Serve(ctx context.Context, ln net.Listener, h http.Handler, log *slog.Logge
 		}
 		return nil
 	}
+}
+
+// assetCache lets browsers keep content-hashed build assets; index.html keeps
+// the default no-store so a new agent version is picked up immediately.
+const assetCache = "public, max-age=31536000, immutable"
+
+// serveApp serves the web app: index.html at / and the Vite build's hashed
+// assets. The app uses hash routing, so no other paths exist. It needs no
+// authentication: it holds no data, and every API call it makes is
+// authenticated.
+func serveApp(app fs.FS) http.Handler {
+	files := http.FileServerFS(app)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", assetCache)
+		}
+		files.ServeHTTP(w, r)
+	})
 }
