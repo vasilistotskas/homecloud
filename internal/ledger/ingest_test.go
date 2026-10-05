@@ -5,15 +5,23 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vasilistotskas/homecloud/internal/verify"
 )
 
 var t0 = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 
 func rendition(asset, version, media string, downloaded bool) Rendition {
 	added := t0.Add(-48 * time.Hour)
+	ext := ".HEIC"
+	if media == "video" || media == "live_photo_video" {
+		ext = ".MOV"
+	}
+	filename := asset + "_" + version + ext
+	structure, probe := verify.RequiredTiers(media, filename)
 	r := Rendition{
-		Library: "PrimarySync", AssetID: asset, Version: version, Filename: asset + "_" + version,
-		Downloaded: downloaded, MediaType: media,
+		Library: "PrimarySync", AssetID: asset, Version: version, Filename: filename,
+		Downloaded: downloaded, MediaType: media, RequiresStructure: structure, RequiresProbe: probe,
 		CreatedAt: t0.Add(-72 * time.Hour), AddedAt: &added, SeenAt: t0,
 	}
 	if downloaded {

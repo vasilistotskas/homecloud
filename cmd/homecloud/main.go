@@ -69,6 +69,23 @@ func newApp() *cli.Command {
 				Action: runStatus,
 			},
 			{
+				Name:  "quarantine",
+				Usage: "review quarantined assets",
+				Commands: []*cli.Command{
+					{Name: "list", Usage: "list failing renditions of quarantined assets", Action: runQuarantineList},
+					{
+						Name:  "release",
+						Usage: "lift a quarantine after review; the asset is fully re-verified",
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "library", Required: true, Usage: "library of the asset (see quarantine list)"},
+							&cli.StringFlag{Name: "asset", Required: true, Usage: "asset id"},
+							&cli.StringFlag{Name: "reason", Required: true, Usage: "why the quarantine is lifted (audited)"},
+						},
+						Action: runQuarantineRelease,
+					},
+				},
+			},
+			{
 				Name:   "notify-test",
 				Usage:  "send a test push notification through ntfy",
 				Action: runNotifyTest,
@@ -180,6 +197,50 @@ func printf(cmd *cli.Command, format string, args ...any) error {
 		return fmt.Errorf("write output: %w", err)
 	}
 	return nil
+}
+
+func runQuarantineList(ctx context.Context, cmd *cli.Command) (err error) {
+	cfg, err := loadConfig(cmd)
+	if err != nil {
+		return err
+	}
+	db, err := openLedger(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, db.Close()) }()
+
+	items, err := db.Quarantined(ctx)
+	if err != nil {
+		return fmt.Errorf("quarantine list: %w", err)
+	}
+	if len(items) == 0 {
+		return printf(cmd, "no quarantined assets\n")
+	}
+	for _, q := range items {
+		if err := printf(cmd, "%s  %s  %s\n    %s\n    %s\n", q.Library, q.AssetID, q.Version, q.LocalPath, q.Failure); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runQuarantineRelease(ctx context.Context, cmd *cli.Command) (err error) {
+	cfg, err := loadConfig(cmd)
+	if err != nil {
+		return err
+	}
+	db, err := openLedger(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, db.Close()) }()
+
+	library, asset := cmd.String("library"), cmd.String("asset")
+	if err := db.ReleaseQuarantine(ctx, library, asset, cmd.String("reason"), time.Now()); err != nil {
+		return fmt.Errorf("quarantine release: %w", err)
+	}
+	return printf(cmd, "released %s/%s; it will be re-verified on the next verify run\n", library, asset)
 }
 
 func runNotifyTest(ctx context.Context, cmd *cli.Command) error {

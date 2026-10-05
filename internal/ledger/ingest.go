@@ -37,9 +37,12 @@ type Rendition struct {
 	SizeBytes uint64
 	SHA256    string
 	MediaType string
-	CreatedAt time.Time
-	AddedAt   *time.Time
-	SeenAt    time.Time
+	// RequiresStructure / RequiresProbe name the tiers beyond content this
+	// rendition needs; the caller decides them (see verify.RequiredTiers).
+	RequiresStructure, RequiresProbe bool
+	CreatedAt                        time.Time
+	AddedAt                          *time.Time
+	SeenAt                           time.Time
 }
 
 // IngestStats summarises one ingest.
@@ -153,9 +156,11 @@ func upsertResource(ctx context.Context, tx *sql.Tx, r Rendition) (created, chan
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO resources (library, asset_id, version, filename, local_path, media_type, size_bytes, kei_sha256)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			r.Library, r.AssetID, r.Version, r.Filename, r.LocalPath, r.MediaType, size, r.SHA256)
+			INSERT INTO resources (library, asset_id, version, filename, local_path, media_type, size_bytes, kei_sha256,
+				requires_structure, requires_probe)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			r.Library, r.AssetID, r.Version, r.Filename, r.LocalPath, r.MediaType, size, r.SHA256,
+			r.RequiresStructure, r.RequiresProbe)
 		if err != nil {
 			return false, false, fmt.Errorf("insert rendition %s/%s/%s: %w", r.Library, r.AssetID, r.Version, err)
 		}
@@ -168,12 +173,14 @@ func upsertResource(ctx context.Context, tx *sql.Tx, r Rendition) (created, chan
 	_, err = tx.ExecContext(ctx, `
 		UPDATE resources SET
 			filename = ?, local_path = ?, media_type = ?, size_bytes = ?, kei_sha256 = ?,
+			requires_structure = ?, requires_probe = ?,
 			verified_content_at   = CASE WHEN ? THEN NULL ELSE verified_content_at END,
 			verified_structure_at = CASE WHEN ? THEN NULL ELSE verified_structure_at END,
 			verified_probe_at     = CASE WHEN ? THEN NULL ELSE verified_probe_at END,
 			failure               = CASE WHEN ? THEN NULL ELSE failure END
 		WHERE library = ? AND asset_id = ? AND version = ?`,
 		r.Filename, r.LocalPath, r.MediaType, size, r.SHA256,
+		r.RequiresStructure, r.RequiresProbe,
 		changed, changed, changed, changed,
 		r.Library, r.AssetID, r.Version)
 	if err != nil {
@@ -223,11 +230,11 @@ func recomputeState(ctx context.Context, tx *sql.Tx, library, assetID string, gr
 	return appendEvent(ctx, tx, ts, library, assetID, "state_changed", map[string]any{"from": current, "to": next})
 }
 
-// verifiedPredicate is true for a resource that passed every tier its media type requires:
-// all files need content verification; video files additionally need structure and probe.
-const verifiedPredicate = `(verified_content_at IS NOT NULL AND (
-	media_type NOT IN ('video', 'live_photo_video')
-	OR (verified_structure_at IS NOT NULL AND verified_probe_at IS NOT NULL)))`
+// verifiedPredicate is true for a resource that passed every tier it requires:
+// content always, plus structure and probe where the rendition requires them.
+const verifiedPredicate = `(verified_content_at IS NOT NULL
+	AND (requires_structure = 0 OR verified_structure_at IS NOT NULL)
+	AND (requires_probe = 0 OR verified_probe_at IS NOT NULL))`
 
 func appendEvent(ctx context.Context, tx *sql.Tx, ts, library, assetID, kind string, detail map[string]any) error {
 	payload, err := json.Marshal(detail)

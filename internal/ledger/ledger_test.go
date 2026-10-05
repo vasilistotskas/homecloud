@@ -48,12 +48,16 @@ func TestReopenIsIdempotent(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := db2.Close(); err != nil {
-			t.Errorf("Close: %v", err)
+		if closeErr := db2.Close(); closeErr != nil {
+			t.Errorf("Close: %v", closeErr)
 		}
 	})
-	if v, err := db2.SchemaVersion(ctx); err != nil || v != 1 {
-		t.Fatalf("schema version after reopen = %d, %v", v, err)
+	ms, err := loadMigrations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, versionErr := db2.SchemaVersion(ctx); versionErr != nil || v != len(ms) {
+		t.Fatalf("schema version after reopen = %d, %v; want %d", v, versionErr, len(ms))
 	}
 }
 

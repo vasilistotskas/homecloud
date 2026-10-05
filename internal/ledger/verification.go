@@ -23,17 +23,14 @@ type PendingResource struct {
 	NeedsContent, NeedsStructure, NeedsProbe bool
 }
 
-// IsVideo reports whether the rendition requires the video tiers.
-func (p PendingResource) IsVideo() bool {
-	return p.MediaType == "video" || p.MediaType == "live_photo_video"
-}
-
 // PendingVerification returns up to limit renditions (all when limit < 0) of
 // downloaded assets that are missing a required tier, oldest state change first.
 func (db *DB) PendingVerification(ctx context.Context, limit int) (out []PendingResource, err error) {
 	rows, err := db.r.QueryContext(ctx, `
 		SELECT r.library, r.asset_id, r.version, r.local_path, r.media_type, r.size_bytes, r.kei_sha256,
-		       r.verified_content_at IS NULL, r.verified_structure_at IS NULL, r.verified_probe_at IS NULL
+		       r.verified_content_at IS NULL,
+		       r.requires_structure = 1 AND r.verified_structure_at IS NULL,
+		       r.requires_probe = 1 AND r.verified_probe_at IS NULL
 		FROM resources r JOIN assets a USING (library, asset_id)
 		WHERE a.state = ? AND r.failure IS NULL AND NOT `+verifiedPredicate+`
 		ORDER BY a.state_changed_at, r.library, r.asset_id, r.version
@@ -51,9 +48,6 @@ func (db *DB) PendingVerification(ctx context.Context, limit int) (out []Pending
 			return nil, fmt.Errorf("scan pending verification: %w", err)
 		}
 		p.SizeBytes = uint64(size) //nolint:gosec // CHECK (size_bytes >= 0) in schema
-		if !p.IsVideo() {
-			p.NeedsStructure, p.NeedsProbe = false, false
-		}
 		out = append(out, p)
 	}
 	if err := rows.Err(); err != nil {
@@ -177,6 +171,75 @@ func (db *DB) RecordMismatch(ctx context.Context, k Key, tier Tier, reason strin
 		return fmt.Errorf("record mismatch: commit: %w", err)
 	}
 	return nil
+}
+
+// ReleaseQuarantine is the operator action that lifts a quarantine after review.
+// The asset returns to downloaded with its failures cleared, so every required
+// tier runs again before it can count as verified. The reason is audited.
+func (db *DB) ReleaseQuarantine(ctx context.Context, library, assetID, reason string, now time.Time) (err error) {
+	if reason == "" {
+		return errors.New("release quarantine: a reason is required")
+	}
+	ts := now.UTC().Format(time.RFC3339Nano)
+	tx, err := db.w.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("release quarantine: begin: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, tx.Rollback())
+		}
+	}()
+
+	res, err := tx.ExecContext(ctx, `UPDATE assets SET state = ?, state_changed_at = ?
+		WHERE library = ? AND asset_id = ? AND state = ?`, StateDownloaded, ts, library, assetID, StateQuarantined)
+	if err != nil {
+		return fmt.Errorf("release quarantine %s/%s: %w", library, assetID, err)
+	}
+	if n, nerr := res.RowsAffected(); nerr != nil || n != 1 {
+		return errors.Join(fmt.Errorf("release quarantine %s/%s: asset is not quarantined", library, assetID), nerr)
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE resources SET failure = NULL WHERE library = ? AND asset_id = ?`,
+		library, assetID); err != nil {
+		return fmt.Errorf("clear failures %s/%s: %w", library, assetID, err)
+	}
+	if err = appendEvent(ctx, tx, ts, library, assetID, "quarantine_released", map[string]any{"reason": reason}); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("release quarantine: commit: %w", err)
+	}
+	return nil
+}
+
+// QuarantinedRendition is a failing rendition of a quarantined asset.
+type QuarantinedRendition struct {
+	Key
+	LocalPath, Failure string
+}
+
+// Quarantined lists the failing renditions of all quarantined assets.
+func (db *DB) Quarantined(ctx context.Context) (out []QuarantinedRendition, err error) {
+	rows, err := db.r.QueryContext(ctx, `
+		SELECT r.library, r.asset_id, r.version, r.local_path, r.failure
+		FROM resources r JOIN assets a USING (library, asset_id)
+		WHERE a.state = ? AND r.failure IS NOT NULL
+		ORDER BY r.library, r.asset_id, r.version`, StateQuarantined)
+	if err != nil {
+		return nil, fmt.Errorf("query quarantined: %w", err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	for rows.Next() {
+		var q QuarantinedRendition
+		if scanErr := rows.Scan(&q.Library, &q.AssetID, &q.Version, &q.LocalPath, &q.Failure); scanErr != nil {
+			return nil, fmt.Errorf("scan quarantined: %w", scanErr)
+		}
+		out = append(out, q)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate quarantined: %w", err)
+	}
+	return out, nil
 }
 
 // StateCounts returns the number of assets in each state.
