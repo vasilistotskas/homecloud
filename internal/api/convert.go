@@ -14,6 +14,7 @@ import (
 
 	agentv1 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1"
 	"github.com/vasilistotskas/homecloud/internal/app"
+	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 )
@@ -146,10 +147,11 @@ func appleState(d agentv1.DownloadOutcome) agentv1.AppleAccountState {
 
 // eventKindNames maps API event kinds to the ledger's event kind names.
 var eventKindNames = map[agentv1.EventKind]string{
-	agentv1.EventKind_EVENT_KIND_RENDITION_CHANGED:   "rendition_changed",
-	agentv1.EventKind_EVENT_KIND_STATE_CHANGED:       "state_changed",
-	agentv1.EventKind_EVENT_KIND_QUARANTINED:         "quarantined",
-	agentv1.EventKind_EVENT_KIND_QUARANTINE_RELEASED: "quarantine_released",
+	agentv1.EventKind_EVENT_KIND_RENDITION_CHANGED:    "rendition_changed",
+	agentv1.EventKind_EVENT_KIND_STATE_CHANGED:        "state_changed",
+	agentv1.EventKind_EVENT_KIND_QUARANTINED:          "quarantined",
+	agentv1.EventKind_EVENT_KIND_QUARANTINE_RELEASED:  "quarantine_released",
+	agentv1.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED: ledger.DriveHealthEvent,
 }
 
 var assetStates = map[ledger.AssetState]agentv1.AssetState{
@@ -230,6 +232,19 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
 			out.Detail = &agentv1.Event_QuarantineReleased{QuarantineReleased: &agentv1.QuarantineReleased{Reason: d.Reason}}
 		}
+	case ledger.DriveHealthEvent:
+		var d struct {
+			From    health.State `json:"from"`
+			To      health.State `json:"to"`
+			Reasons []string     `json:"reasons"`
+		}
+		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
+			c := &agentv1.DriveHealthChanged{Reasons: d.Reasons}
+			if c.From, err = driveState(d.From); err == nil {
+				c.To, err = driveState(d.To)
+			}
+			out.Detail = &agentv1.Event_DriveHealthChanged{DriveHealthChanged: c}
+		}
 	default:
 		err = fmt.Errorf("unknown event kind %q", e.Kind)
 	}
@@ -288,6 +303,52 @@ func assetToProto(d ledger.AssetDetail) (*agentv1.Asset, error) {
 			pr.Failure = failureToProto(r.Version, *r.Failure)
 		}
 		out.Renditions = append(out.Renditions, pr)
+	}
+	return out, nil
+}
+
+// driveState maps a recorded health state; "" means none was recorded before.
+func driveState(s health.State) (agentv1.DriveHealthState, error) {
+	switch s {
+	case "":
+		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED, nil
+	case health.StateOK:
+		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_OK, nil
+	case health.StateWarning:
+		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_WARNING, nil
+	case health.StateFailing:
+		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_FAILING, nil
+	case health.StateUnavailable:
+		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_UNAVAILABLE, nil
+	default:
+		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED, fmt.Errorf("unknown drive health state %q", s)
+	}
+}
+
+func optionalInt32(v *int) *int32 {
+	if v == nil {
+		return nil
+	}
+	n := int32(*v) //nolint:gosec // SMART percentages and temperatures are small
+	return &n
+}
+
+// driveToProto converts the latest drive check; nil before the first check.
+func driveToProto(r health.Report) (*agentv1.DriveHealth, error) {
+	if r.State == "" {
+		return nil, nil //nolint:nilnil // no check has run yet
+	}
+	state, err := driveState(r.State)
+	if err != nil {
+		return nil, err
+	}
+	out := &agentv1.DriveHealth{State: state, CheckedAt: timestamppb.New(r.CheckedAt), Reasons: r.Reasons}
+	if d := r.Drive; d != nil {
+		out.Model, out.Protocol, out.Warnings = d.Model, d.Protocol, d.Warnings
+		out.TemperatureCelsius = optionalInt32(d.TemperatureCelsius)
+		out.PercentUsed = optionalInt32(d.PercentUsed)
+		out.AvailableSparePercent = optionalInt32(d.AvailableSparePercent)
+		out.MediaErrors, out.PowerOnHours = d.MediaErrors, d.PowerOnHours
 	}
 	return out, nil
 }

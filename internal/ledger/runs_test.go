@@ -111,3 +111,28 @@ func TestAssetDetail(t *testing.T) {
 		t.Errorf("totals = %d files, %d bytes, %v", files, bytes, err)
 	}
 }
+
+func TestRecordDriveHealthOnlyOnChange(t *testing.T) {
+	db, _ := openTemp(t)
+	ctx := context.Background()
+	steps := []struct {
+		state, wantPrev string
+		wantChanged     bool
+	}{
+		{"ok", "", true},
+		{"ok", "ok", false},
+		{"failing", "ok", true},
+		{"failing", "failing", false},
+		{"ok", "failing", true},
+	}
+	for i, s := range steps {
+		prev, changed, err := db.RecordDriveHealth(ctx, s.state, nil, t0.Add(time.Duration(i)*time.Hour))
+		if err != nil || prev != s.wantPrev || changed != s.wantChanged {
+			t.Fatalf("step %d (%s): prev=%q changed=%v err=%v", i, s.state, prev, changed, err)
+		}
+	}
+	events, err := db.Events(ctx, []string{DriveHealthEvent}, 0, 10)
+	if err != nil || len(events) != 3 || events[0].Asset != "" || events[0].Filename != "" {
+		t.Fatalf("events = %+v, %v", events, err)
+	}
+}

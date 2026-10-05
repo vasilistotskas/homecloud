@@ -130,6 +130,14 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
   - The agent is installed and started separately (`homecloud install`) and never supervised by the shell. Deferred: tray, updater and Mica (no need yet; the updater needs signed releases). Rejected for now: bundling the agent as a Tauri sidecar (ties its lifecycle to the GUI), the autostart plugin (the agent already starts at logon), the Tauri MCP bridge plugin for testing (WebView2's DevTools port is used instead, no app code).
   - Rejected stacks: Wails v3 (beta, single principal maintainer), WinUI 3 (Windows-only), Fyne/Gio (non-Fluent, low-level), Avalonia/Flutter/Electron (additional stack or weight), MAUI (no Linux).
 
+## 8b. Archive drive health (implemented, M4)
+
+The archive is the only copy (no second copy, by decision), so the agent reads the archive drive's own SMART data every cycle (`internal/platform` `DriveHealthOf`, judged by `internal/health`).
+
+- **Windows:** `IOCTL_STORAGE_QUERY_PROPERTY` with `StorageDeviceProtocolSpecificProperty` reads the NVMe SMART / Health log (log page 02h) through a handle opened with no access rights, so it works from the non-elevated agent (verified on this PC at Medium integrity). The disk is found from the volume with `IOCTL_STORAGE_GET_DEVICE_NUMBER`; the model and bus type come from `STORAGE_DEVICE_DESCRIPTOR`. Non-NVMe drives report "unavailable": reading ATA SMART on Windows needs administrator rights. Rejected: WMI `MSFT_PhysicalDisk.HealthStatus` through `microsoft/wmi` (the library panics on COM initialisation failure and sets process-wide COM security; the native query also gives richer data), and `Get-StorageReliabilityCounter` (needs elevation).
+- **Linux:** udisks2 over D-Bus (`godbus/dbus/v5`): `Manager.ResolveDevice` maps the mounted block device to its `Drive`; NVMe drives use `NVMe.Controller` (udisks ≥ 2.10) properties plus `SmartGetAttributes`, ATA drives `Drive.Ata`. Reading needs no polkit authorization; udisks refreshes SMART every 10 minutes. Interfaces are detected by introspection.
+- **Verdict** (only thresholds the standards define): any critical warning (NVMe critical-warning bits, ATA failure prediction) = failing; media/data-integrity errors or NVMe "percentage used" ≥ 100 = warning; unreadable = unavailable, never treated as healthy. A state change is appended once to the event log (`drive_health_changed`) and warning/failing sends an urgent ntfy alert. P3's deletion gates will require state OK.
+
 ## 9. Dependencies (verified 2026-10-05)
 
 | Dependency | Version | Source |
@@ -160,6 +168,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 | Tauri (crate, CLI, api) | 2.12.1 | https://github.com/tauri-apps/tauri/releases |
 | Tauri plugins: single-instance / window-state / opener / log | 2.5.2 / 2.5.0 / 2.7.0 / 2.10.0 | https://crates.io/crates/tauri-plugin-opener |
 | Rust | 1.98.1 | https://blog.rust-lang.org/releases/ |
+| github.com/godbus/dbus/v5 | v5.2.2 | https://github.com/godbus/dbus/releases |
 | golangci-lint | v2.14.0 | https://github.com/golangci/golangci-lint/releases |
 | FFmpeg (ffprobe) | 9.0.2 (Gyan build) | https://www.gyan.dev/ffmpeg/builds/ |
 | kei | 0.24.1 | https://github.com/rhoopr/kei/releases/tag/v0.24.1 |

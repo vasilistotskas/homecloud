@@ -25,7 +25,15 @@ import { Page } from "../components/Page";
 import { stateLabel, tierLabel } from "../components/labels";
 import { runRow } from "../components/runs";
 import { formatWhen, toDate } from "../format";
-import { AgentService, EventKind, type Event } from "../gen/homecloud/agent/v1/agent_pb";
+import { AgentService, DriveHealthState, EventKind, type Event } from "../gen/homecloud/agent/v1/agent_pb";
+
+const driveStateLabel: Record<DriveHealthState, string> = {
+  [DriveHealthState.UNSPECIFIED]: "Unknown",
+  [DriveHealthState.OK]: "Healthy",
+  [DriveHealthState.WARNING]: "Warning",
+  [DriveHealthState.FAILING]: "Failing",
+  [DriveHealthState.UNAVAILABLE]: "Health unavailable",
+};
 
 const pageSize = 25;
 
@@ -138,11 +146,17 @@ function Runs() {
 const filters = {
   all: {
     label: "All events",
-    kinds: [EventKind.RENDITION_CHANGED, EventKind.QUARANTINED, EventKind.QUARANTINE_RELEASED],
+    kinds: [
+      EventKind.RENDITION_CHANGED,
+      EventKind.QUARANTINED,
+      EventKind.QUARANTINE_RELEASED,
+      EventKind.DRIVE_HEALTH_CHANGED,
+    ],
   },
   quarantined: { label: "Quarantined", kinds: [EventKind.QUARANTINED] },
   released: { label: "Released", kinds: [EventKind.QUARANTINE_RELEASED] },
   changed: { label: "Changed in iCloud", kinds: [EventKind.RENDITION_CHANGED] },
+  drive: { label: "Drive health", kinds: [EventKind.DRIVE_HEALTH_CHANGED] },
   states: { label: "State changes", kinds: [EventKind.STATE_CHANGED] },
 } as const;
 type Filter = keyof typeof filters;
@@ -172,6 +186,17 @@ function describe(e: Event): { kind: string; color: "danger" | "success" | "info
         kind: "State changed",
         color: "informative",
         text: `${stateLabel[e.detail.value.from]} → ${stateLabel[e.detail.value.to]}`,
+      };
+    case "driveHealthChanged":
+      return {
+        kind: "Drive health",
+        color:
+          e.detail.value.to === DriveHealthState.OK
+            ? "success"
+            : e.detail.value.to === DriveHealthState.UNAVAILABLE
+              ? "informative"
+              : "danger",
+        text: [driveStateLabel[e.detail.value.to], ...e.detail.value.reasons].join(": "),
       };
     case undefined:
       return { kind: "Event", color: "informative", text: "" };

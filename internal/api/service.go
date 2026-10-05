@@ -156,6 +156,9 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv1.Overvie
 			NextCycleAt:    optionalTime(st.NextCycleAt),
 		},
 	}
+	if ov.Drive, err = driveToProto(st.Drive); err != nil {
+		return nil, internal(err)
+	}
 	last, err := s.db.LastFinishedRun(ctx, app.CycleRunKind)
 	switch {
 	case errors.Is(err, ledger.ErrNotFound):

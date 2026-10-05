@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // The test binary doubles as a fake kei when HOMECLOUD_FAKE_KEI=1:
@@ -243,5 +245,35 @@ func TestCycleRecordsParsableReportAndEndsIdle(t *testing.T) {
 	rep, err := ParseCycleReport(run.Detail)
 	if err != nil || rep.KeiOutcome != "partial" || rep.Ingested.Assets != 1 || rep.Verified.Passed != 1 {
 		t.Fatalf("report = %+v, %v", rep, err)
+	}
+}
+
+func TestCycleAlertsOnceWhenDriveFails(t *testing.T) {
+	clock := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	agent, notes := newTestAgent(t, fixture(t, false), "0", &clock)
+	warnings := []string{"spare"}
+	agent.readDrive = func(context.Context) (platform.DriveHealth, error) {
+		return platform.DriveHealth{Protocol: "NVMe", Warnings: warnings}, nil
+	}
+	ctx := context.Background()
+	for range 2 {
+		if err := agent.Cycle(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := notes.titles(); len(got) != 1 || !strings.Contains(got[0], "archive drive") {
+		t.Fatalf("alerts = %v, want one drive alert", got)
+	}
+	if st, _ := agent.Hub().Snapshot(); st.Drive.State != health.StateFailing || st.Drive.Drive == nil {
+		t.Fatalf("status drive = %+v", st.Drive)
+	}
+
+	warnings = nil
+	if err := agent.Cycle(ctx); err != nil {
+		t.Fatal(err)
+	}
+	events, err := agent.db.Events(ctx, []string{ledger.DriveHealthEvent}, 0, 10)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("drive events = %+v, %v; want failing then ok", events, err)
 	}
 }

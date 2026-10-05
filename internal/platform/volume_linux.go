@@ -31,10 +31,31 @@ func ValidateVolumeID(id string) error {
 	return nil
 }
 
-// VolumeID returns the filesystem UUID of the volume containing path. It finds
-// the mount via statx(STATX_MNT_ID) (Linux ≥ 5.8) and /proc/self/mountinfo, then
-// matches the mount's source device against /dev/disk/by-uuid. No privileges needed.
+// VolumeID returns the filesystem UUID of the volume containing path by matching
+// its block device against /dev/disk/by-uuid. No privileges needed.
 func VolumeID(path string) (string, error) {
+	device, err := mountedDevice(path)
+	if err != nil {
+		return "", err
+	}
+	entries, err := os.ReadDir(byUUIDDir)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", byUUIDDir, err)
+	}
+	for _, e := range entries {
+		target, linkErr := filepath.EvalSymlinks(filepath.Join(byUUIDDir, e.Name()))
+		if linkErr == nil && target == device {
+			return e.Name(), nil
+		}
+	}
+	return "", fmt.Errorf("%w: device %s holding %q has no entry in %s", ErrNoVolumeIdentity, device, path, byUUIDDir)
+}
+
+// mountedDevice returns the block device (symlinks resolved) mounted where path
+// lives. It finds the mount via statx(STATX_MNT_ID) (Linux ≥ 5.8) and
+// /proc/self/mountinfo, and fails with ErrNoVolumeIdentity for mounts that are
+// not backed by a block device (overlay, tmpfs, network file systems).
+func mountedDevice(path string) (string, error) {
 	var st unix.Statx_t
 	if err := unix.Statx(unix.AT_FDCWD, path, 0, unix.STATX_MNT_ID, &st); err != nil {
 		return "", fmt.Errorf("statx %q: %w", path, err)
@@ -60,17 +81,7 @@ func VolumeID(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve mount source %q of %q: %w", source, path, err)
 	}
-	entries, err := os.ReadDir(byUUIDDir)
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", byUUIDDir, err)
-	}
-	for _, e := range entries {
-		target, linkErr := filepath.EvalSymlinks(filepath.Join(byUUIDDir, e.Name()))
-		if linkErr == nil && target == device {
-			return e.Name(), nil
-		}
-	}
-	return "", fmt.Errorf("%w: device %s holding %q has no entry in %s", ErrNoVolumeIdentity, device, path, byUUIDDir)
+	return device, nil
 }
 
 // mountSource returns the mount source of mount id in a mountinfo stream

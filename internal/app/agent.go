@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // Notifier delivers operator alerts.
@@ -35,6 +38,8 @@ type Agent struct {
 	notify Notifier
 	keiLog io.Writer
 	now    func() time.Time
+	// readDrive reads the archive drive's SMART data.
+	readDrive func(context.Context) (platform.DriveHealth, error)
 
 	hub     *Hub
 	trigger chan struct{}
@@ -47,6 +52,9 @@ type Agent struct {
 func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, keiLog io.Writer, now func() time.Time) *Agent {
 	return &Agent{
 		cfg: cfg, db: db, log: log, notify: n, keiLog: keiLog, now: now,
+		readDrive: func(ctx context.Context) (platform.DriveHealth, error) {
+			return platform.DriveHealthOf(ctx, cfg.Storage.Root)
+		},
 		hub:     NewHub(),
 		trigger: make(chan struct{}, 1),
 	}
@@ -184,6 +192,9 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 			Tags:     []string{"rotating_light"},
 		})
 	}
+	if err := a.checkDrive(ctx); err != nil {
+		errs = append(errs, err)
+	}
 	return rep, errors.Join(errs...)
 }
 
@@ -218,4 +229,31 @@ func ParseCycleReport(detail string) (CycleReport, error) {
 		return CycleReport{}, fmt.Errorf("decode cycle report: %w", err)
 	}
 	return rep, nil
+}
+
+// checkDrive reads and judges the archive drive, publishes the result, and
+// records and alerts on changes. The archive is the only copy of the library,
+// so a drive that predicts its own failure is urgent.
+func (a *Agent) checkDrive(ctx context.Context) error {
+	report := health.Check(func() (platform.DriveHealth, error) { return a.readDrive(ctx) }, a.now())
+	a.hub.update(func(s *Status) { s.Drive = report })
+
+	previous, changed, err := a.db.RecordDriveHealth(ctx, string(report.State), report.Reasons, report.CheckedAt)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		return nil
+	}
+	a.log.Info("archive drive health changed", "from", previous, "to", report.State, "reasons", report.Reasons)
+	if report.State == health.StateWarning || report.State == health.StateFailing {
+		a.alert(ctx, notify.Msg{
+			Title: "homecloud: archive drive needs attention",
+			Body: "The drive holding your archive reports a problem (" + strings.Join(report.Reasons, "; ") +
+				"). It holds your only copy: replace it soon, and keep iCloud cleanup off until then.",
+			Priority: notify.PriorityUrgent,
+			Tags:     []string{"rotating_light"},
+		})
+	}
+	return nil
 }

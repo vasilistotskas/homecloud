@@ -34,12 +34,13 @@ import {
   ClockRegular,
   CopyRegular,
   HardDriveRegular,
+  HeartPulseRegular,
   KeyRegular,
   PlugDisconnectedRegular,
   ShieldErrorRegular,
 } from "@fluentui/react-icons";
 import { Link as RouterLink, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
@@ -50,7 +51,9 @@ import { formatBytes, formatCount, formatInterval, formatRelative, formatWhen, t
 import {
   AgentService,
   AppleAccountState,
+  DriveHealthState,
   Phase,
+  type DriveHealth,
   type Overview,
   type Settings,
 } from "../gen/homecloud/agent/v1/agent_pb";
@@ -181,6 +184,7 @@ export function OverviewPage() {
         <StorageCard overview={overview} />
         <AccountCard overview={overview} />
         <ScheduleCard overview={overview} settings={settings.data?.settings} />
+        <DriveCard drive={overview.drive} />
       </div>
       <RecentSyncs lastCycleId={overview.lastCycle?.id} />
     </Page>
@@ -274,7 +278,17 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
   let body: ReactNode = `Every item in iCloud Photos is in ${overview.storage?.root ?? "the archive"} and passed its checks.`;
   let action: ReactNode = null;
 
-  if (account === AppleAccountState.SIGN_IN_REQUIRED || account === AppleAccountState.NEEDS_ATTENTION) {
+  const drive = overview.drive?.state ?? DriveHealthState.UNSPECIFIED;
+
+  if (drive === DriveHealthState.FAILING || drive === DriveHealthState.WARNING) {
+    tone = "danger";
+    icon = <HardDriveRegular />;
+    title =
+      drive === DriveHealthState.FAILING
+        ? "Your archive drive expects to fail"
+        : "Your archive drive reports a problem";
+    body = `${overview.drive?.reasons.join("; ") ?? ""}. It holds your only copy: replace it soon, and keep iCloud cleanup off until then.`;
+  } else if (account === AppleAccountState.SIGN_IN_REQUIRED || account === AppleAccountState.NEEDS_ATTENTION) {
     tone = "warning";
     icon = <KeyRegular />;
     title =
@@ -564,5 +578,58 @@ function ReviewButton() {
     >
       Review
     </Button>
+  );
+}
+
+const driveBadge: Record<DriveHealthState, { label: string; color: "success" | "warning" | "danger" | "informative" }> =
+  {
+    [DriveHealthState.UNSPECIFIED]: { label: "Not checked yet", color: "informative" },
+    [DriveHealthState.OK]: { label: "Healthy", color: "success" },
+    [DriveHealthState.WARNING]: { label: "Warning", color: "warning" },
+    [DriveHealthState.FAILING]: { label: "Failing", color: "danger" },
+    [DriveHealthState.UNAVAILABLE]: { label: "Unavailable", color: "informative" },
+  };
+
+function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
+  const styles = useStyles();
+  const badge = driveBadge[drive?.state ?? DriveHealthState.UNSPECIFIED];
+  const checked = toDate(drive?.checkedAt);
+  const facts: [string, string][] = [];
+  if (drive !== undefined && drive.state !== DriveHealthState.UNAVAILABLE) {
+    facts.push(["Disk", [drive.model, drive.protocol].filter((s) => s !== "").join(" · ")]);
+    if (drive.temperatureCelsius !== undefined) facts.push(["Temperature", `${drive.temperatureCelsius} °C`]);
+    if (drive.percentUsed !== undefined) facts.push(["Wear", `${drive.percentUsed}% of rated life`]);
+    if (drive.mediaErrors !== undefined) facts.push(["Media errors", formatCount(drive.mediaErrors)]);
+    if (drive.powerOnHours !== undefined) facts.push(["Powered on", `${formatCount(drive.powerOnHours)} hours`]);
+  }
+  return (
+    <Card>
+      <CardHeader
+        image={<HeartPulseRegular fontSize={20} />}
+        header={<Subtitle2 as="h2">Drive health</Subtitle2>}
+        action={
+          <Badge appearance="tint" color={badge.color}>
+            {badge.label}
+          </Badge>
+        }
+      />
+      {facts.length > 0 && (
+        <div className={styles.facts}>
+          {facts.map(([k, v]) => (
+            <Fragment key={k}>
+              <Text className={styles.muted}>{k}</Text>
+              <Text>{v}</Text>
+            </Fragment>
+          ))}
+        </div>
+      )}
+      {drive?.state === DriveHealthState.UNAVAILABLE && (
+        <Text className={styles.muted}>Health can&apos;t be read for this drive: {drive.reasons.join("; ")}</Text>
+      )}
+      <Caption1 className={styles.muted}>
+        The archive drive holds your only copy. If it reports a problem you&apos;re alerted at once.
+        {checked !== undefined && ` Checked ${formatWhen(checked)}.`}
+      </Caption1>
+    </Card>
   );
 }

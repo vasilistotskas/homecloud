@@ -88,6 +88,40 @@ message Overview {
   Activity activity = 5;
   // The most recent finished cycle; absent before the first one finishes.
   Run last_cycle = 6;
+  // The latest health check of the archive drive; absent before the first one.
+  DriveHealth drive = 7;
+}
+
+// DriveHealth is what the archive drive reports about itself (SMART) and the
+// agent's verdict on it.
+message DriveHealth {
+  DriveHealthState state = 1;
+  google.protobuf.Timestamp checked_at = 2;
+  // Why the state is not OK, or why health could not be read.
+  repeated string reasons = 3;
+  string model = 4;
+  // "NVMe" or "ATA".
+  string protocol = 5;
+  // The drive's own critical warnings, e.g. "spare", "temperature", "failing".
+  repeated string warnings = 6;
+  optional int32 temperature_celsius = 7;
+  // NVMe endurance estimate; 100 means the rated life is used up.
+  optional int32 percent_used = 8;
+  optional int32 available_spare_percent = 9;
+  // NVMe media and data-integrity errors, or ATA bad sectors.
+  optional uint64 media_errors = 10;
+  optional uint64 power_on_hours = 11;
+}
+
+enum DriveHealthState {
+  DRIVE_HEALTH_STATE_UNSPECIFIED = 0;
+  DRIVE_HEALTH_STATE_OK = 1;
+  // Data was lost or remapped, or the rated endurance is used up.
+  DRIVE_HEALTH_STATE_WARNING = 2;
+  // The drive predicts its own failure.
+  DRIVE_HEALTH_STATE_FAILING = 3;
+  // Health could not be read; never treated as healthy.
+  DRIVE_HEALTH_STATE_UNAVAILABLE = 4;
 }
 
 // AssetCounts counts assets by lifecycle state.
@@ -214,6 +248,7 @@ message Event {
     StateChanged state_changed = 5;
     Quarantined quarantined = 6;
     QuarantineReleased quarantine_released = 7;
+    DriveHealthChanged drive_health_changed = 8;
   }
 }
 
@@ -223,6 +258,7 @@ enum EventKind {
   EVENT_KIND_STATE_CHANGED = 2;
   EVENT_KIND_QUARANTINED = 3;
   EVENT_KIND_QUARANTINE_RELEASED = 4;
+  EVENT_KIND_DRIVE_HEALTH_CHANGED = 5;
 }
 
 // AssetRef identifies an asset and names it for display.
@@ -254,6 +290,13 @@ message Quarantined {
 
 message QuarantineReleased {
   string reason = 1;
+}
+
+// DriveHealthChanged: the archive drive's health state changed.
+message DriveHealthChanged {
+  DriveHealthState from = 1;
+  DriveHealthState to = 2;
+  repeated string reasons = 3;
 }
 
 enum AssetState {

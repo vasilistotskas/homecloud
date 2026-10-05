@@ -3,6 +3,8 @@ package app
 import (
 	"sync"
 	"time"
+
+	"github.com/vasilistotskas/homecloud/internal/health"
 )
 
 // Phase is what the agent is doing.
@@ -24,6 +26,9 @@ type Status struct {
 	PhaseStartedAt time.Time
 	// NextCycleAt is zero until the first cycle has finished.
 	NextCycleAt time.Time
+	// Drive is the latest health check of the archive drive; zero until the
+	// first cycle has checked it.
+	Drive health.Report
 }
 
 // Hub holds the live Status and wakes watchers whenever it, or anything they

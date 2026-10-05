@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentService,
   AppleAccountState,
+  DriveHealthState,
   ListRunsResponseSchema,
   OverviewSchema,
   Phase,
@@ -56,6 +57,28 @@ describe("App", () => {
     expect(screen.getByText("3,661")).toBeInTheDocument();
     expect(screen.getByText("266 GiB")).toBeInTheDocument();
     expect(screen.getByText("Agent connected")).toBeInTheDocument();
+  });
+
+  it("puts a failing archive drive first", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 1n, quarantined: 1n },
+              appleAccount: { state: AppleAccountState.SIGN_IN_REQUIRED },
+              drive: { state: DriveHealthState.FAILING, reasons: ["drive reports: spare"], protocol: "NVMe" },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={{ kind: "browser" }} />);
+    expect(await screen.findByText("Your archive drive expects to fail")).toBeInTheDocument();
+    expect(screen.getByText("Failing")).toBeInTheDocument();
   });
 
   it("explains when the agent cannot be reached", async () => {

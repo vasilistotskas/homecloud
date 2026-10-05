@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file homecloud/agent/v1/agent.proto.
  */
 export const file_homecloud_agent_v1_agent: GenFile = /*@__PURE__*/
-  fileDesc("Ch5ob21lY2xvdWQvYWdlbnQvdjEvYWdlbnQucHJvdG8SEmhvbWVjbG91ZC5hZ2VudC52MSIQCg5HZXRJbmZvUmVxdWVzdCJJCg9HZXRJbmZvUmVzcG9uc2USFQoNYWdlbnRfdmVyc2lvbhgBIAEoCRITCgthcGlfdmVyc2lvbhgCIAEoCRIKCgJvcxgDIAEoCSIUChJHZXRPdmVydmlld1JlcXVlc3QiRQoTR2V0T3ZlcnZpZXdSZXNwb25zZRIuCghvdmVydmlldxgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5PdmVydmlldyIWChRXYXRjaE92ZXJ2aWV3UmVxdWVzdCJHChVXYXRjaE92ZXJ2aWV3UmVzcG9uc2USLgoIb3ZlcnZpZXcYASABKAsyHC5ob21lY2xvdWQuYWdlbnQudjEuT3ZlcnZpZXciswIKCE92ZXJ2aWV3Ei8KBmFzc2V0cxgBIAEoCzIfLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldENvdW50cxIyCgdhcmNoaXZlGAIgASgLMiEuaG9tZWNsb3VkLmFnZW50LnYxLkFyY2hpdmVUb3RhbHMSLAoHc3RvcmFnZRgDIAEoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5TdG9yYWdlEjcKDWFwcGxlX2FjY291bnQYBCABKAsyIC5ob21lY2xvdWQuYWdlbnQudjEuQXBwbGVBY2NvdW50Ei4KCGFjdGl2aXR5GAUgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFjdGl2aXR5EisKCmxhc3RfY3ljbGUYBiABKAsyFy5ob21lY2xvdWQuYWdlbnQudjEuUnVuIlwKC0Fzc2V0Q291bnRzEhIKCmRpc2NvdmVyZWQYASABKAMSEgoKZG93bmxvYWRlZBgCIAEoAxIQCgh2ZXJpZmllZBgDIAEoAxITCgtxdWFyYW50aW5lZBgEIAEoAyItCg1BcmNoaXZlVG90YWxzEg0KBWZpbGVzGAEgASgDEg0KBWJ5dGVzGAIgASgDIloKB1N0b3JhZ2USDAoEcm9vdBgBIAEoCRITCgt0b3RhbF9ieXRlcxgCIAEoAxISCgpmcmVlX2J5dGVzGAMgASgDEhgKEG1pbl9mcmVlX3BlcmNlbnQYBCABKAEiRAoMQXBwbGVBY2NvdW50EjQKBXN0YXRlGAEgASgOMiUuaG9tZWNsb3VkLmFnZW50LnYxLkFwcGxlQWNjb3VudFN0YXRlIp0BCghBY3Rpdml0eRIoCgVwaGFzZRgBIAEoDjIZLmhvbWVjbG91ZC5hZ2VudC52MS5QaGFzZRI0ChBwaGFzZV9zdGFydGVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCg1uZXh0X2N5Y2xlX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCLfAQoDUnVuEgoKAmlkGAEgASgDEgwKBGtpbmQYAiABKAkSLgoKc3RhcnRlZF9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLwoLZmluaXNoZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi0KBnJlc3VsdBgFIAEoDjIdLmhvbWVjbG91ZC5hZ2VudC52MS5SdW5SZXN1bHQSLgoFY3ljbGUYBiABKAsyHy5ob21lY2xvdWQuYWdlbnQudjEuQ3ljbGVSZXBvcnQi8QEKC0N5Y2xlUmVwb3J0EjUKCGRvd25sb2FkGAEgASgOMiMuaG9tZWNsb3VkLmFnZW50LnYxLkRvd25sb2FkT3V0Y29tZRIOCgZhc3NldHMYAiABKAMSEgoKcmVuZGl0aW9ucxgDIAEoAxIWCg5uZXdfcmVuZGl0aW9ucxgEIAEoAxIaChJjaGFuZ2VkX3JlbmRpdGlvbnMYBSABKAMSDwoHY2hlY2tlZBgGIAEoAxIOCgZwYXNzZWQYByABKAMSEgoKbWlzbWF0Y2hlZBgIIAEoAxIPCgdlcnJvcmVkGAkgASgDEg0KBWVycm9yGAogASgJIjgKD0xpc3RSdW5zUmVxdWVzdBIRCglwYWdlX3NpemUYASABKAUSEgoKcGFnZV90b2tlbhgCIAEoCSJSChBMaXN0UnVuc1Jlc3BvbnNlEiUKBHJ1bnMYASADKAsyFy5ob21lY2xvdWQuYWdlbnQudjEuUnVuEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSLvAgoFRXZlbnQSCgoCaWQYASABKAMSJgoCYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKBWFzc2V0GAMgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0UmVmEkEKEXJlbmRpdGlvbl9jaGFuZ2VkGAQgASgLMiQuaG9tZWNsb3VkLmFnZW50LnYxLlJlbmRpdGlvbkNoYW5nZWRIABI5Cg1zdGF0ZV9jaGFuZ2VkGAUgASgLMiAuaG9tZWNsb3VkLmFnZW50LnYxLlN0YXRlQ2hhbmdlZEgAEjYKC3F1YXJhbnRpbmVkGAYgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLlF1YXJhbnRpbmVkSAASRQoTcXVhcmFudGluZV9yZWxlYXNlZBgHIAEoCzImLmhvbWVjbG91ZC5hZ2VudC52MS5RdWFyYW50aW5lUmVsZWFzZWRIAEIICgZkZXRhaWwiPwoIQXNzZXRSZWYSDwoHbGlicmFyeRgBIAEoCRIQCghhc3NldF9pZBgCIAEoCRIQCghmaWxlbmFtZRgDIAEoCSJHChBSZW5kaXRpb25DaGFuZ2VkEg8KB3ZlcnNpb24YASABKAkSEgoKc2l6ZV9ieXRlcxgCIAEoAxIOCgZzaGEyNTYYAyABKAkiaAoMU3RhdGVDaGFuZ2VkEiwKBGZyb20YASABKA4yHi5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXRTdGF0ZRIqCgJ0bxgCIAEoDjIeLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFN0YXRlIlYKC1F1YXJhbnRpbmVkEg8KB3ZlcnNpb24YASABKAkSJgoEdGllchgCIAEoDjIYLmhvbWVjbG91ZC5hZ2VudC52MS5UaWVyEg4KBnJlYXNvbhgDIAEoCSIkChJRdWFyYW50aW5lUmVsZWFzZWQSDgoGcmVhc29uGAEgASgJImgKEUxpc3RFdmVudHNSZXF1ZXN0EiwKBWtpbmRzGAEgAygOMh0uaG9tZWNsb3VkLmFnZW50LnYxLkV2ZW50S2luZBIRCglwYWdlX3NpemUYAiABKAUSEgoKcGFnZV90b2tlbhgDIAEoCSJYChJMaXN0RXZlbnRzUmVzcG9uc2USKQoGZXZlbnRzGAEgAygLMhkuaG9tZWNsb3VkLmFnZW50LnYxLkV2ZW50EhcKD25leHRfcGFnZV90b2tlbhgCIAEoCSIXChVMaXN0UXVhcmFudGluZVJlcXVlc3QiTgoWTGlzdFF1YXJhbnRpbmVSZXNwb25zZRI0CgZhc3NldHMYASADKAsyJC5ob21lY2xvdWQuYWdlbnQudjEuUXVhcmFudGluZWRBc3NldCKiAQoQUXVhcmFudGluZWRBc3NldBIrCgVhc3NldBgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFJlZhIyCg5xdWFyYW50aW5lZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLQoIZmFpbHVyZXMYAyADKAsyGy5ob21lY2xvdWQuYWdlbnQudjEuRmFpbHVyZSJSCgdGYWlsdXJlEg8KB3ZlcnNpb24YASABKAkSJgoEdGllchgCIAEoDjIYLmhvbWVjbG91ZC5hZ2VudC52MS5UaWVyEg4KBnJlYXNvbhgDIAEoCSI0Cg9HZXRBc3NldFJlcXVlc3QSDwoHbGlicmFyeRgBIAEoCRIQCghhc3NldF9pZBgCIAEoCSI8ChBHZXRBc3NldFJlc3BvbnNlEigKBWFzc2V0GAEgASgLMhkuaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0ItoCCgVBc3NldBIpCgNyZWYYASABKAsyHC5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXRSZWYSLQoFc3RhdGUYAiABKA4yHi5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXRTdGF0ZRI0ChBzdGF0ZV9jaGFuZ2VkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghhZGRlZF9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMAoMbGFzdF9zZWVuX2F0GAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIxCgpyZW5kaXRpb25zGAcgAygLMh0uaG9tZWNsb3VkLmFnZW50LnYxLlJlbmRpdGlvbiKnAgoJUmVuZGl0aW9uEg8KB3ZlcnNpb24YASABKAkSEAoIZmlsZW5hbWUYAiABKAkSEgoKbG9jYWxfcGF0aBgDIAEoCRIxCgptZWRpYV90eXBlGAQgASgOMh0uaG9tZWNsb3VkLmFnZW50LnYxLk1lZGlhVHlwZRISCgpzaXplX2J5dGVzGAUgASgDEg4KBnNoYTI1NhgGIAEoCRIwCg5yZXF1aXJlZF90aWVycxgHIAMoDjIYLmhvbWVjbG91ZC5hZ2VudC52MS5UaWVyEiwKBnBhc3NlcxgIIAMoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5UaWVyUGFzcxIsCgdmYWlsdXJlGAkgASgLMhsuaG9tZWNsb3VkLmFnZW50LnYxLkZhaWx1cmUiWgoIVGllclBhc3MSJgoEdGllchgBIAEoDjIYLmhvbWVjbG91ZC5hZ2VudC52MS5UaWVyEiYKAmF0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJNChhSZWxlYXNlUXVhcmFudGluZVJlcXVlc3QSDwoHbGlicmFyeRgBIAEoCRIQCghhc3NldF9pZBgCIAEoCRIOCgZyZWFzb24YAyABKAkiGwoZUmVsZWFzZVF1YXJhbnRpbmVSZXNwb25zZSISChBTdGFydFN5bmNSZXF1ZXN0IiQKEVN0YXJ0U3luY1Jlc3BvbnNlEg8KB3N0YXJ0ZWQYASABKAgiHQobU2VuZFRlc3ROb3RpZmljYXRpb25SZXF1ZXN0Ih4KHFNlbmRUZXN0Tm90aWZpY2F0aW9uUmVzcG9uc2UiFAoSR2V0U2V0dGluZ3NSZXF1ZXN0IkUKE0dldFNldHRpbmdzUmVzcG9uc2USLgoIc2V0dGluZ3MYASABKAsyHC5ob21lY2xvdWQuYWdlbnQudjEuU2V0dGluZ3Mi/AIKCFNldHRpbmdzEhMKC2NvbmZpZ19wYXRoGAEgASgJEhQKDHN0b3JhZ2Vfcm9vdBgCIAEoCRIZChFzdG9yYWdlX3ZvbHVtZV9pZBgDIAEoCRIYChBtaW5fZnJlZV9wZXJjZW50GAQgASgBEi8KCmRvd25sb2FkZXIYBSABKAsyGy5ob21lY2xvdWQuYWdlbnQudjEuVG9vbFBpbhIZChFkb3dubG9hZGVyX2NvbmZpZxgGIAEoCRIwCgt2aWRlb19wcm9iZRgHIAEoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5Ub29sUGluEg4KBmxpc3RlbhgIIAEoCRIVCg1ub3RpZnlfc2VydmVyGAkgASgJEhQKDG5vdGlmeV90b3BpYxgKIAEoCRIdChVzeW5jX2ludGVydmFsX3NlY29uZHMYCyABKAMSHgoWc2NydWJfaW50ZXJ2YWxfc2Vjb25kcxgMIAEoAxIWCg5zY3J1Yl9mcmFjdGlvbhgNIAEoASIqCgdUb29sUGluEg4KBmJpbmFyeRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJIhgKFkNyZWF0ZUxvZ2luQ29kZVJlcXVlc3QiVwoXQ3JlYXRlTG9naW5Db2RlUmVzcG9uc2USDAoEY29kZRgBIAEoCRIuCgpleHBpcmVzX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIoChhFeGNoYW5nZUxvZ2luQ29kZVJlcXVlc3QSDAoEY29kZRgBIAEoCSIbChlFeGNoYW5nZUxvZ2luQ29kZVJlc3BvbnNlKq4BChFBcHBsZUFjY291bnRTdGF0ZRIjCh9BUFBMRV9BQ0NPVU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASIQodQVBQTEVfQUNDT1VOVF9TVEFURV9TSUdORURfSU4QARIoCiRBUFBMRV9BQ0NPVU5UX1NUQVRFX1NJR05fSU5fUkVRVUlSRUQQAhInCiNBUFBMRV9BQ0NPVU5UX1NUQVRFX05FRURTX0FUVEVOVElPThADKm8KBVBoYXNlEhUKEVBIQVNFX1VOU1BFQ0lGSUVEEAASDgoKUEhBU0VfSURMRRABEhUKEVBIQVNFX0RPV05MT0FESU5HEAISEwoPUEhBU0VfSU5HRVNUSU5HEAMSEwoPUEhBU0VfVkVSSUZZSU5HEAQqaQoJUnVuUmVzdWx0EhoKFlJVTl9SRVNVTFRfVU5TUEVDSUZJRUQQABIWChJSVU5fUkVTVUxUX1JVTk5JTkcQARIRCg1SVU5fUkVTVUxUX09LEAISFQoRUlVOX1JFU1VMVF9GQUlMRUQQAyrTAQoPRG93bmxvYWRPdXRjb21lEiAKHERPV05MT0FEX09VVENPTUVfVU5TUEVDSUZJRUQQABIXChNET1dOTE9BRF9PVVRDT01FX09LEAESHAoYRE9XTkxPQURfT1VUQ09NRV9QQVJUSUFMEAISJQohRE9XTkxPQURfT1VUQ09NRV9TSUdOX0lOX1JFUVVJUkVEEAMSJAogRE9XTkxPQURfT1VUQ09NRV9ORUVEU19BVFRFTlRJT04QBBIaChZET1dOTE9BRF9PVVRDT01FX0VSUk9SEAUqpwEKCUV2ZW50S2luZBIaChZFVkVOVF9LSU5EX1VOU1BFQ0lGSUVEEAASIAocRVZFTlRfS0lORF9SRU5ESVRJT05fQ0hBTkdFRBABEhwKGEVWRU5UX0tJTkRfU1RBVEVfQ0hBTkdFRBACEhoKFkVWRU5UX0tJTkRfUVVBUkFOVElORUQQAxIiCh5FVkVOVF9LSU5EX1FVQVJBTlRJTkVfUkVMRUFTRUQQBCqYAQoKQXNzZXRTdGF0ZRIbChdBU1NFVF9TVEFURV9VTlNQRUNJRklFRBAAEhoKFkFTU0VUX1NUQVRFX0RJU0NPVkVSRUQQARIaChZBU1NFVF9TVEFURV9ET1dOTE9BREVEEAISGAoUQVNTRVRfU1RBVEVfVkVSSUZJRUQQAxIbChdBU1NFVF9TVEFURV9RVUFSQU5USU5FRBAEKlIKBFRpZXISFAoQVElFUl9VTlNQRUNJRklFRBAAEhAKDFRJRVJfQ09OVEVOVBABEhIKDlRJRVJfU1RSVUNUVVJFEAISDgoKVElFUl9QUk9CRRADKpUBCglNZWRpYVR5cGUSGgoWTUVESUFfVFlQRV9VTlNQRUNJRklFRBAAEhQKEE1FRElBX1RZUEVfUEhPVE8QARIUChBNRURJQV9UWVBFX1ZJREVPEAISHwobTUVESUFfVFlQRV9MSVZFX1BIT1RPX0lNQUdFEAMSHwobTUVESUFfVFlQRV9MSVZFX1BIT1RPX1ZJREVPEAQyxgoKDEFnZW50U2VydmljZRJXCgdHZXRJbmZvEiIuaG9tZWNsb3VkLmFnZW50LnYxLkdldEluZm9SZXF1ZXN0GiMuaG9tZWNsb3VkLmFnZW50LnYxLkdldEluZm9SZXNwb25zZSIDkAIBEmMKC0dldE92ZXJ2aWV3EiYuaG9tZWNsb3VkLmFnZW50LnYxLkdldE92ZXJ2aWV3UmVxdWVzdBonLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRPdmVydmlld1Jlc3BvbnNlIgOQAgESZgoNV2F0Y2hPdmVydmlldxIoLmhvbWVjbG91ZC5hZ2VudC52MS5XYXRjaE92ZXJ2aWV3UmVxdWVzdBopLmhvbWVjbG91ZC5hZ2VudC52MS5XYXRjaE92ZXJ2aWV3UmVzcG9uc2UwARJaCghMaXN0UnVucxIjLmhvbWVjbG91ZC5hZ2VudC52MS5MaXN0UnVuc1JlcXVlc3QaJC5ob21lY2xvdWQuYWdlbnQudjEuTGlzdFJ1bnNSZXNwb25zZSIDkAIBEmAKCkxpc3RFdmVudHMSJS5ob21lY2xvdWQuYWdlbnQudjEuTGlzdEV2ZW50c1JlcXVlc3QaJi5ob21lY2xvdWQuYWdlbnQudjEuTGlzdEV2ZW50c1Jlc3BvbnNlIgOQAgESbAoOTGlzdFF1YXJhbnRpbmUSKS5ob21lY2xvdWQuYWdlbnQudjEuTGlzdFF1YXJhbnRpbmVSZXF1ZXN0GiouaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RRdWFyYW50aW5lUmVzcG9uc2UiA5ACARJaCghHZXRBc3NldBIjLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRBc3NldFJlcXVlc3QaJC5ob21lY2xvdWQuYWdlbnQudjEuR2V0QXNzZXRSZXNwb25zZSIDkAIBEnAKEVJlbGVhc2VRdWFyYW50aW5lEiwuaG9tZWNsb3VkLmFnZW50LnYxLlJlbGVhc2VRdWFyYW50aW5lUmVxdWVzdBotLmhvbWVjbG91ZC5hZ2VudC52MS5SZWxlYXNlUXVhcmFudGluZVJlc3BvbnNlElgKCVN0YXJ0U3luYxIkLmhvbWVjbG91ZC5hZ2VudC52MS5TdGFydFN5bmNSZXF1ZXN0GiUuaG9tZWNsb3VkLmFnZW50LnYxLlN0YXJ0U3luY1Jlc3BvbnNlEnkKFFNlbmRUZXN0Tm90aWZpY2F0aW9uEi8uaG9tZWNsb3VkLmFnZW50LnYxLlNlbmRUZXN0Tm90aWZpY2F0aW9uUmVxdWVzdBowLmhvbWVjbG91ZC5hZ2VudC52MS5TZW5kVGVzdE5vdGlmaWNhdGlvblJlc3BvbnNlEmMKC0dldFNldHRpbmdzEiYuaG9tZWNsb3VkLmFnZW50LnYxLkdldFNldHRpbmdzUmVxdWVzdBonLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRTZXR0aW5nc1Jlc3BvbnNlIgOQAgESagoPQ3JlYXRlTG9naW5Db2RlEiouaG9tZWNsb3VkLmFnZW50LnYxLkNyZWF0ZUxvZ2luQ29kZVJlcXVlc3QaKy5ob21lY2xvdWQuYWdlbnQudjEuQ3JlYXRlTG9naW5Db2RlUmVzcG9uc2UScAoRRXhjaGFuZ2VMb2dpbkNvZGUSLC5ob21lY2xvdWQuYWdlbnQudjEuRXhjaGFuZ2VMb2dpbkNvZGVSZXF1ZXN0Gi0uaG9tZWNsb3VkLmFnZW50LnYxLkV4Y2hhbmdlTG9naW5Db2RlUmVzcG9uc2VC0gEKFmNvbS5ob21lY2xvdWQuYWdlbnQudjFCCkFnZW50UHJvdG9QAVpCZ2l0aHViLmNvbS92YXNpbGlzdG90c2thcy9ob21lY2xvdWQvZ2VuL2hvbWVjbG91ZC9hZ2VudC92MTthZ2VudHYxogIDSEFYqgISSG9tZWNsb3VkLkFnZW50LlYxygISSG9tZWNsb3VkXEFnZW50XFYx4gIeSG9tZWNsb3VkXEFnZW50XFYxXEdQQk1ldGFkYXRh6gIUSG9tZWNsb3VkOjpBZ2VudDo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("Ch5ob21lY2xvdWQvYWdlbnQvdjEvYWdlbnQucHJvdG8SEmhvbWVjbG91ZC5hZ2VudC52MSIQCg5HZXRJbmZvUmVxdWVzdCJJCg9HZXRJbmZvUmVzcG9uc2USFQoNYWdlbnRfdmVyc2lvbhgBIAEoCRITCgthcGlfdmVyc2lvbhgCIAEoCRIKCgJvcxgDIAEoCSIUChJHZXRPdmVydmlld1JlcXVlc3QiRQoTR2V0T3ZlcnZpZXdSZXNwb25zZRIuCghvdmVydmlldxgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5PdmVydmlldyIWChRXYXRjaE92ZXJ2aWV3UmVxdWVzdCJHChVXYXRjaE92ZXJ2aWV3UmVzcG9uc2USLgoIb3ZlcnZpZXcYASABKAsyHC5ob21lY2xvdWQuYWdlbnQudjEuT3ZlcnZpZXci4wIKCE92ZXJ2aWV3Ei8KBmFzc2V0cxgBIAEoCzIfLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldENvdW50cxIyCgdhcmNoaXZlGAIgASgLMiEuaG9tZWNsb3VkLmFnZW50LnYxLkFyY2hpdmVUb3RhbHMSLAoHc3RvcmFnZRgDIAEoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5TdG9yYWdlEjcKDWFwcGxlX2FjY291bnQYBCABKAsyIC5ob21lY2xvdWQuYWdlbnQudjEuQXBwbGVBY2NvdW50Ei4KCGFjdGl2aXR5GAUgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFjdGl2aXR5EisKCmxhc3RfY3ljbGUYBiABKAsyFy5ob21lY2xvdWQuYWdlbnQudjEuUnVuEi4KBWRyaXZlGAcgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLkRyaXZlSGVhbHRoIroDCgtEcml2ZUhlYWx0aBIzCgVzdGF0ZRgBIAEoDjIkLmhvbWVjbG91ZC5hZ2VudC52MS5Ecml2ZUhlYWx0aFN0YXRlEi4KCmNoZWNrZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3JlYXNvbnMYAyADKAkSDQoFbW9kZWwYBCABKAkSEAoIcHJvdG9jb2wYBSABKAkSEAoId2FybmluZ3MYBiADKAkSIAoTdGVtcGVyYXR1cmVfY2Vsc2l1cxgHIAEoBUgAiAEBEhkKDHBlcmNlbnRfdXNlZBgIIAEoBUgBiAEBEiQKF2F2YWlsYWJsZV9zcGFyZV9wZXJjZW50GAkgASgFSAKIAQESGQoMbWVkaWFfZXJyb3JzGAogASgESAOIAQESGwoOcG93ZXJfb25faG91cnMYCyABKARIBIgBAUIWChRfdGVtcGVyYXR1cmVfY2Vsc2l1c0IPCg1fcGVyY2VudF91c2VkQhoKGF9hdmFpbGFibGVfc3BhcmVfcGVyY2VudEIPCg1fbWVkaWFfZXJyb3JzQhEKD19wb3dlcl9vbl9ob3VycyJcCgtBc3NldENvdW50cxISCgpkaXNjb3ZlcmVkGAEgASgDEhIKCmRvd25sb2FkZWQYAiABKAMSEAoIdmVyaWZpZWQYAyABKAMSEwoLcXVhcmFudGluZWQYBCABKAMiLQoNQXJjaGl2ZVRvdGFscxINCgVmaWxlcxgBIAEoAxINCgVieXRlcxgCIAEoAyJaCgdTdG9yYWdlEgwKBHJvb3QYASABKAkSEwoLdG90YWxfYnl0ZXMYAiABKAMSEgoKZnJlZV9ieXRlcxgDIAEoAxIYChBtaW5fZnJlZV9wZXJjZW50GAQgASgBIkQKDEFwcGxlQWNjb3VudBI0CgVzdGF0ZRgBIAEoDjIlLmhvbWVjbG91ZC5hZ2VudC52MS5BcHBsZUFjY291bnRTdGF0ZSKdAQoIQWN0aXZpdHkSKAoFcGhhc2UYASABKA4yGS5ob21lY2xvdWQuYWdlbnQudjEuUGhhc2USNAoQcGhhc2Vfc3RhcnRlZF9hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMQoNbmV4dF9jeWNsZV9hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi3wEKA1J1bhIKCgJpZBgBIAEoAxIMCgRraW5kGAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2ZpbmlzaGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCgZyZXN1bHQYBSABKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuUnVuUmVzdWx0Ei4KBWN5Y2xlGAYgASgLMh8uaG9tZWNsb3VkLmFnZW50LnYxLkN5Y2xlUmVwb3J0IvEBCgtDeWNsZVJlcG9ydBI1Cghkb3dubG9hZBgBIAEoDjIjLmhvbWVjbG91ZC5hZ2VudC52MS5Eb3dubG9hZE91dGNvbWUSDgoGYXNzZXRzGAIgASgDEhIKCnJlbmRpdGlvbnMYAyABKAMSFgoObmV3X3JlbmRpdGlvbnMYBCABKAMSGgoSY2hhbmdlZF9yZW5kaXRpb25zGAUgASgDEg8KB2NoZWNrZWQYBiABKAMSDgoGcGFzc2VkGAcgASgDEhIKCm1pc21hdGNoZWQYCCABKAMSDwoHZXJyb3JlZBgJIAEoAxINCgVlcnJvchgKIAEoCSI4Cg9MaXN0UnVuc1JlcXVlc3QSEQoJcGFnZV9zaXplGAEgASgFEhIKCnBhZ2VfdG9rZW4YAiABKAkiUgoQTGlzdFJ1bnNSZXNwb25zZRIlCgRydW5zGAEgAygLMhcuaG9tZWNsb3VkLmFnZW50LnYxLlJ1bhIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkitwMKBUV2ZW50EgoKAmlkGAEgASgDEiYKAmF0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIrCgVhc3NldBgDIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFJlZhJBChFyZW5kaXRpb25fY2hhbmdlZBgEIAEoCzIkLmhvbWVjbG91ZC5hZ2VudC52MS5SZW5kaXRpb25DaGFuZ2VkSAASOQoNc3RhdGVfY2hhbmdlZBgFIAEoCzIgLmhvbWVjbG91ZC5hZ2VudC52MS5TdGF0ZUNoYW5nZWRIABI2CgtxdWFyYW50aW5lZBgGIAEoCzIfLmhvbWVjbG91ZC5hZ2VudC52MS5RdWFyYW50aW5lZEgAEkUKE3F1YXJhbnRpbmVfcmVsZWFzZWQYByABKAsyJi5ob21lY2xvdWQuYWdlbnQudjEuUXVhcmFudGluZVJlbGVhc2VkSAASRgoUZHJpdmVfaGVhbHRoX2NoYW5nZWQYCCABKAsyJi5ob21lY2xvdWQuYWdlbnQudjEuRHJpdmVIZWFsdGhDaGFuZ2VkSABCCAoGZGV0YWlsIj8KCEFzc2V0UmVmEg8KB2xpYnJhcnkYASABKAkSEAoIYXNzZXRfaWQYAiABKAkSEAoIZmlsZW5hbWUYAyABKAkiRwoQUmVuZGl0aW9uQ2hhbmdlZBIPCgd2ZXJzaW9uGAEgASgJEhIKCnNpemVfYnl0ZXMYAiABKAMSDgoGc2hhMjU2GAMgASgJImgKDFN0YXRlQ2hhbmdlZBIsCgRmcm9tGAEgASgOMh4uaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0U3RhdGUSKgoCdG8YAiABKA4yHi5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXRTdGF0ZSJWCgtRdWFyYW50aW5lZBIPCgd2ZXJzaW9uGAEgASgJEiYKBHRpZXIYAiABKA4yGC5ob21lY2xvdWQuYWdlbnQudjEuVGllchIOCgZyZWFzb24YAyABKAkiJAoSUXVhcmFudGluZVJlbGVhc2VkEg4KBnJlYXNvbhgBIAEoCSKLAQoSRHJpdmVIZWFsdGhDaGFuZ2VkEjIKBGZyb20YASABKA4yJC5ob21lY2xvdWQuYWdlbnQudjEuRHJpdmVIZWFsdGhTdGF0ZRIwCgJ0bxgCIAEoDjIkLmhvbWVjbG91ZC5hZ2VudC52MS5Ecml2ZUhlYWx0aFN0YXRlEg8KB3JlYXNvbnMYAyADKAkiaAoRTGlzdEV2ZW50c1JlcXVlc3QSLAoFa2luZHMYASADKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuRXZlbnRLaW5kEhEKCXBhZ2Vfc2l6ZRgCIAEoBRISCgpwYWdlX3Rva2VuGAMgASgJIlgKEkxpc3RFdmVudHNSZXNwb25zZRIpCgZldmVudHMYASADKAsyGS5ob21lY2xvdWQuYWdlbnQudjEuRXZlbnQSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJIhcKFUxpc3RRdWFyYW50aW5lUmVxdWVzdCJOChZMaXN0UXVhcmFudGluZVJlc3BvbnNlEjQKBmFzc2V0cxgBIAMoCzIkLmhvbWVjbG91ZC5hZ2VudC52MS5RdWFyYW50aW5lZEFzc2V0IqIBChBRdWFyYW50aW5lZEFzc2V0EisKBWFzc2V0GAEgASgLMhwuaG9tZWNsb3VkLmFnZW50LnYxLkFzc2V0UmVmEjIKDnF1YXJhbnRpbmVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBItCghmYWlsdXJlcxgDIAMoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5GYWlsdXJlIlIKB0ZhaWx1cmUSDwoHdmVyc2lvbhgBIAEoCRImCgR0aWVyGAIgASgOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISDgoGcmVhc29uGAMgASgJIjQKD0dldEFzc2V0UmVxdWVzdBIPCgdsaWJyYXJ5GAEgASgJEhAKCGFzc2V0X2lkGAIgASgJIjwKEEdldEFzc2V0UmVzcG9uc2USKAoFYXNzZXQYASABKAsyGS5ob21lY2xvdWQuYWdlbnQudjEuQXNzZXQi2gIKBUFzc2V0EikKA3JlZhgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFJlZhItCgVzdGF0ZRgCIAEoDjIeLmhvbWVjbG91ZC5hZ2VudC52MS5Bc3NldFN0YXRlEjQKEHN0YXRlX2NoYW5nZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGFkZGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCgxsYXN0X3NlZW5fYXQYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjEKCnJlbmRpdGlvbnMYByADKAsyHS5ob21lY2xvdWQuYWdlbnQudjEuUmVuZGl0aW9uIqcCCglSZW5kaXRpb24SDwoHdmVyc2lvbhgBIAEoCRIQCghmaWxlbmFtZRgCIAEoCRISCgpsb2NhbF9wYXRoGAMgASgJEjEKCm1lZGlhX3R5cGUYBCABKA4yHS5ob21lY2xvdWQuYWdlbnQudjEuTWVkaWFUeXBlEhIKCnNpemVfYnl0ZXMYBSABKAMSDgoGc2hhMjU2GAYgASgJEjAKDnJlcXVpcmVkX3RpZXJzGAcgAygOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISLAoGcGFzc2VzGAggAygLMhwuaG9tZWNsb3VkLmFnZW50LnYxLlRpZXJQYXNzEiwKB2ZhaWx1cmUYCSABKAsyGy5ob21lY2xvdWQuYWdlbnQudjEuRmFpbHVyZSJaCghUaWVyUGFzcxImCgR0aWVyGAEgASgOMhguaG9tZWNsb3VkLmFnZW50LnYxLlRpZXISJgoCYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIk0KGFJlbGVhc2VRdWFyYW50aW5lUmVxdWVzdBIPCgdsaWJyYXJ5GAEgASgJEhAKCGFzc2V0X2lkGAIgASgJEg4KBnJlYXNvbhgDIAEoCSIbChlSZWxlYXNlUXVhcmFudGluZVJlc3BvbnNlIhIKEFN0YXJ0U3luY1JlcXVlc3QiJAoRU3RhcnRTeW5jUmVzcG9uc2USDwoHc3RhcnRlZBgBIAEoCCIdChtTZW5kVGVzdE5vdGlmaWNhdGlvblJlcXVlc3QiHgocU2VuZFRlc3ROb3RpZmljYXRpb25SZXNwb25zZSIUChJHZXRTZXR0aW5nc1JlcXVlc3QiRQoTR2V0U2V0dGluZ3NSZXNwb25zZRIuCghzZXR0aW5ncxgBIAEoCzIcLmhvbWVjbG91ZC5hZ2VudC52MS5TZXR0aW5ncyL8AgoIU2V0dGluZ3MSEwoLY29uZmlnX3BhdGgYASABKAkSFAoMc3RvcmFnZV9yb290GAIgASgJEhkKEXN0b3JhZ2Vfdm9sdW1lX2lkGAMgASgJEhgKEG1pbl9mcmVlX3BlcmNlbnQYBCABKAESLwoKZG93bmxvYWRlchgFIAEoCzIbLmhvbWVjbG91ZC5hZ2VudC52MS5Ub29sUGluEhkKEWRvd25sb2FkZXJfY29uZmlnGAYgASgJEjAKC3ZpZGVvX3Byb2JlGAcgASgLMhsuaG9tZWNsb3VkLmFnZW50LnYxLlRvb2xQaW4SDgoGbGlzdGVuGAggASgJEhUKDW5vdGlmeV9zZXJ2ZXIYCSABKAkSFAoMbm90aWZ5X3RvcGljGAogASgJEh0KFXN5bmNfaW50ZXJ2YWxfc2Vjb25kcxgLIAEoAxIeChZzY3J1Yl9pbnRlcnZhbF9zZWNvbmRzGAwgASgDEhYKDnNjcnViX2ZyYWN0aW9uGA0gASgBIioKB1Rvb2xQaW4SDgoGYmluYXJ5GAEgASgJEg8KB3ZlcnNpb24YAiABKAkiGAoWQ3JlYXRlTG9naW5Db2RlUmVxdWVzdCJXChdDcmVhdGVMb2dpbkNvZGVSZXNwb25zZRIMCgRjb2RlGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIigKGEV4Y2hhbmdlTG9naW5Db2RlUmVxdWVzdBIMCgRjb2RlGAEgASgJIhsKGUV4Y2hhbmdlTG9naW5Db2RlUmVzcG9uc2UqtQEKEERyaXZlSGVhbHRoU3RhdGUSIgoeRFJJVkVfSEVBTFRIX1NUQVRFX1VOU1BFQ0lGSUVEEAASGQoVRFJJVkVfSEVBTFRIX1NUQVRFX09LEAESHgoaRFJJVkVfSEVBTFRIX1NUQVRFX1dBUk5JTkcQAhIeChpEUklWRV9IRUFMVEhfU1RBVEVfRkFJTElORxADEiIKHkRSSVZFX0hFQUxUSF9TVEFURV9VTkFWQUlMQUJMRRAEKq4BChFBcHBsZUFjY291bnRTdGF0ZRIjCh9BUFBMRV9BQ0NPVU5UX1NUQVRFX1VOU1BFQ0lGSUVEEAASIQodQVBQTEVfQUNDT1VOVF9TVEFURV9TSUdORURfSU4QARIoCiRBUFBMRV9BQ0NPVU5UX1NUQVRFX1NJR05fSU5fUkVRVUlSRUQQAhInCiNBUFBMRV9BQ0NPVU5UX1NUQVRFX05FRURTX0FUVEVOVElPThADKm8KBVBoYXNlEhUKEVBIQVNFX1VOU1BFQ0lGSUVEEAASDgoKUEhBU0VfSURMRRABEhUKEVBIQVNFX0RPV05MT0FESU5HEAISEwoPUEhBU0VfSU5HRVNUSU5HEAMSEwoPUEhBU0VfVkVSSUZZSU5HEAQqaQoJUnVuUmVzdWx0EhoKFlJVTl9SRVNVTFRfVU5TUEVDSUZJRUQQABIWChJSVU5fUkVTVUxUX1JVTk5JTkcQARIRCg1SVU5fUkVTVUxUX09LEAISFQoRUlVOX1JFU1VMVF9GQUlMRUQQAyrTAQoPRG93bmxvYWRPdXRjb21lEiAKHERPV05MT0FEX09VVENPTUVfVU5TUEVDSUZJRUQQABIXChNET1dOTE9BRF9PVVRDT01FX09LEAESHAoYRE9XTkxPQURfT1VUQ09NRV9QQVJUSUFMEAISJQohRE9XTkxPQURfT1VUQ09NRV9TSUdOX0lOX1JFUVVJUkVEEAMSJAogRE9XTkxPQURfT1VUQ09NRV9ORUVEU19BVFRFTlRJT04QBBIaChZET1dOTE9BRF9PVVRDT01FX0VSUk9SEAUqzAEKCUV2ZW50S2luZBIaChZFVkVOVF9LSU5EX1VOU1BFQ0lGSUVEEAASIAocRVZFTlRfS0lORF9SRU5ESVRJT05fQ0hBTkdFRBABEhwKGEVWRU5UX0tJTkRfU1RBVEVfQ0hBTkdFRBACEhoKFkVWRU5UX0tJTkRfUVVBUkFOVElORUQQAxIiCh5FVkVOVF9LSU5EX1FVQVJBTlRJTkVfUkVMRUFTRUQQBBIjCh9FVkVOVF9LSU5EX0RSSVZFX0hFQUxUSF9DSEFOR0VEEAUqmAEKCkFzc2V0U3RhdGUSGwoXQVNTRVRfU1RBVEVfVU5TUEVDSUZJRUQQABIaChZBU1NFVF9TVEFURV9ESVNDT1ZFUkVEEAESGgoWQVNTRVRfU1RBVEVfRE9XTkxPQURFRBACEhgKFEFTU0VUX1NUQVRFX1ZFUklGSUVEEAMSGwoXQVNTRVRfU1RBVEVfUVVBUkFOVElORUQQBCpSCgRUaWVyEhQKEFRJRVJfVU5TUEVDSUZJRUQQABIQCgxUSUVSX0NPTlRFTlQQARISCg5USUVSX1NUUlVDVFVSRRACEg4KClRJRVJfUFJPQkUQAyqVAQoJTWVkaWFUeXBlEhoKFk1FRElBX1RZUEVfVU5TUEVDSUZJRUQQABIUChBNRURJQV9UWVBFX1BIT1RPEAESFAoQTUVESUFfVFlQRV9WSURFTxACEh8KG01FRElBX1RZUEVfTElWRV9QSE9UT19JTUFHRRADEh8KG01FRElBX1RZUEVfTElWRV9QSE9UT19WSURFTxAEMsYKCgxBZ2VudFNlcnZpY2USVwoHR2V0SW5mbxIiLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRJbmZvUmVxdWVzdBojLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRJbmZvUmVzcG9uc2UiA5ACARJjCgtHZXRPdmVydmlldxImLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRPdmVydmlld1JlcXVlc3QaJy5ob21lY2xvdWQuYWdlbnQudjEuR2V0T3ZlcnZpZXdSZXNwb25zZSIDkAIBEmYKDVdhdGNoT3ZlcnZpZXcSKC5ob21lY2xvdWQuYWdlbnQudjEuV2F0Y2hPdmVydmlld1JlcXVlc3QaKS5ob21lY2xvdWQuYWdlbnQudjEuV2F0Y2hPdmVydmlld1Jlc3BvbnNlMAESWgoITGlzdFJ1bnMSIy5ob21lY2xvdWQuYWdlbnQudjEuTGlzdFJ1bnNSZXF1ZXN0GiQuaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RSdW5zUmVzcG9uc2UiA5ACARJgCgpMaXN0RXZlbnRzEiUuaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RFdmVudHNSZXF1ZXN0GiYuaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RFdmVudHNSZXNwb25zZSIDkAIBEmwKDkxpc3RRdWFyYW50aW5lEikuaG9tZWNsb3VkLmFnZW50LnYxLkxpc3RRdWFyYW50aW5lUmVxdWVzdBoqLmhvbWVjbG91ZC5hZ2VudC52MS5MaXN0UXVhcmFudGluZVJlc3BvbnNlIgOQAgESWgoIR2V0QXNzZXQSIy5ob21lY2xvdWQuYWdlbnQudjEuR2V0QXNzZXRSZXF1ZXN0GiQuaG9tZWNsb3VkLmFnZW50LnYxLkdldEFzc2V0UmVzcG9uc2UiA5ACARJwChFSZWxlYXNlUXVhcmFudGluZRIsLmhvbWVjbG91ZC5hZ2VudC52MS5SZWxlYXNlUXVhcmFudGluZVJlcXVlc3QaLS5ob21lY2xvdWQuYWdlbnQudjEuUmVsZWFzZVF1YXJhbnRpbmVSZXNwb25zZRJYCglTdGFydFN5bmMSJC5ob21lY2xvdWQuYWdlbnQudjEuU3RhcnRTeW5jUmVxdWVzdBolLmhvbWVjbG91ZC5hZ2VudC52MS5TdGFydFN5bmNSZXNwb25zZRJ5ChRTZW5kVGVzdE5vdGlmaWNhdGlvbhIvLmhvbWVjbG91ZC5hZ2VudC52MS5TZW5kVGVzdE5vdGlmaWNhdGlvblJlcXVlc3QaMC5ob21lY2xvdWQuYWdlbnQudjEuU2VuZFRlc3ROb3RpZmljYXRpb25SZXNwb25zZRJjCgtHZXRTZXR0aW5ncxImLmhvbWVjbG91ZC5hZ2VudC52MS5HZXRTZXR0aW5nc1JlcXVlc3QaJy5ob21lY2xvdWQuYWdlbnQudjEuR2V0U2V0dGluZ3NSZXNwb25zZSIDkAIBEmoKD0NyZWF0ZUxvZ2luQ29kZRIqLmhvbWVjbG91ZC5hZ2VudC52MS5DcmVhdGVMb2dpbkNvZGVSZXF1ZXN0GisuaG9tZWNsb3VkLmFnZW50LnYxLkNyZWF0ZUxvZ2luQ29kZVJlc3BvbnNlEnAKEUV4Y2hhbmdlTG9naW5Db2RlEiwuaG9tZWNsb3VkLmFnZW50LnYxLkV4Y2hhbmdlTG9naW5Db2RlUmVxdWVzdBotLmhvbWVjbG91ZC5hZ2VudC52MS5FeGNoYW5nZUxvZ2luQ29kZVJlc3BvbnNlQtIBChZjb20uaG9tZWNsb3VkLmFnZW50LnYxQgpBZ2VudFByb3RvUAFaQmdpdGh1Yi5jb20vdmFzaWxpc3RvdHNrYXMvaG9tZWNsb3VkL2dlbi9ob21lY2xvdWQvYWdlbnQvdjE7YWdlbnR2MaICA0hBWKoCEkhvbWVjbG91ZC5BZ2VudC5WMcoCEkhvbWVjbG91ZFxBZ2VudFxWMeICHkhvbWVjbG91ZFxBZ2VudFxWMVxHUEJNZXRhZGF0YeoCFEhvbWVjbG91ZDo6QWdlbnQ6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message homecloud.agent.v1.GetInfoRequest
@@ -162,6 +162,13 @@ export type Overview = Message<"homecloud.agent.v1.Overview"> & {
    * @generated from field: homecloud.agent.v1.Run last_cycle = 6;
    */
   lastCycle?: Run | undefined;
+
+  /**
+   * The latest health check of the archive drive; absent before the first one.
+   *
+   * @generated from field: homecloud.agent.v1.DriveHealth drive = 7;
+   */
+  drive?: DriveHealth | undefined;
 };
 
 /**
@@ -170,6 +177,86 @@ export type Overview = Message<"homecloud.agent.v1.Overview"> & {
  */
 export const OverviewSchema: GenMessage<Overview> = /*@__PURE__*/
   messageDesc(file_homecloud_agent_v1_agent, 6);
+
+/**
+ * DriveHealth is what the archive drive reports about itself (SMART) and the
+ * agent's verdict on it.
+ *
+ * @generated from message homecloud.agent.v1.DriveHealth
+ */
+export type DriveHealth = Message<"homecloud.agent.v1.DriveHealth"> & {
+  /**
+   * @generated from field: homecloud.agent.v1.DriveHealthState state = 1;
+   */
+  state: DriveHealthState;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp checked_at = 2;
+   */
+  checkedAt?: Timestamp | undefined;
+
+  /**
+   * Why the state is not OK, or why health could not be read.
+   *
+   * @generated from field: repeated string reasons = 3;
+   */
+  reasons: string[];
+
+  /**
+   * @generated from field: string model = 4;
+   */
+  model: string;
+
+  /**
+   * "NVMe" or "ATA".
+   *
+   * @generated from field: string protocol = 5;
+   */
+  protocol: string;
+
+  /**
+   * The drive's own critical warnings, e.g. "spare", "temperature", "failing".
+   *
+   * @generated from field: repeated string warnings = 6;
+   */
+  warnings: string[];
+
+  /**
+   * @generated from field: optional int32 temperature_celsius = 7;
+   */
+  temperatureCelsius?: number | undefined;
+
+  /**
+   * NVMe endurance estimate; 100 means the rated life is used up.
+   *
+   * @generated from field: optional int32 percent_used = 8;
+   */
+  percentUsed?: number | undefined;
+
+  /**
+   * @generated from field: optional int32 available_spare_percent = 9;
+   */
+  availableSparePercent?: number | undefined;
+
+  /**
+   * NVMe media and data-integrity errors, or ATA bad sectors.
+   *
+   * @generated from field: optional uint64 media_errors = 10;
+   */
+  mediaErrors?: bigint | undefined;
+
+  /**
+   * @generated from field: optional uint64 power_on_hours = 11;
+   */
+  powerOnHours?: bigint | undefined;
+};
+
+/**
+ * Describes the message homecloud.agent.v1.DriveHealth.
+ * Use `create(DriveHealthSchema)` to create a new message.
+ */
+export const DriveHealthSchema: GenMessage<DriveHealth> = /*@__PURE__*/
+  messageDesc(file_homecloud_agent_v1_agent, 7);
 
 /**
  * AssetCounts counts assets by lifecycle state.
@@ -203,7 +290,7 @@ export type AssetCounts = Message<"homecloud.agent.v1.AssetCounts"> & {
  * Use `create(AssetCountsSchema)` to create a new message.
  */
 export const AssetCountsSchema: GenMessage<AssetCounts> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 7);
+  messageDesc(file_homecloud_agent_v1_agent, 8);
 
 /**
  * ArchiveTotals sums the downloaded renditions on disk.
@@ -227,7 +314,7 @@ export type ArchiveTotals = Message<"homecloud.agent.v1.ArchiveTotals"> & {
  * Use `create(ArchiveTotalsSchema)` to create a new message.
  */
 export const ArchiveTotalsSchema: GenMessage<ArchiveTotals> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 8);
+  messageDesc(file_homecloud_agent_v1_agent, 9);
 
 /**
  * Storage describes the volume holding the archive.
@@ -263,7 +350,7 @@ export type Storage = Message<"homecloud.agent.v1.Storage"> & {
  * Use `create(StorageSchema)` to create a new message.
  */
 export const StorageSchema: GenMessage<Storage> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 9);
+  messageDesc(file_homecloud_agent_v1_agent, 10);
 
 /**
  * AppleAccount reports whether the downloader could use the Apple session in
@@ -283,7 +370,7 @@ export type AppleAccount = Message<"homecloud.agent.v1.AppleAccount"> & {
  * Use `create(AppleAccountSchema)` to create a new message.
  */
 export const AppleAccountSchema: GenMessage<AppleAccount> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 10);
+  messageDesc(file_homecloud_agent_v1_agent, 11);
 
 /**
  * Activity is what the agent is doing now.
@@ -316,7 +403,7 @@ export type Activity = Message<"homecloud.agent.v1.Activity"> & {
  * Use `create(ActivitySchema)` to create a new message.
  */
 export const ActivitySchema: GenMessage<Activity> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 11);
+  messageDesc(file_homecloud_agent_v1_agent, 12);
 
 /**
  * Run is one recorded job execution.
@@ -364,7 +451,7 @@ export type Run = Message<"homecloud.agent.v1.Run"> & {
  * Use `create(RunSchema)` to create a new message.
  */
 export const RunSchema: GenMessage<Run> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 12);
+  messageDesc(file_homecloud_agent_v1_agent, 13);
 
 /**
  * CycleReport is what one sync cycle did.
@@ -430,7 +517,7 @@ export type CycleReport = Message<"homecloud.agent.v1.CycleReport"> & {
  * Use `create(CycleReportSchema)` to create a new message.
  */
 export const CycleReportSchema: GenMessage<CycleReport> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 13);
+  messageDesc(file_homecloud_agent_v1_agent, 14);
 
 /**
  * @generated from message homecloud.agent.v1.ListRunsRequest
@@ -456,7 +543,7 @@ export type ListRunsRequest = Message<"homecloud.agent.v1.ListRunsRequest"> & {
  * Use `create(ListRunsRequestSchema)` to create a new message.
  */
 export const ListRunsRequestSchema: GenMessage<ListRunsRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 14);
+  messageDesc(file_homecloud_agent_v1_agent, 15);
 
 /**
  * @generated from message homecloud.agent.v1.ListRunsResponse
@@ -480,7 +567,7 @@ export type ListRunsResponse = Message<"homecloud.agent.v1.ListRunsResponse"> & 
  * Use `create(ListRunsResponseSchema)` to create a new message.
  */
 export const ListRunsResponseSchema: GenMessage<ListRunsResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 15);
+  messageDesc(file_homecloud_agent_v1_agent, 16);
 
 /**
  * Event is one entry of the audit log.
@@ -530,6 +617,12 @@ export type Event = Message<"homecloud.agent.v1.Event"> & {
      */
     value: QuarantineReleased;
     case: "quarantineReleased";
+  } | {
+    /**
+     * @generated from field: homecloud.agent.v1.DriveHealthChanged drive_health_changed = 8;
+     */
+    value: DriveHealthChanged;
+    case: "driveHealthChanged";
   } | { case: undefined; value?: undefined };
 };
 
@@ -538,7 +631,7 @@ export type Event = Message<"homecloud.agent.v1.Event"> & {
  * Use `create(EventSchema)` to create a new message.
  */
 export const EventSchema: GenMessage<Event> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 16);
+  messageDesc(file_homecloud_agent_v1_agent, 17);
 
 /**
  * AssetRef identifies an asset and names it for display.
@@ -569,7 +662,7 @@ export type AssetRef = Message<"homecloud.agent.v1.AssetRef"> & {
  * Use `create(AssetRefSchema)` to create a new message.
  */
 export const AssetRefSchema: GenMessage<AssetRef> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 17);
+  messageDesc(file_homecloud_agent_v1_agent, 18);
 
 /**
  * RenditionChanged: a rendition's size or hash changed in iCloud; its
@@ -599,7 +692,7 @@ export type RenditionChanged = Message<"homecloud.agent.v1.RenditionChanged"> & 
  * Use `create(RenditionChangedSchema)` to create a new message.
  */
 export const RenditionChangedSchema: GenMessage<RenditionChanged> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 18);
+  messageDesc(file_homecloud_agent_v1_agent, 19);
 
 /**
  * @generated from message homecloud.agent.v1.StateChanged
@@ -621,7 +714,7 @@ export type StateChanged = Message<"homecloud.agent.v1.StateChanged"> & {
  * Use `create(StateChangedSchema)` to create a new message.
  */
 export const StateChangedSchema: GenMessage<StateChanged> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 19);
+  messageDesc(file_homecloud_agent_v1_agent, 20);
 
 /**
  * @generated from message homecloud.agent.v1.Quarantined
@@ -648,7 +741,7 @@ export type Quarantined = Message<"homecloud.agent.v1.Quarantined"> & {
  * Use `create(QuarantinedSchema)` to create a new message.
  */
 export const QuarantinedSchema: GenMessage<Quarantined> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 20);
+  messageDesc(file_homecloud_agent_v1_agent, 21);
 
 /**
  * @generated from message homecloud.agent.v1.QuarantineReleased
@@ -665,7 +758,36 @@ export type QuarantineReleased = Message<"homecloud.agent.v1.QuarantineReleased"
  * Use `create(QuarantineReleasedSchema)` to create a new message.
  */
 export const QuarantineReleasedSchema: GenMessage<QuarantineReleased> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 21);
+  messageDesc(file_homecloud_agent_v1_agent, 22);
+
+/**
+ * DriveHealthChanged: the archive drive's health state changed.
+ *
+ * @generated from message homecloud.agent.v1.DriveHealthChanged
+ */
+export type DriveHealthChanged = Message<"homecloud.agent.v1.DriveHealthChanged"> & {
+  /**
+   * @generated from field: homecloud.agent.v1.DriveHealthState from = 1;
+   */
+  from: DriveHealthState;
+
+  /**
+   * @generated from field: homecloud.agent.v1.DriveHealthState to = 2;
+   */
+  to: DriveHealthState;
+
+  /**
+   * @generated from field: repeated string reasons = 3;
+   */
+  reasons: string[];
+};
+
+/**
+ * Describes the message homecloud.agent.v1.DriveHealthChanged.
+ * Use `create(DriveHealthChangedSchema)` to create a new message.
+ */
+export const DriveHealthChangedSchema: GenMessage<DriveHealthChanged> = /*@__PURE__*/
+  messageDesc(file_homecloud_agent_v1_agent, 23);
 
 /**
  * @generated from message homecloud.agent.v1.ListEventsRequest
@@ -696,7 +818,7 @@ export type ListEventsRequest = Message<"homecloud.agent.v1.ListEventsRequest"> 
  * Use `create(ListEventsRequestSchema)` to create a new message.
  */
 export const ListEventsRequestSchema: GenMessage<ListEventsRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 22);
+  messageDesc(file_homecloud_agent_v1_agent, 24);
 
 /**
  * @generated from message homecloud.agent.v1.ListEventsResponse
@@ -718,7 +840,7 @@ export type ListEventsResponse = Message<"homecloud.agent.v1.ListEventsResponse"
  * Use `create(ListEventsResponseSchema)` to create a new message.
  */
 export const ListEventsResponseSchema: GenMessage<ListEventsResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 23);
+  messageDesc(file_homecloud_agent_v1_agent, 25);
 
 /**
  * @generated from message homecloud.agent.v1.ListQuarantineRequest
@@ -731,7 +853,7 @@ export type ListQuarantineRequest = Message<"homecloud.agent.v1.ListQuarantineRe
  * Use `create(ListQuarantineRequestSchema)` to create a new message.
  */
 export const ListQuarantineRequestSchema: GenMessage<ListQuarantineRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 24);
+  messageDesc(file_homecloud_agent_v1_agent, 26);
 
 /**
  * @generated from message homecloud.agent.v1.ListQuarantineResponse
@@ -748,7 +870,7 @@ export type ListQuarantineResponse = Message<"homecloud.agent.v1.ListQuarantineR
  * Use `create(ListQuarantineResponseSchema)` to create a new message.
  */
 export const ListQuarantineResponseSchema: GenMessage<ListQuarantineResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 25);
+  messageDesc(file_homecloud_agent_v1_agent, 27);
 
 /**
  * @generated from message homecloud.agent.v1.QuarantinedAsset
@@ -775,7 +897,7 @@ export type QuarantinedAsset = Message<"homecloud.agent.v1.QuarantinedAsset"> & 
  * Use `create(QuarantinedAssetSchema)` to create a new message.
  */
 export const QuarantinedAssetSchema: GenMessage<QuarantinedAsset> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 26);
+  messageDesc(file_homecloud_agent_v1_agent, 28);
 
 /**
  * Failure is a rendition's recorded verification failure.
@@ -804,7 +926,7 @@ export type Failure = Message<"homecloud.agent.v1.Failure"> & {
  * Use `create(FailureSchema)` to create a new message.
  */
 export const FailureSchema: GenMessage<Failure> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 27);
+  messageDesc(file_homecloud_agent_v1_agent, 29);
 
 /**
  * @generated from message homecloud.agent.v1.GetAssetRequest
@@ -826,7 +948,7 @@ export type GetAssetRequest = Message<"homecloud.agent.v1.GetAssetRequest"> & {
  * Use `create(GetAssetRequestSchema)` to create a new message.
  */
 export const GetAssetRequestSchema: GenMessage<GetAssetRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 28);
+  messageDesc(file_homecloud_agent_v1_agent, 30);
 
 /**
  * @generated from message homecloud.agent.v1.GetAssetResponse
@@ -843,7 +965,7 @@ export type GetAssetResponse = Message<"homecloud.agent.v1.GetAssetResponse"> & 
  * Use `create(GetAssetResponseSchema)` to create a new message.
  */
 export const GetAssetResponseSchema: GenMessage<GetAssetResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 29);
+  messageDesc(file_homecloud_agent_v1_agent, 31);
 
 /**
  * @generated from message homecloud.agent.v1.Asset
@@ -890,7 +1012,7 @@ export type Asset = Message<"homecloud.agent.v1.Asset"> & {
  * Use `create(AssetSchema)` to create a new message.
  */
 export const AssetSchema: GenMessage<Asset> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 30);
+  messageDesc(file_homecloud_agent_v1_agent, 32);
 
 /**
  * @generated from message homecloud.agent.v1.Rendition
@@ -953,7 +1075,7 @@ export type Rendition = Message<"homecloud.agent.v1.Rendition"> & {
  * Use `create(RenditionSchema)` to create a new message.
  */
 export const RenditionSchema: GenMessage<Rendition> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 31);
+  messageDesc(file_homecloud_agent_v1_agent, 33);
 
 /**
  * @generated from message homecloud.agent.v1.TierPass
@@ -975,7 +1097,7 @@ export type TierPass = Message<"homecloud.agent.v1.TierPass"> & {
  * Use `create(TierPassSchema)` to create a new message.
  */
 export const TierPassSchema: GenMessage<TierPass> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 32);
+  messageDesc(file_homecloud_agent_v1_agent, 34);
 
 /**
  * @generated from message homecloud.agent.v1.ReleaseQuarantineRequest
@@ -1004,7 +1126,7 @@ export type ReleaseQuarantineRequest = Message<"homecloud.agent.v1.ReleaseQuaran
  * Use `create(ReleaseQuarantineRequestSchema)` to create a new message.
  */
 export const ReleaseQuarantineRequestSchema: GenMessage<ReleaseQuarantineRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 33);
+  messageDesc(file_homecloud_agent_v1_agent, 35);
 
 /**
  * @generated from message homecloud.agent.v1.ReleaseQuarantineResponse
@@ -1017,7 +1139,7 @@ export type ReleaseQuarantineResponse = Message<"homecloud.agent.v1.ReleaseQuara
  * Use `create(ReleaseQuarantineResponseSchema)` to create a new message.
  */
 export const ReleaseQuarantineResponseSchema: GenMessage<ReleaseQuarantineResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 34);
+  messageDesc(file_homecloud_agent_v1_agent, 36);
 
 /**
  * @generated from message homecloud.agent.v1.StartSyncRequest
@@ -1030,7 +1152,7 @@ export type StartSyncRequest = Message<"homecloud.agent.v1.StartSyncRequest"> & 
  * Use `create(StartSyncRequestSchema)` to create a new message.
  */
 export const StartSyncRequestSchema: GenMessage<StartSyncRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 35);
+  messageDesc(file_homecloud_agent_v1_agent, 37);
 
 /**
  * @generated from message homecloud.agent.v1.StartSyncResponse
@@ -1049,7 +1171,7 @@ export type StartSyncResponse = Message<"homecloud.agent.v1.StartSyncResponse"> 
  * Use `create(StartSyncResponseSchema)` to create a new message.
  */
 export const StartSyncResponseSchema: GenMessage<StartSyncResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 36);
+  messageDesc(file_homecloud_agent_v1_agent, 38);
 
 /**
  * @generated from message homecloud.agent.v1.SendTestNotificationRequest
@@ -1062,7 +1184,7 @@ export type SendTestNotificationRequest = Message<"homecloud.agent.v1.SendTestNo
  * Use `create(SendTestNotificationRequestSchema)` to create a new message.
  */
 export const SendTestNotificationRequestSchema: GenMessage<SendTestNotificationRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 37);
+  messageDesc(file_homecloud_agent_v1_agent, 39);
 
 /**
  * @generated from message homecloud.agent.v1.SendTestNotificationResponse
@@ -1075,7 +1197,7 @@ export type SendTestNotificationResponse = Message<"homecloud.agent.v1.SendTestN
  * Use `create(SendTestNotificationResponseSchema)` to create a new message.
  */
 export const SendTestNotificationResponseSchema: GenMessage<SendTestNotificationResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 38);
+  messageDesc(file_homecloud_agent_v1_agent, 40);
 
 /**
  * @generated from message homecloud.agent.v1.GetSettingsRequest
@@ -1088,7 +1210,7 @@ export type GetSettingsRequest = Message<"homecloud.agent.v1.GetSettingsRequest"
  * Use `create(GetSettingsRequestSchema)` to create a new message.
  */
 export const GetSettingsRequestSchema: GenMessage<GetSettingsRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 39);
+  messageDesc(file_homecloud_agent_v1_agent, 41);
 
 /**
  * @generated from message homecloud.agent.v1.GetSettingsResponse
@@ -1105,7 +1227,7 @@ export type GetSettingsResponse = Message<"homecloud.agent.v1.GetSettingsRespons
  * Use `create(GetSettingsResponseSchema)` to create a new message.
  */
 export const GetSettingsResponseSchema: GenMessage<GetSettingsResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 40);
+  messageDesc(file_homecloud_agent_v1_agent, 42);
 
 /**
  * Settings mirrors the agent's validated configuration file.
@@ -1186,7 +1308,7 @@ export type Settings = Message<"homecloud.agent.v1.Settings"> & {
  * Use `create(SettingsSchema)` to create a new message.
  */
 export const SettingsSchema: GenMessage<Settings> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 41);
+  messageDesc(file_homecloud_agent_v1_agent, 43);
 
 /**
  * ToolPin is an external tool and the exact version homecloud requires.
@@ -1210,7 +1332,7 @@ export type ToolPin = Message<"homecloud.agent.v1.ToolPin"> & {
  * Use `create(ToolPinSchema)` to create a new message.
  */
 export const ToolPinSchema: GenMessage<ToolPin> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 42);
+  messageDesc(file_homecloud_agent_v1_agent, 44);
 
 /**
  * @generated from message homecloud.agent.v1.CreateLoginCodeRequest
@@ -1223,7 +1345,7 @@ export type CreateLoginCodeRequest = Message<"homecloud.agent.v1.CreateLoginCode
  * Use `create(CreateLoginCodeRequestSchema)` to create a new message.
  */
 export const CreateLoginCodeRequestSchema: GenMessage<CreateLoginCodeRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 43);
+  messageDesc(file_homecloud_agent_v1_agent, 45);
 
 /**
  * @generated from message homecloud.agent.v1.CreateLoginCodeResponse
@@ -1247,7 +1369,7 @@ export type CreateLoginCodeResponse = Message<"homecloud.agent.v1.CreateLoginCod
  * Use `create(CreateLoginCodeResponseSchema)` to create a new message.
  */
 export const CreateLoginCodeResponseSchema: GenMessage<CreateLoginCodeResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 44);
+  messageDesc(file_homecloud_agent_v1_agent, 46);
 
 /**
  * @generated from message homecloud.agent.v1.ExchangeLoginCodeRequest
@@ -1264,7 +1386,7 @@ export type ExchangeLoginCodeRequest = Message<"homecloud.agent.v1.ExchangeLogin
  * Use `create(ExchangeLoginCodeRequestSchema)` to create a new message.
  */
 export const ExchangeLoginCodeRequestSchema: GenMessage<ExchangeLoginCodeRequest> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 45);
+  messageDesc(file_homecloud_agent_v1_agent, 47);
 
 /**
  * @generated from message homecloud.agent.v1.ExchangeLoginCodeResponse
@@ -1277,7 +1399,49 @@ export type ExchangeLoginCodeResponse = Message<"homecloud.agent.v1.ExchangeLogi
  * Use `create(ExchangeLoginCodeResponseSchema)` to create a new message.
  */
 export const ExchangeLoginCodeResponseSchema: GenMessage<ExchangeLoginCodeResponse> = /*@__PURE__*/
-  messageDesc(file_homecloud_agent_v1_agent, 46);
+  messageDesc(file_homecloud_agent_v1_agent, 48);
+
+/**
+ * @generated from enum homecloud.agent.v1.DriveHealthState
+ */
+export enum DriveHealthState {
+  /**
+   * @generated from enum value: DRIVE_HEALTH_STATE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: DRIVE_HEALTH_STATE_OK = 1;
+   */
+  OK = 1,
+
+  /**
+   * Data was lost or remapped, or the rated endurance is used up.
+   *
+   * @generated from enum value: DRIVE_HEALTH_STATE_WARNING = 2;
+   */
+  WARNING = 2,
+
+  /**
+   * The drive predicts its own failure.
+   *
+   * @generated from enum value: DRIVE_HEALTH_STATE_FAILING = 3;
+   */
+  FAILING = 3,
+
+  /**
+   * Health could not be read; never treated as healthy.
+   *
+   * @generated from enum value: DRIVE_HEALTH_STATE_UNAVAILABLE = 4;
+   */
+  UNAVAILABLE = 4,
+}
+
+/**
+ * Describes the enum homecloud.agent.v1.DriveHealthState.
+ */
+export const DriveHealthStateSchema: GenEnum<DriveHealthState> = /*@__PURE__*/
+  enumDesc(file_homecloud_agent_v1_agent, 0);
 
 /**
  * @generated from enum homecloud.agent.v1.AppleAccountState
@@ -1314,7 +1478,7 @@ export enum AppleAccountState {
  * Describes the enum homecloud.agent.v1.AppleAccountState.
  */
 export const AppleAccountStateSchema: GenEnum<AppleAccountState> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 0);
+  enumDesc(file_homecloud_agent_v1_agent, 1);
 
 /**
  * @generated from enum homecloud.agent.v1.Phase
@@ -1350,7 +1514,7 @@ export enum Phase {
  * Describes the enum homecloud.agent.v1.Phase.
  */
 export const PhaseSchema: GenEnum<Phase> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 1);
+  enumDesc(file_homecloud_agent_v1_agent, 2);
 
 /**
  * @generated from enum homecloud.agent.v1.RunResult
@@ -1381,7 +1545,7 @@ export enum RunResult {
  * Describes the enum homecloud.agent.v1.RunResult.
  */
 export const RunResultSchema: GenEnum<RunResult> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 2);
+  enumDesc(file_homecloud_agent_v1_agent, 3);
 
 /**
  * @generated from enum homecloud.agent.v1.DownloadOutcome
@@ -1426,7 +1590,7 @@ export enum DownloadOutcome {
  * Describes the enum homecloud.agent.v1.DownloadOutcome.
  */
 export const DownloadOutcomeSchema: GenEnum<DownloadOutcome> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 3);
+  enumDesc(file_homecloud_agent_v1_agent, 4);
 
 /**
  * @generated from enum homecloud.agent.v1.EventKind
@@ -1456,13 +1620,18 @@ export enum EventKind {
    * @generated from enum value: EVENT_KIND_QUARANTINE_RELEASED = 4;
    */
   QUARANTINE_RELEASED = 4,
+
+  /**
+   * @generated from enum value: EVENT_KIND_DRIVE_HEALTH_CHANGED = 5;
+   */
+  DRIVE_HEALTH_CHANGED = 5,
 }
 
 /**
  * Describes the enum homecloud.agent.v1.EventKind.
  */
 export const EventKindSchema: GenEnum<EventKind> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 4);
+  enumDesc(file_homecloud_agent_v1_agent, 5);
 
 /**
  * @generated from enum homecloud.agent.v1.AssetState
@@ -1498,7 +1667,7 @@ export enum AssetState {
  * Describes the enum homecloud.agent.v1.AssetState.
  */
 export const AssetStateSchema: GenEnum<AssetState> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 5);
+  enumDesc(file_homecloud_agent_v1_agent, 6);
 
 /**
  * @generated from enum homecloud.agent.v1.Tier
@@ -1535,7 +1704,7 @@ export enum Tier {
  * Describes the enum homecloud.agent.v1.Tier.
  */
 export const TierSchema: GenEnum<Tier> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 6);
+  enumDesc(file_homecloud_agent_v1_agent, 7);
 
 /**
  * @generated from enum homecloud.agent.v1.MediaType
@@ -1571,7 +1740,7 @@ export enum MediaType {
  * Describes the enum homecloud.agent.v1.MediaType.
  */
 export const MediaTypeSchema: GenEnum<MediaType> = /*@__PURE__*/
-  enumDesc(file_homecloud_agent_v1_agent, 7);
+  enumDesc(file_homecloud_agent_v1_agent, 8);
 
 /**
  * AgentService exposes the agent's state and the operator actions it accepts.
