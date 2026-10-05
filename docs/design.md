@@ -137,7 +137,8 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 - **Independent verification:** 310/310 files re-hashed by homecloud tooling matched kei's SHA-256 and size.
 - **Throughput:** 27.3 GiB in 7 m 48 s (~60 MB/s) — vs ~1 MB/s through iCloud for Windows.
 - **Write-guard:** one download was rejected with "`.kei-tmp` changed identity" (kei refuses to publish a temp file whose identity changed mid-write; Defender real-time scanning is active on this host — cause unconfirmed) and succeeded on kei's per-asset retry. homecloud must therefore treat kei's per-run failure count as advisory and the manifest + its own hashing as the source of truth.
-- **Open:** Live Photo representation (no Live Photo among the 300 sampled) — answered from the full-library sync.
+- **Live Photos** (kei `src/state/types.rs` + 1,814 live manifest rows): one `asset_id` carries the still as `version=original, media_type=live_photo_image` and the motion clip as `version=live_original, media_type=live_photo_video`; edited Live Photos add `adjusted` + `live_adjusted`. Version keys: `original, medium, thumb, adjusted, alternative, live_original, live_medium, live_thumb, live_adjusted`. Statuses: `pending, policy_excluded, downloaded, failed`. Unknown values are rejected (fail closed).
+- **Ordering:** kei enumerates newest-first; pyicloud's `photos.all` yields oldest-first (first 400 = 2022-06..08). Identity comparison (Spike A) therefore runs after the full sync covers both ranges.
 
 ### Verification design corrections
 

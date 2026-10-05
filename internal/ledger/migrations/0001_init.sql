@@ -19,7 +19,7 @@ CREATE TABLE resources (
     version               TEXT    NOT NULL,
     filename              TEXT    NOT NULL,
     local_path            TEXT    NOT NULL UNIQUE,
-    media_type            TEXT    NOT NULL CHECK (media_type IN ('photo', 'video')),
+    media_type            TEXT    NOT NULL CHECK (media_type IN ('photo', 'video', 'live_photo_image', 'live_photo_video')),
     size_bytes            INTEGER NOT NULL CHECK (size_bytes >= 0),
     kei_sha256            TEXT    NOT NULL CHECK (length(kei_sha256) = 64),
     verified_content_at   TEXT,
