@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/health"
@@ -56,7 +57,7 @@ type Agent struct {
 	now    func() time.Time
 	// readDrive reads the archive drive's SMART data.
 	readDrive func(context.Context) (platform.DriveHealth, error)
-	// checkArchive confirms the archive volume is the configured one.
+	// checkArchive confirms the configured archive is present at storage.root.
 	checkArchive func() error
 	// checkSpace reports the archive volume's space, wrapping
 	// platform.ErrLowSpace below storage.min_free_percent.
@@ -81,7 +82,7 @@ func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, k
 		readDrive: func(ctx context.Context) (platform.DriveHealth, error) {
 			return platform.DriveHealthOf(ctx, cfg.Storage.Root)
 		},
-		checkArchive: func() error { return platform.CheckVolume(cfg.Storage.Root, cfg.Storage.VolumeID) },
+		checkArchive: func() error { return archive.Check(cfg.Storage.Root, cfg.Storage.ArchiveID) },
 		checkSpace: func() (platform.Space, error) {
 			return platform.CheckFreeSpace(cfg.Storage.Root, cfg.Storage.MinFreePercent)
 		},

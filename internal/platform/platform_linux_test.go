@@ -66,19 +66,6 @@ func TestMountMatches(t *testing.T) {
 	}
 }
 
-func TestValidateVolumeID(t *testing.T) {
-	for _, ok := range []string{"0a1b2c3d-1111-2222-3333-444455556666", "1234-ABCD", "0123456789ABCDEF"} {
-		if err := ValidateVolumeID(ok); err != nil {
-			t.Errorf("ValidateVolumeID(%q): %v", ok, err)
-		}
-	}
-	for _, bad := range []string{"", "/dev/sda2", `\\?\Volume{0a1b2c3d-1111-2222-3333-444455556666}\`, "1234ABCD"} {
-		if err := ValidateVolumeID(bad); err == nil {
-			t.Errorf("ValidateVolumeID(%q) accepted", bad)
-		}
-	}
-}
-
 func TestRenderUnit(t *testing.T) {
 	unit, err := renderUnit(AgentService{
 		Name:        "homecloud-agent",

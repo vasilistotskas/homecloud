@@ -21,7 +21,7 @@ import { useNotify } from "../components/toast";
 import { useCopy } from "../components/useCopy";
 import { formatInterval, formatSpan } from "../format";
 import { icloudLoginCommand } from "../shell";
-import { AgentService } from "../gen/homecloud/agent/v1/agent_pb";
+import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
 
 const useStyles = makeStyles({
   intro: { color: tokens.colorNeutralForeground3, maxWidth: "760px" },
@@ -128,7 +128,7 @@ export function SettingsPage() {
 
       <Group title="Archive">
         <Row label="Location" detail={s.storageRoot} mono />
-        <Row label="Drive identity" detail={s.storageVolumeId} mono />
+        <Row label="Archive id" detail={`${s.storageArchiveId} (in homecloud-archive.json at the archive root)`} mono />
         <Row label="Keep free on the drive" detail="New downloads pause below this; archived files are still checked">
           <Text>{s.minFreePercent}%</Text>
         </Row>

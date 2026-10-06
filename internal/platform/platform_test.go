@@ -3,40 +3,22 @@ package platform
 import (
 	"errors"
 	"fmt"
-	"strings"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
-// ownVolumeID returns the identity of the test temp dir, skipping when the test
-// environment (e.g. a container overlay) has no stable volume identity.
-func ownVolumeID(t *testing.T) string {
-	t.Helper()
-	id, err := VolumeID(t.TempDir())
+func TestSameVolume(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	same, err := SameVolume(a, b)
 	if errors.Is(err, ErrNoVolumeIdentity) {
-		t.Skipf("test temp dir has no volume identity in this environment: %v", err)
+		t.Skipf("no volume identity in this environment: %v", err)
 	}
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || !same {
+		t.Fatalf("two temp dirs: same = %v, %v; want true", same, err)
 	}
-	return id
-}
-
-func TestVolumeIDIsValidAndStable(t *testing.T) {
-	got := ownVolumeID(t)
-	if err := ValidateVolumeID(got); err != nil {
-		t.Fatalf("VolumeID returned an id its own validator rejects: %v", err)
-	}
-	if err := CheckVolume(t.TempDir(), strings.ToUpper(got)); err != nil {
-		t.Fatalf("CheckVolume with own id (case-insensitive): %v", err)
-	}
-}
-
-func TestCheckVolumeMismatch(t *testing.T) {
-	own := ownVolumeID(t)
-	err := CheckVolume(t.TempDir(), own+"-other")
-	if err == nil || !strings.Contains(err.Error(), "expected") {
-		t.Fatalf("want mismatch error, got %v", err)
+	if _, err := SameVolume(a, filepath.Join(b, "missing")); err == nil {
+		t.Fatal("a missing path was compared")
 	}
 }
 

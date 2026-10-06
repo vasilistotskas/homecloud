@@ -14,7 +14,7 @@ import {
 } from "@fluentui/react-components";
 import type { ReactNode } from "react";
 
-import { AgentService, RunResult, type RunKind, type Run } from "../gen/homecloud/agent/v1/agent_pb";
+import { AgentService, RunResult, type RunKind, type Run } from "../gen/homecloud/agent/v2/agent_pb";
 import { LoadError } from "./LoadError";
 import { nextPage, started, took, useTableStyles } from "./tables";
 

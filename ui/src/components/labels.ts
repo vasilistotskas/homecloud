@@ -6,7 +6,7 @@ import {
   IPhoneBackupState,
   MediaType,
   Tier,
-} from "../gen/homecloud/agent/v1/agent_pb";
+} from "../gen/homecloud/agent/v2/agent_pb";
 
 /** The badge colours the app uses. */
 export type BadgeColor = "brand" | "success" | "warning" | "danger" | "informative";

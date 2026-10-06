@@ -1,6 +1,6 @@
 import { createContext, use } from "react";
 
-import type { Overview } from "../gen/homecloud/agent/v1/agent_pb";
+import type { Overview } from "../gen/homecloud/agent/v2/agent_pb";
 
 /**
  * Connection to the agent's overview stream. "archive-unavailable" means the

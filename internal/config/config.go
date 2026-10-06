@@ -19,7 +19,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/archive"
 )
 
 // Config is the complete homecloud configuration.
@@ -38,14 +38,13 @@ type Config struct {
 	Logs         Logs         `toml:"logs"`
 }
 
-// Storage describes the archive volume.
+// Storage describes the archive.
 type Storage struct {
 	// Root is the archive root directory (for example E:\HomeCloud).
 	Root string `toml:"root"`
-	// VolumeID is the expected identity of the volume holding Root: a volume
-	// GUID name (\\?\Volume{...}\) on Windows, a filesystem UUID on Linux. It
-	// guards against a different disk being mounted at the same location.
-	VolumeID string `toml:"volume_id"`
+	// ArchiveID names the archive at Root (archive.MarkerFile); the agent works
+	// only on that archive, so a missing drive or another disk never counts.
+	ArchiveID string `toml:"archive_id"`
 	// MinFreePercent is the minimum free space on the archive volume.
 	MinFreePercent float64 `toml:"min_free_percent"`
 }
@@ -251,8 +250,8 @@ func (c *Config) Validate() error {
 	if !filepath.IsAbs(c.Storage.Root) {
 		add("storage.root must be an absolute path, got %q", c.Storage.Root)
 	}
-	if err := platform.ValidateVolumeID(c.Storage.VolumeID); err != nil {
-		add("storage.volume_id: %w", err)
+	if err := archive.ValidateID(c.Storage.ArchiveID); err != nil {
+		add("storage.archive_id: %w", err)
 	}
 	if c.Storage.MinFreePercent <= 0 || c.Storage.MinFreePercent >= 100 {
 		add("storage.min_free_percent must be in (0, 100), got %v", c.Storage.MinFreePercent)

@@ -8,8 +8,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -31,7 +31,7 @@ func (r Result) OK() bool { return r.Err == nil }
 func Run(ctx context.Context, cfg *config.Config) []Result {
 	results := []Result{
 		checkDir("archive root", cfg.Storage.Root),
-		checkVolume(cfg.Storage),
+		checkArchive(cfg.Storage),
 		checkSpace(cfg.Storage),
 		checkBackupVolume(cfg),
 		checkKeiConfig(cfg),
@@ -65,11 +65,11 @@ func checkDir(name, path string) Result {
 	}
 }
 
-func checkVolume(s config.Storage) Result {
-	if err := platform.CheckVolume(s.Root, s.VolumeID); err != nil {
-		return Result{Name: "archive volume", Err: err}
+func checkArchive(s config.Storage) Result {
+	if err := archive.Check(s.Root, s.ArchiveID); err != nil {
+		return Result{Name: "archive", Err: err}
 	}
-	return Result{Name: "archive volume", Detail: s.VolumeID}
+	return Result{Name: "archive", Detail: s.ArchiveID}
 }
 
 func checkSpace(s config.Storage) Result {
@@ -99,7 +99,7 @@ func checkKeiConfig(cfg *config.Config) Result {
 	return Result{Name: "kei config", Detail: cfg.Kei.Config}
 }
 
-// checkBackupVolume requires ledger snapshots to live off the archive volume;
+// checkBackupVolume requires ledger snapshots to live off the archive's volume;
 // a copy on the archive drive would be lost together with it. The directory
 // itself is created by the first backup, so its nearest existing ancestor
 // decides the volume.
@@ -118,12 +118,12 @@ func checkBackupVolume(cfg *config.Config) Result {
 		}
 		dir = parent
 	}
-	got, err := platform.VolumeID(dir)
+	same, err := platform.SameVolume(dir, cfg.Storage.Root)
 	if err != nil {
 		return Result{Name: name, Err: err}
 	}
-	if strings.EqualFold(got, cfg.Storage.VolumeID) {
-		return Result{Name: name, Err: fmt.Errorf("backup.dir %s is on the archive volume; it must be on another drive", cfg.Backup.Dir)}
+	if same {
+		return Result{Name: name, Err: fmt.Errorf("backup.dir %s is on the archive's drive; it must be on another drive", cfg.Backup.Dir)}
 	}
 	return Result{Name: name, Detail: cfg.Backup.Dir}
 }

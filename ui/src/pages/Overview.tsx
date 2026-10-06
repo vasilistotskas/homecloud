@@ -71,7 +71,7 @@ import {
   type Run,
   type Overview,
   type Settings,
-} from "../gen/homecloud/agent/v1/agent_pb";
+} from "../gen/homecloud/agent/v2/agent_pb";
 
 const useStyles = makeStyles({
   hero: {

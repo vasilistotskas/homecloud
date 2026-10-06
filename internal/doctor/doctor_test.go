@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
@@ -36,24 +38,35 @@ func TestCheckDir(t *testing.T) {
 	}
 }
 
-func TestCheckBackupVolume(t *testing.T) {
+// Ledger snapshots on the archive's own drive would be lost with it. A
+// backup.dir that does not exist yet is judged by its nearest existing
+// ancestor. (Tests have one drive, so only the refusal can be exercised.)
+func TestCheckBackupVolumeRefusesTheArchiveDrive(t *testing.T) {
 	dir := t.TempDir()
-	here, err := platform.VolumeID(dir)
-	if errors.Is(err, platform.ErrNoVolumeIdentity) {
-		t.Skipf("the temp dir has no volume identity here (e.g. a container without /dev/disk/by-uuid): %v", err)
+	cfg := &config.Config{
+		Storage: config.Storage{Root: dir},
+		Backup:  config.Backup{Dir: filepath.Join(dir, "not", "yet", "created")},
 	}
+	r := checkBackupVolume(cfg)
+	if errors.Is(r.Err, platform.ErrNoVolumeIdentity) {
+		t.Skipf("no volume identity in this environment: %v", r.Err)
+	}
+	if r.OK() || !strings.Contains(r.Err.Error(), "archive's drive") {
+		t.Fatalf("backups on the archive's drive = %+v; want refused", r)
+	}
+}
+
+func TestCheckArchive(t *testing.T) {
+	dir := t.TempDir()
+	id, err := archive.Init(dir, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &config.Config{Backup: config.Backup{Dir: filepath.Join(dir, "not", "yet", "created")}}
-
-	cfg.Storage.VolumeID = here
-	if r := checkBackupVolume(cfg); r.OK() {
-		t.Error("backups on the archive volume accepted")
+	if r := checkArchive(config.Storage{Root: dir, ArchiveID: id}); !r.OK() || r.Detail != id {
+		t.Errorf("own archive = %+v", r)
 	}
-	cfg.Storage.VolumeID = "another-volume"
-	if r := checkBackupVolume(cfg); !r.OK() {
-		t.Errorf("backups off the archive volume rejected: %v", r.Err)
+	if r := checkArchive(config.Storage{Root: t.TempDir(), ArchiveID: id}); r.OK() {
+		t.Error("an unmarked folder passed")
 	}
 }
 

@@ -18,16 +18,17 @@ var (
 	testFFmpegBin  = filepath.Join(testTools, "ffmpeg", "ffmpeg")
 	testBackupDir  = filepath.Join(testTools, "ledger-backups")
 	testIPhoneDir  = filepath.Join(testTools, "MobileSync", "Backup")
+	testArchiveID  = "0a1b2c3d-1111-4222-8333-444455556666"
 )
 
 // validTOML is a complete valid configuration.
 var validTOML = strings.NewReplacer(
-	"@ROOT@", testRoot, "@VOLUME_ID@", testVolumeID,
+	"@ROOT@", testRoot, "@ARCHIVE_ID@", testArchiveID,
 	"@KEI_BINARY@", testKeiBinary, "@KEI_CONFIG@", testKeiConfig, "@FFPROBE@", testFFprobeBin, "@FFMPEG@", testFFmpegBin, "@BACKUP_DIR@", testBackupDir, "@IPHONE_DIR@", testIPhoneDir,
 ).Replace(`
 [storage]
 root = '@ROOT@'
-volume_id = '@VOLUME_ID@'
+archive_id = '@ARCHIVE_ID@'
 min_free_percent = 15
 
 [icloud]
@@ -106,7 +107,7 @@ func TestLoadValid(t *testing.T) {
 	want := &Config{
 		Storage: Storage{
 			Root:           testRoot,
-			VolumeID:       testVolumeID,
+			ArchiveID:      testArchiveID,
 			MinFreePercent: 15,
 		},
 		ICloud: ICloud{AppleID: "someone@example.com", IncludeHidden: ptr(true), RequestTimeout: Duration(time.Minute)},
@@ -163,7 +164,7 @@ func TestValidate(t *testing.T) {
 		wantErr string
 	}{
 		{"relative root", func(c *Config) { c.Storage.Root = `HomeCloud` }, "storage.root"},
-		{"bad volume id", func(c *Config) { c.Storage.VolumeID = "not-a-volume" }, "storage.volume_id"},
+		{"bad archive id", func(c *Config) { c.Storage.ArchiveID = "not-an-archive" }, "storage.archive_id"},
 		{"free percent zero", func(c *Config) { c.Storage.MinFreePercent = 0 }, "storage.min_free_percent"},
 		{"free percent 100", func(c *Config) { c.Storage.MinFreePercent = 100 }, "storage.min_free_percent"},
 		{"no apple id", func(c *Config) { c.ICloud.AppleID = "" }, "icloud.apple_id"},

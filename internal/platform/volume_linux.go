@@ -7,28 +7,29 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
-// Filesystem UUIDs as exposed under /dev/disk/by-uuid: RFC 4122 form (ext4, xfs,
-// btrfs), FAT/exFAT serials (XXXX-XXXX) and NTFS serials (16 hex digits).
-var fsUUID = regexp.MustCompile(`^(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{4}-[0-9a-fA-F]{4}|[0-9a-fA-F]{16})$`)
-
 const (
 	mountinfoPath = "/proc/self/mountinfo"
 	byUUIDDir     = "/dev/disk/by-uuid"
 )
 
-// ValidateVolumeID accepts a filesystem UUID as listed in /dev/disk/by-uuid.
-func ValidateVolumeID(id string) error {
-	if !fsUUID.MatchString(id) {
-		return fmt.Errorf("volume id must be a filesystem UUID as listed in %s, got %q", byUUIDDir, id)
+// SameVolume reports whether a and b, existing paths, are on the same
+// filesystem. It compares device numbers, which also works for bind mounts in
+// a container, where no volume UUID is visible.
+func SameVolume(a, b string) (bool, error) {
+	var sa, sb unix.Stat_t
+	if err := unix.Stat(a, &sa); err != nil {
+		return false, fmt.Errorf("stat %q: %w", a, err)
 	}
-	return nil
+	if err := unix.Stat(b, &sb); err != nil {
+		return false, fmt.Errorf("stat %q: %w", b, err)
+	}
+	return sa.Dev == sb.Dev, nil
 }
 
 // VolumeID returns the filesystem UUID of the volume containing path by matching

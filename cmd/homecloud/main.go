@@ -16,9 +16,10 @@ import (
 	"connectrpc.com/connect"
 	"github.com/urfave/cli/v3"
 
-	agentv1 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1"
-	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1/agentv1connect"
+	agentv2 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2"
+	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2/agentv2connect"
 	"github.com/vasilistotskas/homecloud/internal/app"
+	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/doctor"
@@ -62,6 +63,20 @@ func newApp() *cli.Command {
 				Name:   "doctor",
 				Usage:  "run read-only environment checks",
 				Action: runDoctor,
+			},
+			{
+				Name:  "archive",
+				Usage: "manage the archive's identity",
+				Commands: []*cli.Command{
+					{
+						Name:  "init",
+						Usage: "mark a folder as a new homecloud archive and print its id for storage.archive_id (once per archive)",
+						Flags: []cli.Flag{
+							&cli.StringFlag{Name: "root", Required: true, Usage: "the archive root folder (storage.root)"},
+						},
+						Action: runArchiveInit,
+					},
+				},
 			},
 			{
 				Name:   "verify",
@@ -225,6 +240,20 @@ func runStatus(ctx context.Context, cmd *cli.Command) (err error) {
 const agentName = "homecloud-agent"
 
 // printf writes command output, wrapping write failures.
+// runArchiveInit marks a folder as a new archive. It needs no configuration:
+// the id it prints goes into the configuration.
+func runArchiveInit(_ context.Context, cmd *cli.Command) error {
+	root, err := filepath.Abs(cmd.String("root"))
+	if err != nil {
+		return fmt.Errorf("archive root: %w", err)
+	}
+	id, err := archive.Init(root, time.Now())
+	if err != nil {
+		return err
+	}
+	return printf(cmd, "%s is homecloud archive %s.\nSet it in config.toml:\n\n[storage]\narchive_id = %q\n", root, id, id)
+}
+
 func printf(cmd *cli.Command, format string, args ...any) error {
 	if _, err := fmt.Fprintf(cmd.Root().Writer, format, args...); err != nil {
 		return fmt.Errorf("write output: %w", err)
@@ -368,8 +397,8 @@ func runOpen(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	client := agentv1connect.NewAgentServiceClient(http.DefaultClient, ep.URL, connect.WithInterceptors(auth.Bearer(ep.Token)))
-	res, err := client.CreateLoginCode(ctx, connect.NewRequest(&agentv1.CreateLoginCodeRequest{}))
+	client := agentv2connect.NewAgentServiceClient(http.DefaultClient, ep.URL, connect.WithInterceptors(auth.Bearer(ep.Token)))
+	res, err := client.CreateLoginCode(ctx, connect.NewRequest(&agentv2.CreateLoginCodeRequest{}))
 	if err != nil {
 		return fmt.Errorf("request login code: %w", err)
 	}

@@ -5,7 +5,7 @@
 // Per-OS functions:
 //
 //	VolumeID(path) (string, error)       identity of the volume holding path
-//	ValidateVolumeID(id) error           syntax of a configured volume identity
+//	SameVolume(a, b) (bool, error)       whether two paths share a volume
 //	DiskSpace(path) (Space, error)       free/total bytes available to the caller
 //	AcquireInstance(name) (*Lock, error) single-instance guard for the agent
 //	InstallAgent(ctx, AgentService)      start the agent at logon, and now
@@ -25,7 +25,6 @@ package platform
 import (
 	"errors"
 	"fmt"
-	"strings"
 )
 
 var (
@@ -56,18 +55,6 @@ type AgentService struct {
 	Executable  string   // absolute path to homecloud-agent
 	Args        []string // arguments passed to the agent
 	WorkingDir  string
-}
-
-// CheckVolume returns an error unless path lives on the volume identified by want.
-func CheckVolume(path, want string) error {
-	got, err := VolumeID(path)
-	if err != nil {
-		return err
-	}
-	if !strings.EqualFold(got, want) {
-		return fmt.Errorf("archive root %q is on volume %s, expected %s", path, got, want)
-	}
-	return nil
 }
 
 // ErrLowSpace marks a volume whose free space is below the configured minimum.

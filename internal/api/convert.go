@@ -13,7 +13,7 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agentv1 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1"
+	agentv2 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2"
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
@@ -77,44 +77,44 @@ func optionalTimePtr(t *time.Time) *timestamppb.Timestamp {
 	return timestamppb.New(*t)
 }
 
-func phase(p app.Phase) agentv1.Phase {
+func phase(p app.Phase) agentv2.Phase {
 	switch p {
 	case app.PhaseIdle:
-		return agentv1.Phase_PHASE_IDLE
+		return agentv2.Phase_PHASE_IDLE
 	case app.PhaseDownloading:
-		return agentv1.Phase_PHASE_DOWNLOADING
+		return agentv2.Phase_PHASE_DOWNLOADING
 	case app.PhaseIngesting:
-		return agentv1.Phase_PHASE_INGESTING
+		return agentv2.Phase_PHASE_INGESTING
 	case app.PhaseVerifying:
-		return agentv1.Phase_PHASE_VERIFYING
+		return agentv2.Phase_PHASE_VERIFYING
 	case app.PhasePreparingPreviews:
-		return agentv1.Phase_PHASE_PREPARING_PREVIEWS
+		return agentv2.Phase_PHASE_PREPARING_PREVIEWS
 	case app.PhaseCheckingArchive:
-		return agentv1.Phase_PHASE_CHECKING_ARCHIVE
+		return agentv2.Phase_PHASE_CHECKING_ARCHIVE
 	case app.PhaseBackingUpLedger:
-		return agentv1.Phase_PHASE_BACKING_UP_LEDGER
+		return agentv2.Phase_PHASE_BACKING_UP_LEDGER
 	case app.PhaseCheckingIPhoneBackups:
-		return agentv1.Phase_PHASE_CHECKING_IPHONE_BACKUPS
+		return agentv2.Phase_PHASE_CHECKING_IPHONE_BACKUPS
 	case app.PhaseSyncingDrive:
-		return agentv1.Phase_PHASE_SYNCING_DRIVE
+		return agentv2.Phase_PHASE_SYNCING_DRIVE
 	default:
-		return agentv1.Phase_PHASE_UNSPECIFIED
+		return agentv2.Phase_PHASE_UNSPECIFIED
 	}
 }
 
-var downloadOutcomes = map[string]agentv1.DownloadOutcome{
-	kei.OutcomeOK.String():           agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_OK,
-	kei.OutcomePartial.String():      agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_PARTIAL,
-	kei.OutcomeAuthRequired.String(): agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED,
-	kei.OutcomeAuthTerminal.String(): agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_NEEDS_ATTENTION,
-	app.KeiOutcomeError:              agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ERROR,
-	app.KeiOutcomeLowSpace:           agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE,
-	app.KeiOutcomeArchiveUnavailable: agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE,
-	app.KeiOutcomeInterrupted:        agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_INTERRUPTED,
+var downloadOutcomes = map[string]agentv2.DownloadOutcome{
+	kei.OutcomeOK.String():           agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_OK,
+	kei.OutcomePartial.String():      agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_PARTIAL,
+	kei.OutcomeAuthRequired.String(): agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED,
+	kei.OutcomeAuthTerminal.String(): agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_NEEDS_ATTENTION,
+	app.KeiOutcomeError:              agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_ERROR,
+	app.KeiOutcomeLowSpace:           agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE,
+	app.KeiOutcomeArchiveUnavailable: agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE,
+	app.KeiOutcomeInterrupted:        agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_INTERRUPTED,
 }
 
-func runToProto(r ledger.Run) (*agentv1.Run, error) {
-	out := &agentv1.Run{
+func runToProto(r ledger.Run) (*agentv2.Run, error) {
+	out := &agentv2.Run{
 		Id:         r.ID,
 		Kind:       r.Kind,
 		StartedAt:  timestamppb.New(r.StartedAt),
@@ -122,11 +122,11 @@ func runToProto(r ledger.Run) (*agentv1.Run, error) {
 	}
 	switch {
 	case r.OK == nil:
-		out.Result = agentv1.RunResult_RUN_RESULT_RUNNING
+		out.Result = agentv2.RunResult_RUN_RESULT_RUNNING
 	case *r.OK:
-		out.Result = agentv1.RunResult_RUN_RESULT_OK
+		out.Result = agentv2.RunResult_RUN_RESULT_OK
 	default:
-		out.Result = agentv1.RunResult_RUN_RESULT_FAILED
+		out.Result = agentv2.RunResult_RUN_RESULT_FAILED
 	}
 	if r.FinishedAt == nil {
 		return out, nil
@@ -153,39 +153,39 @@ func runToProto(r ledger.Run) (*agentv1.Run, error) {
 }
 
 // runKinds maps API run kinds to the ledger's run kind names.
-var runKinds = map[agentv1.RunKind]string{
-	agentv1.RunKind_RUN_KIND_CYCLE:         app.CycleRunKind,
-	agentv1.RunKind_RUN_KIND_SCRUB:         app.ScrubRunKind,
-	agentv1.RunKind_RUN_KIND_LEDGER_BACKUP: app.LedgerBackupRunKind,
-	agentv1.RunKind_RUN_KIND_IPHONE_BACKUP: app.IPhoneBackupRunKind,
-	agentv1.RunKind_RUN_KIND_DRIVE_SYNC:    app.DriveSyncRunKind,
+var runKinds = map[agentv2.RunKind]string{
+	agentv2.RunKind_RUN_KIND_CYCLE:         app.CycleRunKind,
+	agentv2.RunKind_RUN_KIND_SCRUB:         app.ScrubRunKind,
+	agentv2.RunKind_RUN_KIND_LEDGER_BACKUP: app.LedgerBackupRunKind,
+	agentv2.RunKind_RUN_KIND_IPHONE_BACKUP: app.IPhoneBackupRunKind,
+	agentv2.RunKind_RUN_KIND_DRIVE_SYNC:    app.DriveSyncRunKind,
 }
 
-func scrubToProto(detail string) (*agentv1.ScrubReport, error) {
+func scrubToProto(detail string) (*agentv2.ScrubReport, error) {
 	rep, err := app.ParseScrubReport(detail)
 	if err != nil {
 		return nil, err
 	}
-	return &agentv1.ScrubReport{
+	return &agentv2.ScrubReport{
 		Eligible:   int64(rep.Eligible),
 		Checked:    int64(rep.Checked),
 		Passed:     int64(rep.Passed),
 		Mismatched: int64(rep.Mismatched),
 		Errored:    int64(rep.Errored),
 		Error:      rep.Error,
-		Drive: &agentv1.DriveScrub{
+		Drive: &agentv2.DriveScrub{
 			Eligible: int64(rep.Drive.Eligible), Checked: int64(rep.Drive.Checked), Passed: int64(rep.Drive.Passed),
 			Damaged: int64(rep.Drive.Damaged), Errored: int64(rep.Drive.Errored),
 		},
 	}, nil
 }
 
-func ledgerBackupToProto(detail string) (*agentv1.LedgerBackupReport, error) {
+func ledgerBackupToProto(detail string) (*agentv2.LedgerBackupReport, error) {
 	rep, err := app.ParseLedgerBackupReport(detail)
 	if err != nil {
 		return nil, err
 	}
-	return &agentv1.LedgerBackupReport{
+	return &agentv2.LedgerBackupReport{
 		Path:      rep.File,
 		SizeBytes: rep.SizeBytes,
 		Pruned:    int64(rep.Pruned),
@@ -193,38 +193,38 @@ func ledgerBackupToProto(detail string) (*agentv1.LedgerBackupReport, error) {
 	}, nil
 }
 
-var iphoneBackupStates = map[iphonebackup.State]agentv1.IPhoneBackupState{
-	iphonebackup.StateOK:          agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK,
-	iphonebackup.StateInProgress:  agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_IN_PROGRESS,
-	iphonebackup.StateShrunk:      agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_SHRUNK,
-	iphonebackup.StateStale:       agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE,
-	iphonebackup.StateIncomplete:  agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_INCOMPLETE,
-	iphonebackup.StateUnencrypted: agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNENCRYPTED,
-	iphonebackup.StateUnreadable:  agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNREADABLE,
-	iphonebackup.StateInvalid:     agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_INVALID,
+var iphoneBackupStates = map[iphonebackup.State]agentv2.IPhoneBackupState{
+	iphonebackup.StateOK:          agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK,
+	iphonebackup.StateInProgress:  agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_IN_PROGRESS,
+	iphonebackup.StateShrunk:      agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_SHRUNK,
+	iphonebackup.StateStale:       agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE,
+	iphonebackup.StateIncomplete:  agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_INCOMPLETE,
+	iphonebackup.StateUnencrypted: agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNENCRYPTED,
+	iphonebackup.StateUnreadable:  agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNREADABLE,
+	iphonebackup.StateInvalid:     agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_INVALID,
 }
 
 // iphoneBackupState converts a recorded state; "" (no earlier state) is
 // unspecified.
-func iphoneBackupState(s iphonebackup.State) (agentv1.IPhoneBackupState, error) {
+func iphoneBackupState(s iphonebackup.State) (agentv2.IPhoneBackupState, error) {
 	if s == "" {
-		return agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNSPECIFIED, nil
+		return agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNSPECIFIED, nil
 	}
 	return lookup(iphoneBackupStates, s, "iphone backup state")
 }
 
-func iphoneBackupToProto(detail string) (*agentv1.IPhoneBackupReport, error) {
+func iphoneBackupToProto(detail string) (*agentv2.IPhoneBackupReport, error) {
 	rep, err := app.ParseIPhoneBackupReport(detail)
 	if err != nil {
 		return nil, err
 	}
-	out := &agentv1.IPhoneBackupReport{Archived: int64(rep.Archived), Error: rep.Error, DirErrors: rep.DirErrors}
+	out := &agentv2.IPhoneBackupReport{Archived: int64(rep.Archived), Error: rep.Error, DirErrors: rep.DirErrors}
 	for _, d := range rep.Devices {
 		state, err := lookup(iphoneBackupStates, d.State, "iphone backup state")
 		if err != nil {
 			return nil, err
 		}
-		out.Devices = append(out.Devices, &agentv1.IPhoneBackup{
+		out.Devices = append(out.Devices, &agentv2.IPhoneBackup{
 			Udid: d.UDID, Name: d.Name, ProductVersion: d.ProductVersion, Dir: d.Dir,
 			Encrypted: d.Encrypted, CompletedAt: optionalTimePtr(d.CompletedAt),
 			Files: d.Files, SizeBytes: d.Bytes, State: state, Reasons: d.Reasons,
@@ -234,16 +234,16 @@ func iphoneBackupToProto(detail string) (*agentv1.IPhoneBackupReport, error) {
 	return out, nil
 }
 
-var driveSyncOutcomes = map[string]agentv1.DriveSyncOutcome{
-	app.DriveOutcomeOK:                 agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_OK,
-	app.DriveOutcomePartial:            agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_PARTIAL,
-	app.DriveOutcomeSignInRequired:     agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_SIGN_IN_REQUIRED,
-	app.DriveOutcomeSkippedLowSpace:    agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_SKIPPED_LOW_SPACE,
-	app.DriveOutcomeArchiveUnavailable: agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_ARCHIVE_UNAVAILABLE,
-	app.DriveOutcomeError:              agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_ERROR,
+var driveSyncOutcomes = map[string]agentv2.DriveSyncOutcome{
+	app.DriveOutcomeOK:                 agentv2.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_OK,
+	app.DriveOutcomePartial:            agentv2.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_PARTIAL,
+	app.DriveOutcomeSignInRequired:     agentv2.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_SIGN_IN_REQUIRED,
+	app.DriveOutcomeSkippedLowSpace:    agentv2.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_SKIPPED_LOW_SPACE,
+	app.DriveOutcomeArchiveUnavailable: agentv2.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_ARCHIVE_UNAVAILABLE,
+	app.DriveOutcomeError:              agentv2.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_ERROR,
 }
 
-func driveSyncToProto(detail string) (*agentv1.DriveSyncReport, error) {
+func driveSyncToProto(detail string) (*agentv2.DriveSyncReport, error) {
 	rep, err := app.ParseDriveSyncReport(detail)
 	if err != nil {
 		return nil, err
@@ -252,7 +252,7 @@ func driveSyncToProto(detail string) (*agentv1.DriveSyncReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &agentv1.DriveSyncReport{
+	return &agentv2.DriveSyncReport{
 		Outcome: outcome, Listed: int64(rep.Listed), Archived: int64(rep.Archived), Changed: int64(rep.Changed),
 		Repaired: int64(rep.Repaired), Moved: int64(rep.Moved), Deleted: int64(rep.Deleted), Restored: int64(rep.Restored),
 		DownloadedBytes: rep.Bytes, Failed: int64(rep.Failed), Failures: rep.Failures,
@@ -260,7 +260,7 @@ func driveSyncToProto(detail string) (*agentv1.DriveSyncReport, error) {
 	}, nil
 }
 
-func cycleToProto(detail string) (*agentv1.CycleReport, error) {
+func cycleToProto(detail string) (*agentv2.CycleReport, error) {
 	rep, err := app.ParseCycleReport(detail)
 	if err != nil {
 		return nil, err
@@ -269,7 +269,7 @@ func cycleToProto(detail string) (*agentv1.CycleReport, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown download outcome %q", rep.KeiOutcome)
 	}
-	return &agentv1.CycleReport{
+	return &agentv2.CycleReport{
 		Download:          dl,
 		Assets:            int64(rep.Ingested.Assets),
 		Renditions:        int64(rep.Ingested.Renditions),
@@ -284,70 +284,70 @@ func cycleToProto(detail string) (*agentv1.CycleReport, error) {
 	}, nil
 }
 
-func appleState(d agentv1.DownloadOutcome) agentv1.AppleAccountState {
+func appleState(d agentv2.DownloadOutcome) agentv2.AppleAccountState {
 	switch d {
-	case agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_OK, agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_PARTIAL:
-		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_SIGNED_IN
-	case agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED:
-		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_SIGN_IN_REQUIRED
-	case agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_NEEDS_ATTENTION:
-		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_NEEDS_ATTENTION
-	case agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_UNSPECIFIED, agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ERROR,
-		agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE, agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE,
-		agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_INTERRUPTED:
-		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_UNSPECIFIED
+	case agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_OK, agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_PARTIAL:
+		return agentv2.AppleAccountState_APPLE_ACCOUNT_STATE_SIGNED_IN
+	case agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED:
+		return agentv2.AppleAccountState_APPLE_ACCOUNT_STATE_SIGN_IN_REQUIRED
+	case agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_NEEDS_ATTENTION:
+		return agentv2.AppleAccountState_APPLE_ACCOUNT_STATE_NEEDS_ATTENTION
+	case agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_UNSPECIFIED, agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_ERROR,
+		agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE, agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE,
+		agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_INTERRUPTED:
+		return agentv2.AppleAccountState_APPLE_ACCOUNT_STATE_UNSPECIFIED
 	default:
-		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_UNSPECIFIED
+		return agentv2.AppleAccountState_APPLE_ACCOUNT_STATE_UNSPECIFIED
 	}
 }
 
 // eventKindNames maps API event kinds to the ledger's event kind names.
-var eventKindNames = map[agentv1.EventKind]string{
-	agentv1.EventKind_EVENT_KIND_RENDITION_CHANGED:     ledger.EventRenditionChanged,
-	agentv1.EventKind_EVENT_KIND_STATE_CHANGED:         ledger.EventStateChanged,
-	agentv1.EventKind_EVENT_KIND_QUARANTINED:           ledger.EventQuarantined,
-	agentv1.EventKind_EVENT_KIND_QUARANTINE_RELEASED:   ledger.EventQuarantineReleased,
-	agentv1.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:  ledger.EventDriveHealthChanged,
-	agentv1.EventKind_EVENT_KIND_RENDITION_MOVED:       ledger.EventRenditionMoved,
-	agentv1.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED: ledger.EventIPhoneBackupChanged,
-	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED:   ledger.EventDriveFileArchived,
-	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_CHANGED:    ledger.EventDriveFileChanged,
-	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_MOVED:      ledger.EventDriveFileMoved,
-	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_DELETED:    ledger.EventDriveFileDeleted,
-	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_RESTORED:   ledger.EventDriveFileRestored,
-	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED:    ledger.EventDriveFileDamaged,
-	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_REPAIRED:   ledger.EventDriveFileRepaired,
+var eventKindNames = map[agentv2.EventKind]string{
+	agentv2.EventKind_EVENT_KIND_RENDITION_CHANGED:     ledger.EventRenditionChanged,
+	agentv2.EventKind_EVENT_KIND_STATE_CHANGED:         ledger.EventStateChanged,
+	agentv2.EventKind_EVENT_KIND_QUARANTINED:           ledger.EventQuarantined,
+	agentv2.EventKind_EVENT_KIND_QUARANTINE_RELEASED:   ledger.EventQuarantineReleased,
+	agentv2.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:  ledger.EventDriveHealthChanged,
+	agentv2.EventKind_EVENT_KIND_RENDITION_MOVED:       ledger.EventRenditionMoved,
+	agentv2.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED: ledger.EventIPhoneBackupChanged,
+	agentv2.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED:   ledger.EventDriveFileArchived,
+	agentv2.EventKind_EVENT_KIND_DRIVE_FILE_CHANGED:    ledger.EventDriveFileChanged,
+	agentv2.EventKind_EVENT_KIND_DRIVE_FILE_MOVED:      ledger.EventDriveFileMoved,
+	agentv2.EventKind_EVENT_KIND_DRIVE_FILE_DELETED:    ledger.EventDriveFileDeleted,
+	agentv2.EventKind_EVENT_KIND_DRIVE_FILE_RESTORED:   ledger.EventDriveFileRestored,
+	agentv2.EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED:    ledger.EventDriveFileDamaged,
+	agentv2.EventKind_EVENT_KIND_DRIVE_FILE_REPAIRED:   ledger.EventDriveFileRepaired,
 }
 
 // driveFileChanges maps the ledger's iCloud Drive event kinds to the API's.
-var driveFileChanges = map[string]agentv1.DriveFileChange{
-	ledger.EventDriveFileArchived: agentv1.DriveFileChange_DRIVE_FILE_CHANGE_ARCHIVED,
-	ledger.EventDriveFileChanged:  agentv1.DriveFileChange_DRIVE_FILE_CHANGE_CHANGED,
-	ledger.EventDriveFileMoved:    agentv1.DriveFileChange_DRIVE_FILE_CHANGE_MOVED,
-	ledger.EventDriveFileDeleted:  agentv1.DriveFileChange_DRIVE_FILE_CHANGE_DELETED,
-	ledger.EventDriveFileRestored: agentv1.DriveFileChange_DRIVE_FILE_CHANGE_RESTORED,
-	ledger.EventDriveFileDamaged:  agentv1.DriveFileChange_DRIVE_FILE_CHANGE_DAMAGED,
-	ledger.EventDriveFileRepaired: agentv1.DriveFileChange_DRIVE_FILE_CHANGE_REPAIRED,
+var driveFileChanges = map[string]agentv2.DriveFileChange{
+	ledger.EventDriveFileArchived: agentv2.DriveFileChange_DRIVE_FILE_CHANGE_ARCHIVED,
+	ledger.EventDriveFileChanged:  agentv2.DriveFileChange_DRIVE_FILE_CHANGE_CHANGED,
+	ledger.EventDriveFileMoved:    agentv2.DriveFileChange_DRIVE_FILE_CHANGE_MOVED,
+	ledger.EventDriveFileDeleted:  agentv2.DriveFileChange_DRIVE_FILE_CHANGE_DELETED,
+	ledger.EventDriveFileRestored: agentv2.DriveFileChange_DRIVE_FILE_CHANGE_RESTORED,
+	ledger.EventDriveFileDamaged:  agentv2.DriveFileChange_DRIVE_FILE_CHANGE_DAMAGED,
+	ledger.EventDriveFileRepaired: agentv2.DriveFileChange_DRIVE_FILE_CHANGE_REPAIRED,
 }
 
-var assetStates = map[ledger.AssetState]agentv1.AssetState{
-	ledger.StateDiscovered:  agentv1.AssetState_ASSET_STATE_DISCOVERED,
-	ledger.StateDownloaded:  agentv1.AssetState_ASSET_STATE_DOWNLOADED,
-	ledger.StateVerified:    agentv1.AssetState_ASSET_STATE_VERIFIED,
-	ledger.StateQuarantined: agentv1.AssetState_ASSET_STATE_QUARANTINED,
+var assetStates = map[ledger.AssetState]agentv2.AssetState{
+	ledger.StateDiscovered:  agentv2.AssetState_ASSET_STATE_DISCOVERED,
+	ledger.StateDownloaded:  agentv2.AssetState_ASSET_STATE_DOWNLOADED,
+	ledger.StateVerified:    agentv2.AssetState_ASSET_STATE_VERIFIED,
+	ledger.StateQuarantined: agentv2.AssetState_ASSET_STATE_QUARANTINED,
 }
 
-var tiers = map[ledger.Tier]agentv1.Tier{
-	ledger.TierContent:   agentv1.Tier_TIER_CONTENT,
-	ledger.TierStructure: agentv1.Tier_TIER_STRUCTURE,
-	ledger.TierProbe:     agentv1.Tier_TIER_PROBE,
+var tiers = map[ledger.Tier]agentv2.Tier{
+	ledger.TierContent:   agentv2.Tier_TIER_CONTENT,
+	ledger.TierStructure: agentv2.Tier_TIER_STRUCTURE,
+	ledger.TierProbe:     agentv2.Tier_TIER_PROBE,
 }
 
-var mediaTypes = map[string]agentv1.MediaType{
-	"photo":            agentv1.MediaType_MEDIA_TYPE_PHOTO,
-	"video":            agentv1.MediaType_MEDIA_TYPE_VIDEO,
-	"live_photo_image": agentv1.MediaType_MEDIA_TYPE_LIVE_PHOTO_IMAGE,
-	"live_photo_video": agentv1.MediaType_MEDIA_TYPE_LIVE_PHOTO_VIDEO,
+var mediaTypes = map[string]agentv2.MediaType{
+	"photo":            agentv2.MediaType_MEDIA_TYPE_PHOTO,
+	"video":            agentv2.MediaType_MEDIA_TYPE_VIDEO,
+	"live_photo_image": agentv2.MediaType_MEDIA_TYPE_LIVE_PHOTO_IMAGE,
+	"live_photo_video": agentv2.MediaType_MEDIA_TYPE_LIVE_PHOTO_VIDEO,
 }
 
 func lookup[K comparable, V any](m map[K]V, k K, what string) (V, error) {
@@ -359,11 +359,11 @@ func lookup[K comparable, V any](m map[K]V, k K, what string) (V, error) {
 	return v, nil
 }
 
-func eventToProto(e ledger.Event) (*agentv1.Event, error) {
-	out := &agentv1.Event{
+func eventToProto(e ledger.Event) (*agentv2.Event, error) {
+	out := &agentv2.Event{
 		Id:    e.ID,
 		At:    timestamppb.New(e.At),
-		Asset: &agentv1.AssetRef{Library: e.Library, AssetId: e.Asset, Filename: e.Filename},
+		Asset: &agentv2.AssetRef{Library: e.Library, AssetId: e.Asset, Filename: e.Filename},
 	}
 	var err error
 	switch e.Kind {
@@ -374,7 +374,7 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			SHA256  string `json:"sha256"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			out.Detail = &agentv1.Event_RenditionChanged{RenditionChanged: &agentv1.RenditionChanged{
+			out.Detail = &agentv2.Event_RenditionChanged{RenditionChanged: &agentv2.RenditionChanged{
 				Version: d.Version, SizeBytes: d.Size, Sha256: d.SHA256,
 			}}
 		}
@@ -384,11 +384,11 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			To   ledger.AssetState `json:"to"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			sc := &agentv1.StateChanged{}
+			sc := &agentv2.StateChanged{}
 			if sc.From, err = lookup(assetStates, d.From, "asset state"); err == nil {
 				sc.To, err = lookup(assetStates, d.To, "asset state")
 			}
-			out.Detail = &agentv1.Event_StateChanged{StateChanged: sc}
+			out.Detail = &agentv2.Event_StateChanged{StateChanged: sc}
 		}
 	case ledger.EventQuarantined:
 		var d struct {
@@ -397,16 +397,16 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			Reason  string      `json:"reason"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			q := &agentv1.Quarantined{Version: d.Version, Reason: d.Reason}
+			q := &agentv2.Quarantined{Version: d.Version, Reason: d.Reason}
 			q.Tier, err = lookup(tiers, d.Tier, "tier")
-			out.Detail = &agentv1.Event_Quarantined{Quarantined: q}
+			out.Detail = &agentv2.Event_Quarantined{Quarantined: q}
 		}
 	case ledger.EventQuarantineReleased:
 		var d struct {
 			Reason string `json:"reason"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			out.Detail = &agentv1.Event_QuarantineReleased{QuarantineReleased: &agentv1.QuarantineReleased{Reason: d.Reason}}
+			out.Detail = &agentv2.Event_QuarantineReleased{QuarantineReleased: &agentv2.QuarantineReleased{Reason: d.Reason}}
 		}
 	case ledger.EventRenditionMoved:
 		var d struct {
@@ -415,7 +415,7 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			To      string `json:"to"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			out.Detail = &agentv1.Event_RenditionMoved{RenditionMoved: &agentv1.RenditionMoved{Version: d.Version, From: d.From, To: d.To}}
+			out.Detail = &agentv2.Event_RenditionMoved{RenditionMoved: &agentv2.RenditionMoved{Version: d.Version, From: d.From, To: d.To}}
 		}
 	case ledger.EventDriveHealthChanged:
 		var d struct {
@@ -424,11 +424,11 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			Reasons []string     `json:"reasons"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			c := &agentv1.DriveHealthChanged{Reasons: d.Reasons}
+			c := &agentv2.DriveHealthChanged{Reasons: d.Reasons}
 			if c.From, err = driveState(d.From); err == nil {
 				c.To, err = driveState(d.To)
 			}
-			out.Detail = &agentv1.Event_DriveHealthChanged{DriveHealthChanged: c}
+			out.Detail = &agentv2.Event_DriveHealthChanged{DriveHealthChanged: c}
 		}
 	case ledger.EventIPhoneBackupChanged:
 		var d struct {
@@ -440,11 +440,11 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			Problems   []string           `json:"problems"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			c := &agentv1.IPhoneBackupChanged{Udid: d.UDID, Dir: d.Folder, DeviceName: d.DeviceName, Reasons: d.Problems}
+			c := &agentv2.IPhoneBackupChanged{Udid: d.UDID, Dir: d.Folder, DeviceName: d.DeviceName, Reasons: d.Problems}
 			if c.From, err = iphoneBackupState(d.From); err == nil {
 				c.To, err = iphoneBackupState(d.To)
 			}
-			out.Detail = &agentv1.Event_IphoneBackupChanged{IphoneBackupChanged: c}
+			out.Detail = &agentv2.Event_IphoneBackupChanged{IphoneBackupChanged: c}
 		}
 	case ledger.EventDriveFileArchived, ledger.EventDriveFileChanged, ledger.EventDriveFileMoved,
 		ledger.EventDriveFileDeleted, ledger.EventDriveFileRestored, ledger.EventDriveFileDamaged,
@@ -459,16 +459,16 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			SHA256 string `json:"sha256"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			ev := &agentv1.DriveFileEvent{
+			ev := &agentv2.DriveFileEvent{
 				Change: driveFileChanges[e.Kind], Path: d.Path, KeptAs: d.KeptAs, Reason: d.Reason,
 				SizeBytes: d.Size, Sha256: d.SHA256,
 			}
 			if e.Kind == ledger.EventDriveFileMoved {
 				ev.Path, ev.FromPath = d.To, d.From
 			}
-			out.Detail = &agentv1.Event_DriveFile{DriveFile: ev}
+			out.Detail = &agentv2.Event_DriveFile{DriveFile: ev}
 			// A Drive event names a file, not a Photos asset.
-			out.Asset = &agentv1.AssetRef{Library: e.Library, AssetId: e.Asset, Filename: path.Base(ev.Path)}
+			out.Asset = &agentv2.AssetRef{Library: e.Library, AssetId: e.Asset, Filename: path.Base(ev.Path)}
 		}
 	default:
 		err = fmt.Errorf("unknown event kind %q", e.Kind)
@@ -479,17 +479,17 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 	return out, nil
 }
 
-func failureToProto(version string, f ledger.Failure) *agentv1.Failure {
-	return &agentv1.Failure{Version: version, Tier: tiers[f.Tier], Reason: f.Reason}
+func failureToProto(version string, f ledger.Failure) *agentv2.Failure {
+	return &agentv2.Failure{Version: version, Tier: tiers[f.Tier], Reason: f.Reason}
 }
 
-func assetToProto(d ledger.AssetDetail) (*agentv1.Asset, error) {
+func assetToProto(d ledger.AssetDetail) (*agentv2.Asset, error) {
 	state, err := lookup(assetStates, d.State, "asset state")
 	if err != nil {
 		return nil, err
 	}
-	out := &agentv1.Asset{
-		Ref:            &agentv1.AssetRef{Library: d.Library, AssetId: d.AssetID},
+	out := &agentv2.Asset{
+		Ref:            &agentv2.AssetRef{Library: d.Library, AssetId: d.AssetID},
 		State:          state,
 		StateChangedAt: timestamppb.New(d.StateChangedAt),
 		CreatedAt:      optionalTimePtr(d.CreatedAt),
@@ -504,24 +504,24 @@ func assetToProto(d ledger.AssetDetail) (*agentv1.Asset, error) {
 		if err != nil {
 			return nil, err
 		}
-		pr := &agentv1.Rendition{
+		pr := &agentv2.Rendition{
 			Version:       r.Version,
 			Filename:      r.Filename,
 			LocalPath:     r.LocalPath,
 			MediaType:     mt,
 			SizeBytes:     r.SizeBytes,
 			Sha256:        r.SHA256,
-			RequiredTiers: []agentv1.Tier{agentv1.Tier_TIER_CONTENT},
+			RequiredTiers: []agentv2.Tier{agentv2.Tier_TIER_CONTENT},
 		}
 		if r.RequiresStructure {
-			pr.RequiredTiers = append(pr.RequiredTiers, agentv1.Tier_TIER_STRUCTURE)
+			pr.RequiredTiers = append(pr.RequiredTiers, agentv2.Tier_TIER_STRUCTURE)
 		}
 		if r.RequiresProbe {
-			pr.RequiredTiers = append(pr.RequiredTiers, agentv1.Tier_TIER_PROBE)
+			pr.RequiredTiers = append(pr.RequiredTiers, agentv2.Tier_TIER_PROBE)
 		}
 		for _, t := range []ledger.Tier{ledger.TierContent, ledger.TierStructure, ledger.TierProbe} {
 			if at, ok := r.Passed[t]; ok {
-				pr.Passes = append(pr.Passes, &agentv1.TierPass{Tier: tiers[t], At: timestamppb.New(at)})
+				pr.Passes = append(pr.Passes, &agentv2.TierPass{Tier: tiers[t], At: timestamppb.New(at)})
 			}
 		}
 		if r.Failure != nil {
@@ -533,20 +533,20 @@ func assetToProto(d ledger.AssetDetail) (*agentv1.Asset, error) {
 }
 
 // driveState maps a recorded health state; "" means none was recorded before.
-func driveState(s health.State) (agentv1.DriveHealthState, error) {
+func driveState(s health.State) (agentv2.DriveHealthState, error) {
 	switch s {
 	case "":
-		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED, nil
+		return agentv2.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED, nil
 	case health.StateOK:
-		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_OK, nil
+		return agentv2.DriveHealthState_DRIVE_HEALTH_STATE_OK, nil
 	case health.StateWarning:
-		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_WARNING, nil
+		return agentv2.DriveHealthState_DRIVE_HEALTH_STATE_WARNING, nil
 	case health.StateFailing:
-		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_FAILING, nil
+		return agentv2.DriveHealthState_DRIVE_HEALTH_STATE_FAILING, nil
 	case health.StateUnavailable:
-		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_UNAVAILABLE, nil
+		return agentv2.DriveHealthState_DRIVE_HEALTH_STATE_UNAVAILABLE, nil
 	default:
-		return agentv1.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED, fmt.Errorf("unknown drive health state %q", s)
+		return agentv2.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED, fmt.Errorf("unknown drive health state %q", s)
 	}
 }
 
@@ -559,7 +559,7 @@ func optionalInt32(v *int) *int32 {
 }
 
 // driveToProto converts the latest drive check; nil before the first check.
-func driveToProto(r health.Report) (*agentv1.DriveHealth, error) {
+func driveToProto(r health.Report) (*agentv2.DriveHealth, error) {
 	if r.State == "" {
 		return nil, nil //nolint:nilnil // no check has run yet
 	}
@@ -567,7 +567,7 @@ func driveToProto(r health.Report) (*agentv1.DriveHealth, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &agentv1.DriveHealth{State: state, CheckedAt: timestamppb.New(r.CheckedAt), Reasons: r.Reasons}
+	out := &agentv2.DriveHealth{State: state, CheckedAt: timestamppb.New(r.CheckedAt), Reasons: r.Reasons}
 	if d := r.Drive; d != nil {
 		out.Model, out.Protocol, out.Warnings = d.Model, d.Protocol, d.Warnings
 		out.TemperatureCelsius = optionalInt32(d.TemperatureCelsius)
@@ -578,15 +578,15 @@ func driveToProto(r health.Report) (*agentv1.DriveHealth, error) {
 	return out, nil
 }
 
-var assetKinds = map[ledger.AssetKind]agentv1.AssetKind{
-	ledger.KindPhoto:     agentv1.AssetKind_ASSET_KIND_PHOTO,
-	ledger.KindLivePhoto: agentv1.AssetKind_ASSET_KIND_LIVE_PHOTO,
-	ledger.KindVideo:     agentv1.AssetKind_ASSET_KIND_VIDEO,
+var assetKinds = map[ledger.AssetKind]agentv2.AssetKind{
+	ledger.KindPhoto:     agentv2.AssetKind_ASSET_KIND_PHOTO,
+	ledger.KindLivePhoto: agentv2.AssetKind_ASSET_KIND_LIVE_PHOTO,
+	ledger.KindVideo:     agentv2.AssetKind_ASSET_KIND_VIDEO,
 }
 
 // assetKindFilter maps a requested kind; unspecified means every kind.
-func assetKindFilter(k agentv1.AssetKind) (ledger.AssetKind, error) {
-	if k == agentv1.AssetKind_ASSET_KIND_UNSPECIFIED {
+func assetKindFilter(k agentv2.AssetKind) (ledger.AssetKind, error) {
+	if k == agentv2.AssetKind_ASSET_KIND_UNSPECIFIED {
 		return "", nil
 	}
 	for lk, pk := range assetKinds {

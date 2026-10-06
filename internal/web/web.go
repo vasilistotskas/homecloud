@@ -28,7 +28,7 @@ import (
 	connectcors "connectrpc.com/cors"
 	"github.com/rs/cors"
 
-	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1/agentv1connect"
+	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2/agentv2connect"
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/media"
 )
@@ -52,7 +52,7 @@ type Options struct {
 	// Listen is the loopback host:port the server is reachable at.
 	Listen string
 	// Service implements the API.
-	Service agentv1connect.AgentServiceHandler
+	Service agentv2connect.AgentServiceHandler
 	// App is the built web app (index.html plus hashed assets/).
 	App fs.FS
 	// Media serves signed thumbnail and preview URLs (package media).
@@ -71,7 +71,7 @@ func Handler(o Options) (http.Handler, error) {
 		return nil, fmt.Errorf("trusted origin %q: %w", self, err)
 	}
 
-	apiPath, apiHandler := agentv1connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
+	apiPath, apiHandler := agentv2connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
 	mux := http.NewServeMux()
 	mux.Handle(apiPath, authenticate(o.Auth, csrf, apiHandler))
 	app := serveApp(o.App)
@@ -133,7 +133,7 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		procedure := strings.TrimSuffix(r.URL.Path, "/")
-		if procedure == agentv1connect.AgentServiceExchangeLoginCodeProcedure {
+		if procedure == agentv2connect.AgentServiceExchangeLoginCodeProcedure {
 			if err := csrf.Check(r); err != nil {
 				deny(w, r, connect.CodePermissionDenied, "cross-origin request rejected")
 				return
@@ -144,7 +144,7 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 		switch a.Authenticate(r) {
 		case auth.KindBearer:
 		case auth.KindSession:
-			if procedure == agentv1connect.AgentServiceCreateLoginCodeProcedure {
+			if procedure == agentv2connect.AgentServiceCreateLoginCodeProcedure {
 				deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")
 				return
 			}

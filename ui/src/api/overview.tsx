@@ -4,7 +4,7 @@ import { useTransport } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { AgentService, WatchOverviewRequestSchema } from "../gen/homecloud/agent/v1/agent_pb";
+import { AgentService, WatchOverviewRequestSchema } from "../gen/homecloud/agent/v2/agent_pb";
 import { usePlatform } from "../app/platformContext";
 import { OverviewContext, type OverviewState } from "./overviewContext";
 

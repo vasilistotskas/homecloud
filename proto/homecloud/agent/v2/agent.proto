@@ -1,10 +1,10 @@
 syntax = "proto3";
 
-// Package homecloud.agent.v1 is the local API of the homecloud agent. It is
+// Package homecloud.agent.v2 is the local API of the homecloud agent. It is
 // served on the loopback address configured as web.listen. Clients
 // authenticate with the bearer token from the agent's discovery file, or (in a
 // browser) with a session cookie obtained through a one-time login code.
-package homecloud.agent.v1;
+package homecloud.agent.v2;
 
 import "google/protobuf/timestamp.proto";
 
@@ -745,7 +745,7 @@ message GetSettingsResponse {
 message Settings {
   string config_path = 1;
   string storage_root = 2;
-  string storage_volume_id = 3;
+  string storage_archive_id = 3;
   double min_free_percent = 4;
   ToolPin downloader = 5;
   string downloader_config = 6;

@@ -17,7 +17,7 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { useOverview } from "../api/overviewContext";
-import { AgentService } from "../gen/homecloud/agent/v1/agent_pb";
+import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
 
 const route = getRouteApi("/connect");
 

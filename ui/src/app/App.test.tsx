@@ -15,7 +15,7 @@ import {
   Phase,
   RunResult,
   SettingsSchema,
-} from "../gen/homecloud/agent/v1/agent_pb";
+} from "../gen/homecloud/agent/v2/agent_pb";
 import { App } from "./App";
 import type { Platform } from "./platformContext";
 

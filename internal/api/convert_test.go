@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	agentv1 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1"
+	agentv2 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2"
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
@@ -29,7 +29,7 @@ func TestDriveToProto(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.GetState() != agentv1.DriveHealthState_DRIVE_HEALTH_STATE_FAILING || d.GetTemperatureCelsius() != 55 ||
+	if d.GetState() != agentv2.DriveHealthState_DRIVE_HEALTH_STATE_FAILING || d.GetTemperatureCelsius() != 55 ||
 		d.GetPercentUsed() != 4 || d.GetPowerOnHours() != 18658 || d.MediaErrors != nil || d.GetModel() != "CT2000T700SSD5" {
 		t.Fatalf("drive = %v", d)
 	}
@@ -43,8 +43,8 @@ func TestDriveHealthEventToProto(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := e.GetDriveHealthChanged()
-	if c.GetFrom() != agentv1.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED ||
-		c.GetTo() != agentv1.DriveHealthState_DRIVE_HEALTH_STATE_WARNING || c.GetReasons()[0] != "3 media errors" {
+	if c.GetFrom() != agentv2.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED ||
+		c.GetTo() != agentv2.DriveHealthState_DRIVE_HEALTH_STATE_WARNING || c.GetReasons()[0] != "3 media errors" {
 		t.Fatalf("event = %v", e)
 	}
 	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.EventDriveHealthChanged, Detail: `{"to":"bogus"}`}); err == nil {
@@ -62,8 +62,8 @@ func TestIPhoneBackupEventToProto(t *testing.T) {
 	}
 	c := e.GetIphoneBackupChanged()
 	if c.GetUdid() != "UDID-A" || c.GetDir() != `C:\Backup\UDID-A` || c.GetDeviceName() != "iPhone" ||
-		c.GetFrom() != agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
-		c.GetTo() != agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE || c.GetReasons()[0] != "old" {
+		c.GetFrom() != agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
+		c.GetTo() != agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE || c.GetReasons()[0] != "old" {
 		t.Fatalf("event = %v", e)
 	}
 	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.EventIPhoneBackupChanged, Detail: `{"to":"bogus"}`}); err == nil {
@@ -83,7 +83,7 @@ func TestIPhoneBackupRunToProto(t *testing.T) {
 	}
 	rep := r.GetIphoneBackup()
 	d := rep.GetDevices()[0]
-	if rep.GetArchived() != 1 || d.GetState() != agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
+	if rep.GetArchived() != 1 || d.GetState() != agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
 		d.GetSizeBytes() != 1024 || !d.GetEncrypted() || d.GetCompletedAt().AsTime().Hour() != 20 {
 		t.Fatalf("run = %v", r)
 	}
@@ -100,7 +100,7 @@ func TestDriveSyncRunToProto(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := r.GetDriveSync()
-	if d.GetOutcome() != agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_PARTIAL || d.GetArchived() != 7 ||
+	if d.GetOutcome() != agentv2.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_PARTIAL || d.GetArchived() != 7 ||
 		d.GetDownloadedBytes() != 2048 || d.GetFailures()[0] != "a.pdf: boom" || d.GetManifestRows() != 9 {
 		t.Fatalf("run = %v", r)
 	}
@@ -118,7 +118,7 @@ func TestDriveFileMovedEventToProto(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := e.GetDriveFile()
-	if d.GetChange() != agentv1.DriveFileChange_DRIVE_FILE_CHANGE_MOVED || d.GetFromPath() != "iCloud Drive/a.pdf" ||
+	if d.GetChange() != agentv2.DriveFileChange_DRIVE_FILE_CHANGE_MOVED || d.GetFromPath() != "iCloud Drive/a.pdf" ||
 		d.GetPath() != "iCloud Drive/Docs/b.pdf" || e.GetAsset().GetFilename() != "b.pdf" {
 		t.Fatalf("event = %v", e)
 	}

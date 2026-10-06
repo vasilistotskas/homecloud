@@ -128,12 +128,18 @@ jobs:
         env:
           # Pull requests compare with their base branch, pushes with the previous commit.
           AGAINST: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        # Each API version must stay compatible with itself; an incompatible
+        # change gets a new version (homecloud.agent.vN), which has nothing to
+        # be compared with yet (docs/design.md, Local API).
         run: |
-          if git cat-file -e "$AGAINST:proto" 2>/dev/null; then
-            go tool buf breaking --against ".git#ref=$AGAINST"
-          else
-            echo "$AGAINST has no API contract yet; nothing to compare against."
-          fi
+          for dir in proto/homecloud/agent/*/; do
+            dir="${dir%/}"
+            if git cat-file -e "$AGAINST:$dir" 2>/dev/null; then
+              go tool buf breaking --against ".git#ref=$AGAINST" --path "$dir"
+            else
+              echo "$dir is a new API version; $AGAINST has nothing to compare it with."
+            fi
+          done
 
   check:
     needs: [changes, web, proto]

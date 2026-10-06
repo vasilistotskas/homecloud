@@ -45,7 +45,7 @@ import {
   type DriveFileEvent,
   type Event,
   type Run,
-} from "../gen/homecloud/agent/v1/agent_pb";
+} from "../gen/homecloud/agent/v2/agent_pb";
 
 const useStyles = makeStyles({
   filters: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalM },
