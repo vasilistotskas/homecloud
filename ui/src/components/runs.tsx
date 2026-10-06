@@ -84,7 +84,12 @@ function resultBadge(run: Run): React.ReactNode {
 export function runRow(run: Run): RunRow {
   const started = toDate(run.startedAt);
   const finished = toDate(run.finishedAt);
-  const c = run.cycle;
+  // A cycle that was interrupted, or stopped because the archive drive was
+  // missing, recorded no counts: they are unknown, not zero.
+  const c =
+    run.cycle?.download === DownloadOutcome.INTERRUPTED || run.cycle?.download === DownloadOutcome.ARCHIVE_UNAVAILABLE
+      ? undefined
+      : run.cycle;
   const n = (v: bigint | undefined) => (v === undefined ? "—" : formatCount(v));
   return {
     id: run.id.toString(),
