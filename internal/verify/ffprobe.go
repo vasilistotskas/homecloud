@@ -63,8 +63,7 @@ func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
 		// Only ffprobe itself rejecting the file is evidence against it. Failing
 		// to start ffprobe (moved, locked, missing) says nothing about the file
 		// and is retried, never quarantined.
-		var exit *exec.ExitError
-		if !errors.As(err, &exit) {
+		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			return fmt.Errorf("run ffprobe on %s: %w", path, err)
 		}
 		return fmt.Errorf("%w: ffprobe rejected %s: %s", ErrMismatch, path, bytes.TrimSpace(stderr.Bytes()))

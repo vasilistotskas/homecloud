@@ -29,8 +29,8 @@ func TestParseUdisksNVMe(t *testing.T) {
 	}
 	want := DriveHealth{
 		Model: "WD Blue SN580", Protocol: "NVMe", Warnings: []string{"temperature"},
-		TemperatureCelsius: ptr(45), AvailableSparePercent: ptr(100), PercentUsed: ptr(7),
-		MediaErrors: ptr(uint64(0)), PowerOnHours: ptr(uint64(1200)),
+		TemperatureCelsius: new(45), AvailableSparePercent: new(100), PercentUsed: new(7),
+		MediaErrors: new(uint64(0)), PowerOnHours: new(uint64(1200)),
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("health (-want +got):\n%s", diff)
@@ -53,7 +53,7 @@ func TestParseUdisksATA(t *testing.T) {
 	}
 	want := DriveHealth{
 		Model: "ST2000DM008", Protocol: "ATA", Warnings: []string{"failing"},
-		TemperatureCelsius: ptr(38), PowerOnHours: ptr(uint64(2)),
+		TemperatureCelsius: new(38), PowerOnHours: new(uint64(2)),
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("health (-want +got):\n%s", diff)

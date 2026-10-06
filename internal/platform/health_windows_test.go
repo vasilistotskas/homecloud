@@ -22,8 +22,8 @@ func TestParseNVMeHealthLog(t *testing.T) {
 	want := DriveHealth{
 		Model: "Samsung SSD 980 PRO 1TB", Protocol: "NVMe",
 		Warnings:           []string{"spare", "degraded"},
-		TemperatureCelsius: ptr(55), AvailableSparePercent: ptr(97), PercentUsed: ptr(4),
-		PowerOnHours: ptr(uint64(18658)), MediaErrors: ptr(uint64(2)),
+		TemperatureCelsius: new(55), AvailableSparePercent: new(97), PercentUsed: new(4),
+		PowerOnHours: new(uint64(18658)), MediaErrors: new(uint64(2)),
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("health (-want +got):\n%s", diff)

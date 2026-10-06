@@ -10,8 +10,6 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func TestEvaluate(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -19,7 +17,7 @@ func TestEvaluate(t *testing.T) {
 		state   State
 		reasons []string
 	}{
-		{"healthy", platform.DriveHealth{PercentUsed: ptr(5), MediaErrors: ptr(uint64(0))}, StateOK, nil},
+		{"healthy", platform.DriveHealth{PercentUsed: new(5), MediaErrors: new(uint64(0))}, StateOK, nil},
 		{"no attributes", platform.DriveHealth{}, StateOK, nil},
 		{
 			"critical warning",
@@ -27,11 +25,11 @@ func TestEvaluate(t *testing.T) {
 			StateFailing,
 			[]string{"drive reports: spare", "drive reports: readonly"},
 		},
-		{"media errors", platform.DriveHealth{MediaErrors: ptr(uint64(3))}, StateWarning, []string{"3 media errors"}},
-		{"worn out", platform.DriveHealth{PercentUsed: ptr(100)}, StateWarning, []string{"rated endurance used up"}},
+		{"media errors", platform.DriveHealth{MediaErrors: new(uint64(3))}, StateWarning, []string{"3 media errors"}},
+		{"worn out", platform.DriveHealth{PercentUsed: new(100)}, StateWarning, []string{"rated endurance used up"}},
 		{
 			"warning beats wear",
-			platform.DriveHealth{Warnings: []string{"failing"}, PercentUsed: ptr(120)},
+			platform.DriveHealth{Warnings: []string{"failing"}, PercentUsed: new(120)},
 			StateFailing,
 			[]string{"drive reports: failing"},
 		},

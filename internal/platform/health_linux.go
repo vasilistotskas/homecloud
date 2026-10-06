@@ -151,13 +151,13 @@ func parseUdisksNVMe(model string, props, attrs map[string]dbus.Variant) (DriveH
 		Model:                 model,
 		Protocol:              "NVMe",
 		Warnings:              warnings,
-		AvailableSparePercent: ptr(int(spare)),
-		PercentUsed:           ptr(int(used)),
-		MediaErrors:           ptr(media),
-		PowerOnHours:          ptr(hours),
+		AvailableSparePercent: new(int(spare)),
+		PercentUsed:           new(int(used)),
+		MediaErrors:           new(media),
+		PowerOnHours:          new(hours),
 	}
 	if kelvin != 0 {
-		h.TemperatureCelsius = ptr(kelvinToCelsius(int(kelvin)))
+		h.TemperatureCelsius = new(kelvinToCelsius(int(kelvin)))
 	}
 	return h, nil
 }
@@ -196,15 +196,15 @@ func parseUdisksATA(model string, props map[string]dbus.Variant) (DriveHealth, e
 	if err != nil {
 		return DriveHealth{}, err
 	}
-	h := DriveHealth{Model: model, Protocol: "ATA", PowerOnHours: ptr(seconds / secondsPerHour)}
+	h := DriveHealth{Model: model, Protocol: "ATA", PowerOnHours: new(seconds / secondsPerHour)}
 	if failing {
 		h.Warnings = []string{"failing"}
 	}
 	if kelvin > 0 {
-		h.TemperatureCelsius = ptr(int(math.Round(kelvin - kelvinOffsetATA)))
+		h.TemperatureCelsius = new(int(math.Round(kelvin - kelvinOffsetATA)))
 	}
 	if bad >= 0 { // udisks reports -1 when unknown
-		h.MediaErrors = ptr(uint64(bad))
+		h.MediaErrors = new(uint64(bad))
 	}
 	return h, nil
 }

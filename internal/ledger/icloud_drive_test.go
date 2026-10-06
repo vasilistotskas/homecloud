@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,11 +25,11 @@ func driveEventKinds(t *testing.T, db *DB) []string {
 		t.Fatal(err)
 	}
 	var kinds []string
-	for i := len(events) - 1; i >= 0; i-- { // oldest first
-		if events[i].Library != DriveLibrary {
-			t.Fatalf("event %d library %q", events[i].ID, events[i].Library)
+	for _, event := range slices.Backward(events) { // oldest first
+		if event.Library != DriveLibrary {
+			t.Fatalf("event %d library %q", event.ID, event.Library)
 		}
-		kinds = append(kinds, events[i].Kind)
+		kinds = append(kinds, event.Kind)
 	}
 	return kinds
 }

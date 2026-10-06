@@ -168,14 +168,14 @@ func parseNVMeHealthLog(model string, log []byte) DriveHealth {
 		Model:                 model,
 		Protocol:              "NVMe",
 		Warnings:              nvmeWarnings(log[0]),
-		TemperatureCelsius:    ptr(kelvinToCelsius(int(binary.LittleEndian.Uint16(log[1:])))),
-		AvailableSparePercent: ptr(int(log[3])),
-		PercentUsed:           ptr(int(log[5])),
+		TemperatureCelsius:    new(kelvinToCelsius(int(binary.LittleEndian.Uint16(log[1:])))),
+		AvailableSparePercent: new(int(log[3])),
+		PercentUsed:           new(int(log[5])),
 		// Power On Hours (bytes 128–143) and Media and Data Integrity Errors
 		// (bytes 160–175) are 128-bit counters; the low 64 bits cannot overflow
 		// in practice.
-		PowerOnHours: ptr(binary.LittleEndian.Uint64(log[128:])),
-		MediaErrors:  ptr(binary.LittleEndian.Uint64(log[160:])),
+		PowerOnHours: new(binary.LittleEndian.Uint64(log[128:])),
+		MediaErrors:  new(binary.LittleEndian.Uint64(log[160:])),
 	}
 }
 

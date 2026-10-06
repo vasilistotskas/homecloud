@@ -26,5 +26,3 @@ type DriveHealth struct {
 }
 
 func kelvinToCelsius(k int) int { return k - 273 }
-
-func ptr[T any](v T) *T { return &v }

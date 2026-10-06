@@ -38,7 +38,7 @@ func TestLocalNameShortensLongNamesDistinctly(t *testing.T) {
 }
 
 func file(path []string, ids ...string) File {
-	return File{Item: Item{DriveWSID: ids[len(ids)-1]}, Path: path, IDs: ids}
+	return File{DriveWSID: ids[len(ids)-1], Path: path, IDs: ids}
 }
 
 func TestPlannerAssignsUniqueSafePaths(t *testing.T) {
