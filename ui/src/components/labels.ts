@@ -1,10 +1,25 @@
-import { AssetState, MediaType, Tier } from "../gen/homecloud/agent/v1/agent_pb";
+import { AssetState, IPhoneBackupState, MediaType, Tier } from "../gen/homecloud/agent/v1/agent_pb";
 
 export const tierLabel: Record<Tier, string> = {
   [Tier.UNSPECIFIED]: "Unknown",
   [Tier.CONTENT]: "Checksum",
   [Tier.STRUCTURE]: "Structure",
   [Tier.PROBE]: "Playability",
+};
+
+export const iphoneStateBadge: Record<
+  IPhoneBackupState,
+  { label: string; color: "success" | "warning" | "danger" | "informative" }
+> = {
+  [IPhoneBackupState.UNSPECIFIED]: { label: "Unknown", color: "informative" },
+  [IPhoneBackupState.OK]: { label: "Healthy", color: "success" },
+  [IPhoneBackupState.IN_PROGRESS]: { label: "Backing up", color: "informative" },
+  [IPhoneBackupState.SHRUNK]: { label: "Much smaller", color: "warning" },
+  [IPhoneBackupState.STALE]: { label: "Out of date", color: "warning" },
+  [IPhoneBackupState.INCOMPLETE]: { label: "Didn't finish", color: "warning" },
+  [IPhoneBackupState.UNENCRYPTED]: { label: "Not encrypted", color: "danger" },
+  [IPhoneBackupState.UNREADABLE]: { label: "Unreadable files", color: "danger" },
+  [IPhoneBackupState.INVALID]: { label: "Not a backup", color: "danger" },
 };
 
 export const stateLabel: Record<AssetState, string> = {

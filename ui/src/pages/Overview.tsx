@@ -37,6 +37,7 @@ import {
   HardDriveRegular,
   HeartPulseRegular,
   KeyRegular,
+  PhoneRegular,
   PlugDisconnectedRegular,
   ShieldCheckmarkRegular,
   ShieldErrorRegular,
@@ -47,6 +48,7 @@ import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
 import { LoadError } from "../components/LoadError";
+import { iphoneStateBadge } from "../components/labels";
 import { Page } from "../components/Page";
 import { runRow } from "../components/runs";
 import { useNotify } from "../components/toast";
@@ -56,6 +58,7 @@ import {
   AppleAccountState,
   DriveHealthState,
   DownloadOutcome,
+  IPhoneBackupState,
   Phase,
   RunKind,
   RunResult,
@@ -203,6 +206,7 @@ export function OverviewPage() {
         <ScheduleCard overview={overview} settings={settings.data?.settings} />
         <DriveCard drive={overview.drive} />
         <IntegrityCard overview={overview} settings={settings.data?.settings} />
+        <IPhoneBackupCard run={overview.lastIphoneBackup} />
       </div>
       <RecentSyncs lastCycleId={overview.lastCycle?.id} />
     </Page>
@@ -288,6 +292,7 @@ const phaseText: Record<Phase, string> = {
   [Phase.PREPARING_PREVIEWS]: "Preparing previews for the library…",
   [Phase.CHECKING_ARCHIVE]: "Re-checking archived files against their checksums…",
   [Phase.BACKING_UP_LEDGER]: "Backing up the archive's records…",
+  [Phase.CHECKING_IPHONE_BACKUPS]: "Checking the iPhone backups on this computer…",
 };
 
 function PhaseBanner({ overview }: { overview: Overview }) {
@@ -324,6 +329,7 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
   const cycle = overview.lastCycle?.cycle;
   const scrub = overview.lastScrub;
   const backup = overview.lastLedgerBackup;
+  const iphone = iphoneBackupSummary(overview.lastIphoneBackup);
   const minFree = overview.storage?.minFreePercent ?? 0;
 
   if (drive === DriveHealthState.FAILING || drive === DriveHealthState.WARNING) {
@@ -374,6 +380,11 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
     icon = <ShieldCheckmarkRegular />;
     title = "The records backup failed";
     body = `${backup.ledgerBackup?.error ?? ""}. It is retried every sync.`;
+  } else if (iphone.tone === "warning" || iphone.tone === "danger") {
+    tone = "warning";
+    icon = <PhoneRegular />;
+    title = iphone.title;
+    body = iphone.detail;
   } else if (pending > 0n) {
     tone = "brand";
     icon = <ClockRegular />;
@@ -701,6 +712,101 @@ function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
       )}
       <Caption1 className={styles.muted}>
         The archive drive holds your only copy. If it reports a problem you&apos;re alerted at once.
+        {checked !== undefined && ` Checked ${formatWhen(checked)}.`}
+      </Caption1>
+    </Card>
+  );
+}
+
+interface IPhoneSummary {
+  tone: "success" | "warning" | "danger" | "informative";
+  badge: string;
+  title: string;
+  detail: string;
+}
+
+/** The overall verdict on the local iPhone backups, from the latest check. */
+function iphoneBackupSummary(run: Run | undefined): IPhoneSummary {
+  const rep = run?.iphoneBackup;
+  if (run === undefined || rep === undefined) {
+    return { tone: "informative", badge: "Not checked yet", title: "", detail: "" };
+  }
+  if (rep.error !== "") {
+    return {
+      tone: "warning",
+      badge: "Couldn't check",
+      title: "The iPhone backups couldn't be checked",
+      detail: `${rep.error}. It is retried every day.`,
+    };
+  }
+  if (rep.devices.length === 0) {
+    return {
+      tone: "warning",
+      badge: "No backup yet",
+      title: "No iPhone backup on this computer yet",
+      detail:
+        'In Apple\'s Devices app, turn on "Encrypt local backup" and back up the iPhone once; homecloud then checks it every day.',
+    };
+  }
+  // IPhoneBackupState values are ordered from healthy to most severe.
+  const worst = rep.devices.reduce((w, d) => (d.state > w ? d.state : w), IPhoneBackupState.OK);
+  const b = iphoneStateBadge[worst];
+  const problems = rep.devices.flatMap((d) => d.reasons.map((r) => (rep.devices.length > 1 ? `${d.name}: ${r}` : r)));
+  return {
+    tone: b.color,
+    badge: b.label,
+    title: "An iPhone backup needs attention",
+    detail: `${problems.join("; ")}. Check it in Apple's Devices app.`,
+  };
+}
+
+function IPhoneBackupCard({ run }: { run: Run | undefined }) {
+  const styles = useStyles();
+  const summary = iphoneBackupSummary(run);
+  const checked = toDate(run?.finishedAt);
+  const devices = run?.iphoneBackup?.devices ?? [];
+  return (
+    <Card>
+      <CardHeader
+        image={<PhoneRegular fontSize={20} />}
+        header={<Subtitle2 as="h2">iPhone backups</Subtitle2>}
+        action={
+          <Badge appearance="tint" color={summary.tone}>
+            {summary.badge}
+          </Badge>
+        }
+      />
+      {devices.length === 0 && summary.detail !== "" && <Text>{summary.detail}</Text>}
+      {devices.map((d) => {
+        const done = toDate(d.completedAt);
+        const badge = iphoneStateBadge[d.state];
+        return (
+          <div key={d.udid} className={styles.facts}>
+            <Text className={styles.muted}>Device</Text>
+            <Text>
+              {d.name} · iOS {d.productVersion}{" "}
+              <Badge appearance="tint" color={badge.color}>
+                {badge.label}
+              </Badge>
+            </Text>
+            <Text className={styles.muted}>Last backup</Text>
+            <Text>{done === undefined ? "Never finished" : `${formatWhen(done)} (${formatRelative(done)})`}</Text>
+            <Text className={styles.muted}>Size</Text>
+            <Text>
+              {formatBytes(d.sizeBytes)} · {formatCount(d.files)} files · {d.encrypted ? "encrypted" : "not encrypted"}
+            </Text>
+            {d.reasons.length > 0 && (
+              <>
+                <Text className={styles.muted}>Problems</Text>
+                <Text>{d.reasons.join("; ")}</Text>
+              </>
+            )}
+          </div>
+        );
+      })}
+      <Caption1 className={styles.muted}>
+        Apple&apos;s Devices app makes the backups; homecloud only reads them and alerts when one is old, unencrypted,
+        unfinished or damaged.
         {checked !== undefined && ` Checked ${formatWhen(checked)}.`}
       </Caption1>
     </Card>

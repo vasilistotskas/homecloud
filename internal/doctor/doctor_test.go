@@ -78,3 +78,16 @@ func TestCheckKeiConfigOnAFreshInstall(t *testing.T) {
 		t.Fatal("a kei config that differs from homecloud's settings must fail")
 	}
 }
+
+func TestCheckIPhoneBackupDirs(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{IPhoneBackup: config.IPhoneBackup{Dirs: []string{dir, filepath.Join(dir, "missing"), file}}}
+	r := checkIPhoneBackupDirs(cfg)
+	if len(r) != 3 || !r[0].OK() || !r[1].OK() || !strings.Contains(r[1].Detail, "no backup yet") || r[2].OK() {
+		t.Fatalf("results = %+v", r)
+	}
+}

@@ -99,6 +99,9 @@ message Overview {
   Run last_scrub = 8;
   // The most recent finished ledger backup; absent before the first one.
   Run last_ledger_backup = 9;
+  // The most recent finished check of the local iPhone backups; absent before
+  // the first one.
+  Run last_iphone_backup = 10;
 }
 
 // DriveHealth is what the archive drive reports about itself (SMART) and the
@@ -193,6 +196,8 @@ enum Phase {
   PHASE_CHECKING_ARCHIVE = 6;
   // Writing a checked snapshot of the ledger to the backup directory.
   PHASE_BACKING_UP_LEDGER = 7;
+  // Inspecting the local iPhone backups.
+  PHASE_CHECKING_IPHONE_BACKUPS = 8;
 }
 
 // Run is one recorded job execution.
@@ -209,6 +214,8 @@ message Run {
   ScrubReport scrub = 7;
   // Present for kind "ledger_backup" once finished.
   LedgerBackupReport ledger_backup = 8;
+  // Present for kind "iphone_backup" once finished.
+  IPhoneBackupReport iphone_backup = 9;
 }
 
 // RunKind selects one kind of recorded job.
@@ -220,6 +227,8 @@ enum RunKind {
   RUN_KIND_SCRUB = 2;
   // A snapshot of the ledger (Run.kind "ledger_backup").
   RUN_KIND_LEDGER_BACKUP = 3;
+  // A check of the local iPhone backups (Run.kind "iphone_backup").
+  RUN_KIND_IPHONE_BACKUP = 4;
 }
 
 // ScrubReport is what one re-check of archived files found.
@@ -245,6 +254,55 @@ message LedgerBackupReport {
   int64 pruned = 3;
   // Set when the backup failed.
   string error = 4;
+}
+
+// IPhoneBackupReport is what one check of the local iPhone backups found.
+// homecloud only reads the backups that Apple's Devices app writes.
+message IPhoneBackupReport {
+  // Each device's current backup.
+  repeated IPhoneBackup devices = 1;
+  // Frozen copies archived in Apple's tool; reported, not judged.
+  int64 archived = 2;
+  // Set when the check failed.
+  string error = 3;
+}
+
+// IPhoneBackup is one device's current local backup and its verdict.
+message IPhoneBackup {
+  string udid = 1;
+  string name = 2;
+  // The device's iOS version.
+  string product_version = 3;
+  // The backup folder.
+  string dir = 4;
+  bool encrypted = 5;
+  // When the last backup finished; absent if it never did.
+  google.protobuf.Timestamp completed_at = 6;
+  int64 files = 7;
+  int64 size_bytes = 8;
+  IPhoneBackupState state = 9;
+  // Every problem found; empty when the backup is healthy.
+  repeated string reasons = 10;
+}
+
+enum IPhoneBackupState {
+  I_PHONE_BACKUP_STATE_UNSPECIFIED = 0;
+  // Encrypted, finished, recent and readable.
+  I_PHONE_BACKUP_STATE_OK = 1;
+  // A backup is being written; judged once it finishes.
+  I_PHONE_BACKUP_STATE_IN_PROGRESS = 2;
+  // Much smaller than the last healthy backup.
+  I_PHONE_BACKUP_STATE_SHRUNK = 3;
+  // The last finished backup is older than the configured maximum age.
+  I_PHONE_BACKUP_STATE_STALE = 4;
+  // The last backup did not finish and none is running.
+  I_PHONE_BACKUP_STATE_INCOMPLETE = 5;
+  // Not encrypted: it lacks passwords and Health data, and the disk reveals it.
+  I_PHONE_BACKUP_STATE_UNENCRYPTED = 6;
+  // Some backed-up files could not be read from disk.
+  I_PHONE_BACKUP_STATE_UNREADABLE = 7;
+  // The folder is not a valid backup.
+  I_PHONE_BACKUP_STATE_INVALID = 8;
 }
 
 enum RunResult {
@@ -316,6 +374,7 @@ message Event {
     QuarantineReleased quarantine_released = 7;
     DriveHealthChanged drive_health_changed = 8;
     RenditionMoved rendition_moved = 9;
+    IPhoneBackupChanged iphone_backup_changed = 10;
   }
 }
 
@@ -327,6 +386,7 @@ enum EventKind {
   EVENT_KIND_QUARANTINE_RELEASED = 4;
   EVENT_KIND_DRIVE_HEALTH_CHANGED = 5;
   EVENT_KIND_RENDITION_MOVED = 6;
+  EVENT_KIND_IPHONE_BACKUP_CHANGED = 7;
 }
 
 // AssetRef identifies an asset and names it for display.
@@ -369,6 +429,15 @@ message RenditionMoved {
 }
 
 // DriveHealthChanged: the archive drive's health state changed.
+// IPhoneBackupChanged: a device's local backup changed state.
+message IPhoneBackupChanged {
+  string udid = 1;
+  string device_name = 2;
+  IPhoneBackupState from = 3;
+  IPhoneBackupState to = 4;
+  repeated string reasons = 5;
+}
+
 message DriveHealthChanged {
   DriveHealthState from = 1;
   DriveHealthState to = 2;
@@ -565,6 +634,13 @@ message Settings {
   string backup_dir = 17;
   int64 backup_interval_seconds = 18;
   int32 backup_keep = 19;
+  // The local iPhone backup directories homecloud watches (read only), the
+  // oldest acceptable backup, how often they are checked, and the largest
+  // acceptable size drop in percent.
+  repeated string iphone_backup_dirs = 20;
+  int64 iphone_backup_max_age_seconds = 21;
+  int64 iphone_backup_check_interval_seconds = 22;
+  double iphone_backup_max_shrink_percent = 23;
 }
 
 // ToolPin is an external tool and the exact version homecloud requires.

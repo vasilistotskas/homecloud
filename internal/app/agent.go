@@ -39,6 +39,10 @@ const (
 	alertVolume  = "archive-volume"
 	alertLowDisk = "low-space"
 	alertBackup  = "ledger-backup"
+	// alertIPhoneNone: no local iPhone backup exists at all.
+	alertIPhoneNone = "iphone-backup-none"
+	// alertIPhonePrefix + UDID + "/" + state: one device's backup problem.
+	alertIPhonePrefix = "iphone-backup/"
 )
 
 // CycleRunKind is the ledger run kind of a sync cycle.
@@ -128,6 +132,8 @@ func (a *Agent) closeInterrupted(ctx context.Context) error {
 			detail = ScrubReport{Error: interruptedError}
 		case LedgerBackupRunKind:
 			detail = LedgerBackupReport{Error: interruptedError}
+		case IPhoneBackupRunKind:
+			detail = IPhoneBackupReport{Error: interruptedError}
 		default:
 			return fmt.Errorf("run %d has unknown kind %q", r.ID, r.Kind)
 		}

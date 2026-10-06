@@ -1,0 +1,130 @@
+package app
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"howett.net/plist"
+
+	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
+	"github.com/vasilistotskas/homecloud/internal/ledger"
+)
+
+const testUDID = "00008110-001A2B3C4D5E801E"
+
+// writeIPhoneBackup writes a minimal finished backup of testUDID into dir.
+func writeIPhoneBackup(t *testing.T, dir string, encrypted bool, completed time.Time) {
+	t.Helper()
+	root := filepath.Join(dir, testUDID)
+	if err := os.MkdirAll(filepath.Join(root, "ab"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, v := range map[string]struct {
+		value  any
+		format int
+	}{
+		"Info.plist":     {map[string]any{"Device Name": "Test iPhone", "Product Version": "26.1", "Unique Identifier": testUDID}, plist.XMLFormat},
+		"Manifest.plist": {map[string]any{"IsEncrypted": encrypted}, plist.BinaryFormat},
+		"Status.plist":   {map[string]any{"SnapshotState": "finished", "Date": completed}, plist.BinaryFormat},
+	} {
+		data, err := plist.Marshal(v.value, v.format)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "ab", "ab12"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func countTitle(n *recordingNotifier, title string) int {
+	c := 0
+	for _, got := range n.titles() {
+		if got == title {
+			c++
+		}
+	}
+	return c
+}
+
+func TestIPhoneBackupCheckWithoutBackups(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
+	rep, ok := agent.checkIPhoneBackups(context.Background())
+	r, isReport := rep.(IPhoneBackupReport)
+	if ok || !isReport || len(r.Devices) != 0 || r.Error != "" {
+		t.Fatalf("check without backups = %+v, ok=%v; want a completed, unhealthy check", rep, ok)
+	}
+	if countTitle(n, "homecloud: no iPhone backup on this computer") != 1 {
+		t.Fatalf("alerts = %v", n.titles())
+	}
+}
+
+func TestIPhoneBackupCheckRecordsStateAndAlertsOnceADay(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
+	ctx := context.Background()
+	dir := agent.cfg.IPhoneBackup.Dirs[0]
+
+	writeIPhoneBackup(t, dir, true, clock.Add(-time.Hour))
+	if err := agent.maintain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	run := lastRun(t, agent, IPhoneBackupRunKind)
+	rep, err := ParseIPhoneBackupReport(run.Detail)
+	if err != nil || !*run.OK || len(rep.Devices) != 1 || rep.Devices[0].State != iphonebackup.StateOK || rep.Devices[0].Name != "Test iPhone" {
+		t.Fatalf("healthy check: ok=%v report=%+v, %v", *run.OK, rep, err)
+	}
+
+	// The next check finds it unencrypted: one alert, and again only a day later.
+	writeIPhoneBackup(t, dir, false, clock)
+	for range 3 {
+		clock = clock.Add(25 * time.Hour)
+		writeIPhoneBackup(t, dir, false, clock)
+		if err = agent.maintain(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := countTitle(n, "homecloud: iPhone backup needs attention"); got != 3 {
+		t.Fatalf("attention alerts over three daily checks = %d, want 3 (one per day)", got)
+	}
+	events, err := agent.db.Events(ctx, []string{ledger.EventIPhoneBackupChanged}, 0, 10)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("state change events = %d, %v; want ok then unencrypted", len(events), err)
+	}
+	// ntfy topics are public: no alert may identify the device.
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for _, m := range n.msgs {
+		for _, secret := range []string{testUDID, "Test iPhone"} {
+			if strings.Contains(m.Title+m.Body, secret) {
+				t.Fatalf("alert %q names the device (%s)", m.Title, secret)
+			}
+		}
+	}
+}
+
+func TestIPhoneBackupBaselineIsTheLastHealthySize(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, _ := newTestAgent(t, fixture(t, false), "0", &clock)
+	ctx := context.Background()
+	writeIPhoneBackup(t, agent.cfg.IPhoneBackup.Dirs[0], true, clock)
+	if _, ok := agent.checkIPhoneBackups(ctx); !ok {
+		t.Fatal("first check not healthy")
+	}
+	// Record it as a run so the next check can find the baseline.
+	if err := agent.maintain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	base, err := agent.iphoneBaselines(ctx)
+	if err != nil || base[testUDID] == 0 {
+		t.Fatalf("baselines = %v, %v", base, err)
+	}
+}

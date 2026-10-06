@@ -18,7 +18,7 @@ import { useThemePreference, type ThemePreference } from "../app/themeContext";
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { useNotify } from "../components/toast";
-import { formatInterval } from "../format";
+import { formatInterval, formatSpan } from "../format";
 import { AgentService } from "../gen/homecloud/agent/v1/agent_pb";
 
 const useStyles = makeStyles({
@@ -189,6 +189,20 @@ export function SettingsPage() {
           mono
         >
           <Text>{formatInterval(s.backupIntervalSeconds)}</Text>
+        </Row>
+      </Group>
+
+      <Group title="iPhone backups">
+        <Row
+          label="Watched folders"
+          detail={`${s.iphoneBackupDirs.join(" · ")} (read only; Apple's Devices app writes the backups)`}
+          mono
+        />
+        <Row
+          label="Check backups"
+          detail={`Alerts when the newest backup is older than ${formatSpan(s.iphoneBackupMaxAgeSeconds)}, unencrypted, unfinished, unreadable, or ${s.iphoneBackupMaxShrinkPercent}% smaller than the last healthy one`}
+        >
+          <Text>{formatInterval(s.iphoneBackupCheckIntervalSeconds)}</Text>
         </Row>
       </Group>
 

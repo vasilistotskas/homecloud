@@ -199,6 +199,9 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv1.Overvie
 	if ov.LastLedgerBackup, err = s.lastRun(ctx, app.LedgerBackupRunKind); err != nil {
 		return nil, err
 	}
+	if ov.LastIphoneBackup, err = s.lastRun(ctx, app.IPhoneBackupRunKind); err != nil {
+		return nil, err
+	}
 	if ov.LastCycle != nil {
 		ov.AppleAccount.State = appleState(ov.LastCycle.GetCycle().GetDownload())
 	}
@@ -373,25 +376,29 @@ func (s *Service) SendTestNotification(ctx context.Context, _ *connect.Request[a
 func (s *Service) GetSettings(context.Context, *connect.Request[agentv1.GetSettingsRequest]) (*connect.Response[agentv1.GetSettingsResponse], error) {
 	c := s.cfg
 	return connect.NewResponse(&agentv1.GetSettingsResponse{Settings: &agentv1.Settings{
-		ConfigPath:            s.configPath,
-		StorageRoot:           c.Storage.Root,
-		StorageVolumeId:       c.Storage.VolumeID,
-		MinFreePercent:        c.Storage.MinFreePercent,
-		Downloader:            &agentv1.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
-		DownloaderConfig:      c.Kei.Config,
-		VideoProbe:            &agentv1.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
-		Thumbnailer:           &agentv1.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
-		Listen:                c.Web.Listen,
-		NotifyServer:          c.Notify.Server,
-		NotifyTopic:           c.Notify.Topic,
-		SyncIntervalSeconds:   int64(c.Schedule.SyncInterval.Std() / time.Second),
-		ScrubIntervalSeconds:  int64(c.Schedule.ScrubInterval.Std() / time.Second),
-		ScrubFraction:         c.Schedule.ScrubFraction,
-		BackupDir:             c.Backup.Dir,
-		BackupIntervalSeconds: int64(c.Backup.Interval.Std() / time.Second),
-		BackupKeep:            int32(c.Backup.Keep), //nolint:gosec // validated small positive count
-		AppleId:               c.ICloud.AppleID,
-		IncludeHidden:         *c.ICloud.IncludeHidden,
+		ConfigPath:                       s.configPath,
+		StorageRoot:                      c.Storage.Root,
+		StorageVolumeId:                  c.Storage.VolumeID,
+		MinFreePercent:                   c.Storage.MinFreePercent,
+		Downloader:                       &agentv1.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
+		DownloaderConfig:                 c.Kei.Config,
+		VideoProbe:                       &agentv1.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
+		Thumbnailer:                      &agentv1.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
+		Listen:                           c.Web.Listen,
+		NotifyServer:                     c.Notify.Server,
+		NotifyTopic:                      c.Notify.Topic,
+		SyncIntervalSeconds:              int64(c.Schedule.SyncInterval.Std() / time.Second),
+		ScrubIntervalSeconds:             int64(c.Schedule.ScrubInterval.Std() / time.Second),
+		ScrubFraction:                    c.Schedule.ScrubFraction,
+		BackupDir:                        c.Backup.Dir,
+		BackupIntervalSeconds:            int64(c.Backup.Interval.Std() / time.Second),
+		BackupKeep:                       int32(c.Backup.Keep), //nolint:gosec // validated small positive count
+		IphoneBackupDirs:                 c.IPhoneBackup.Dirs,
+		IphoneBackupMaxAgeSeconds:        int64(c.IPhoneBackup.MaxAge.Std() / time.Second),
+		IphoneBackupCheckIntervalSeconds: int64(c.IPhoneBackup.CheckInterval.Std() / time.Second),
+		IphoneBackupMaxShrinkPercent:     c.IPhoneBackup.MaxShrinkPercent,
+		AppleId:                          c.ICloud.AppleID,
+		IncludeHidden:                    *c.ICloud.IncludeHidden,
 	}}), nil
 }
 

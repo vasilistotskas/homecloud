@@ -7,6 +7,7 @@ import {
   AgentService,
   AppleAccountState,
   DriveHealthState,
+  IPhoneBackupState,
   ListRunsResponseSchema,
   OverviewSchema,
   Phase,
@@ -113,6 +114,67 @@ describe("App", () => {
     render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("2 changed")).toBeInTheDocument();
     expect(await screen.findByText("re-read every 20 weeks")).toBeInTheDocument();
+  });
+
+  it("warns about an unencrypted iPhone backup", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 10n },
+              lastIphoneBackup: {
+                result: RunResult.FAILED,
+                finishedAt: { seconds: 1_790_000_000n },
+                iphoneBackup: {
+                  devices: [
+                    {
+                      udid: "U",
+                      name: "Test iPhone",
+                      productVersion: "26.1",
+                      encrypted: false,
+                      completedAt: { seconds: 1_789_990_000n },
+                      files: 12n,
+                      sizeBytes: 2048n,
+                      state: IPhoneBackupState.UNENCRYPTED,
+                      reasons: ["the backup is not encrypted"],
+                    },
+                  ],
+                },
+              },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("An iPhone backup needs attention")).toBeInTheDocument();
+    expect(screen.getAllByText("Not encrypted").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Test iPhone · iOS 26.1/)).toBeInTheDocument();
+  });
+
+  it("asks for a first iPhone backup when none exists", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 10n },
+              lastIphoneBackup: { result: RunResult.FAILED, finishedAt: { seconds: 1_790_000_000n }, iphoneBackup: {} },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("No iPhone backup on this computer yet")).toBeInTheDocument();
+    expect(screen.getByText("No backup yet")).toBeInTheDocument();
   });
 
   it("says the archive drive is missing when the agent reports it", async () => {

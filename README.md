@@ -4,9 +4,10 @@ Personal, private service that makes a local drive the verified home of my iClou
 (Photos, Drive, iPhone backups) and keeps iCloud itself down to the most recent 30 days.
 
 - Design, decisions, sources and spike findings: [`docs/design.md`](docs/design.md)
-- Status: **P1 done, M1–M4 live**: iCloud Photos archive with verification, weekly integrity
-  re-checks, daily ledger backups, drive health, library browser, local API, web and desktop
-  apps. No deletion capability exists yet (P3).
+- Status: **P1 done, M1–M4 live, P2 in progress**: iCloud Photos archive with verification,
+  weekly integrity re-checks, daily ledger backups, drive health, library browser, local API, web
+  and desktop apps, and a monitor of the local iPhone backups. The iCloud Drive archive is next.
+  No deletion capability exists yet (P3).
 
 ## How it works
 
@@ -17,7 +18,10 @@ ledger (`homecloud.db`) with an append-only audit log, and every problem sends a
 
 ```mermaid
 flowchart TB
-    icloud[("iCloud Photos")]
+    subgraph apple["Apple"]
+        icloud[("iCloud Photos")]
+        devices["Apple Devices app<br/>(encrypted local backups)"]
+    end
     subgraph apps["Your apps"]
         browser["Browser"]
         desktop["Desktop app (Tauri 2)"]
@@ -27,7 +31,7 @@ flowchart TB
     subgraph agent["homecloud-agent · per-user, starts at logon"]
         api["Local API · 127.0.0.1<br/>Connect-RPC, signed /media,<br/>embedded web app"]
         cycle["Cycle<br/>preflight → download → ingest → verify<br/>→ drive health → export → previews"]
-        maint["Maintenance<br/>weekly scrub · daily ledger backup"]
+        maint["Maintenance<br/>weekly scrub · daily ledger backup<br/>· daily iPhone backup check"]
     end
 
     kei["kei (pinned downloader)"]
@@ -40,7 +44,10 @@ flowchart TB
         thumbs[(".cache/thumbnails")]
     end
 
-    backups[("backup.dir · ledger snapshots<br/>(another drive)")]
+    subgraph outside["Outside the archive"]
+        iphone[("iphone_backup.dirs<br/>MobileSync\Backup")]
+        backups[("backup.dir · ledger snapshots<br/>(another drive)")]
+    end
     phone["Phone (ntfy app)"]
 
     browser -- "session cookie" --> api
@@ -56,6 +63,8 @@ flowchart TB
     api --> thumbs
     maint -- "re-hash" --> photos
     maint -- "checked snapshot" --> backups
+    devices --> iphone
+    maint -- "read only" --> iphone
     cli -- "one ledger writer at a time" --> ledger
     agent -. "alerts" .-> phone
 ```
@@ -81,9 +90,11 @@ flowchart TD
     after --> due{"Maintenance due?"}
     due -- "scrub (weekly)" --> scrub["Re-hash the files confirmed longest ago<br/>(5 %, all within 20 weeks)"]
     due -- "backup (daily)" --> snap["Checked ledger snapshot to backup.dir"]
+    due -- "iPhone backups (daily)" --> phone["Read every device backup: encrypted, finished,<br/>newer than max_age, readable, not shrunk"]
     due -- no --> wait(["Wait for the next cycle"])
     scrub --> wait
     snap --> wait
+    phone --> wait
 ```
 
 The agent serves a local API ([Connect](https://connectrpc.com), contract in
@@ -150,12 +161,13 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[notify]` | `server`, `topic` |
 | `[schedule]` | `sync_interval`, `scrub_interval`, `scrub_fraction` |
 | `[backup]` | `dir` (must be on another drive than `storage.root`), `interval`, `keep` |
+| `[iphone_backup]` | `dirs` (absolute; Apple Devices: `%USERPROFILE%\Apple\MobileSync\Backup`, desktop iTunes: `%APPDATA%\Apple Computer\MobileSync\Backup`), `max_age`, `check_interval`, `max_shrink_percent` |
 
 ## Operating
 
 | Command | Purpose |
 |---|---|
-| `homecloud doctor` | Read-only checks: archive root and volume identity, free space, backup dir on another drive, generated kei config, pinned tool versions |
+| `homecloud doctor` | Read-only checks: archive root and volume identity, free space, backup dir on another drive, generated kei config, pinned tool versions, iPhone backup folders |
 | `homecloud open` | Open the web app in the browser, signed in through a one-time code |
 | `homecloud status` | Asset counts by state |
 | `homecloud quarantine list` | Files that failed a check, with the reason |
@@ -195,7 +207,7 @@ pnpm --dir ui lint; pnpm --dir ui typecheck; pnpm --dir ui test
   `homecloud open`. `pnpm --dir desktop tauri dev` uses the same dev server and proxy.
 - **Linux tests on Windows:** Docker's container file system has no volume identity, so give
   `/tmp` a named volume:
-  `docker run --rm -v ${PWD}:/src:ro -v hc-tmp:/tmp -w /src -e GOFLAGS=-buildvcs=false golang:1.27 sh -c "cp -r /src /work && cd /work && go test -race ./..."`
+  `docker run --rm -v ${PWD}:/src:ro -v hc-tmp:/tmp -w /src -e GOFLAGS=-buildvcs=false golang:1.27 sh -c "mkdir /work && tar -C /src --exclude=./desktop/src-tauri/target --exclude=node_modules --exclude=./.git -cf - . | tar -C /work -xf - && cd /work && go test -race ./..."`
   (`ui/dist` must exist).
 - **CI** runs only the jobs whose inputs changed (Go, web, contract, desktop); a change to the
   workflow runs everything.

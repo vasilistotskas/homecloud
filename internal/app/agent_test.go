@@ -138,6 +138,10 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 			ScrubFraction: 1,
 		},
 		Backup: config.Backup{Dir: filepath.Join(t.TempDir(), "ledger-backups"), Interval: config.Duration(24 * time.Hour), Keep: 2},
+		IPhoneBackup: config.IPhoneBackup{
+			Dirs: []string{filepath.Join(t.TempDir(), "MobileSync", "Backup")}, MaxAge: config.Duration(7 * 24 * time.Hour),
+			CheckInterval: config.Duration(24 * time.Hour), MaxShrinkPercent: 50,
+		},
 	}
 	// No ffmpeg in tests: previews fail and are logged, as they would without one.
 	renderer := thumbs.New(config.FFmpeg{FFmpeg: filepath.Join(t.TempDir(), "no-ffmpeg"), FFprobe: filepath.Join(t.TempDir(), "no-ffprobe")}, ThumbnailDir(cfg))

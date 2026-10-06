@@ -24,14 +24,15 @@ import (
 
 // Config is the complete homecloud configuration.
 type Config struct {
-	Storage  Storage  `toml:"storage"`
-	ICloud   ICloud   `toml:"icloud"`
-	Kei      Kei      `toml:"kei"`
-	FFmpeg   FFmpeg   `toml:"ffmpeg"`
-	Web      Web      `toml:"web"`
-	Notify   Notify   `toml:"notify"`
-	Schedule Schedule `toml:"schedule"`
-	Backup   Backup   `toml:"backup"`
+	Storage      Storage      `toml:"storage"`
+	ICloud       ICloud       `toml:"icloud"`
+	Kei          Kei          `toml:"kei"`
+	FFmpeg       FFmpeg       `toml:"ffmpeg"`
+	Web          Web          `toml:"web"`
+	Notify       Notify       `toml:"notify"`
+	Schedule     Schedule     `toml:"schedule"`
+	Backup       Backup       `toml:"backup"`
+	IPhoneBackup IPhoneBackup `toml:"iphone_backup"`
 }
 
 // Storage describes the archive volume.
@@ -88,6 +89,22 @@ type Schedule struct {
 	ScrubInterval Duration `toml:"scrub_interval"`
 	// ScrubFraction is the share of the archive re-hashed per scrub run.
 	ScrubFraction float64 `toml:"scrub_fraction"`
+}
+
+// IPhoneBackup configures the monitor of local iPhone backups, which Apple's
+// Devices app (or iTunes, or idevicebackup2) writes; homecloud only reads them.
+type IPhoneBackup struct {
+	// Dirs are the backup directories to watch, e.g.
+	// %USERPROFILE%\Apple\MobileSync\Backup for the Apple Devices app.
+	Dirs []string `toml:"dirs"`
+	// MaxAge is the oldest acceptable finished backup.
+	MaxAge Duration `toml:"max_age"`
+	// CheckInterval is how often the backups are inspected (each check reads
+	// every backed-up file once).
+	CheckInterval Duration `toml:"check_interval"`
+	// MaxShrinkPercent is the largest acceptable size drop against the last
+	// healthy backup, in percent.
+	MaxShrinkPercent float64 `toml:"max_shrink_percent"`
 }
 
 // Backup configures snapshots of the ledger. They belong on a different
@@ -239,6 +256,25 @@ func (c *Config) Validate() error {
 	}
 	if c.Backup.Keep < 1 {
 		add("backup.keep must be at least 1, got %d", c.Backup.Keep)
+	}
+
+	ib := c.IPhoneBackup
+	if len(ib.Dirs) == 0 {
+		add("iphone_backup.dirs must name at least one backup directory")
+	}
+	for _, d := range ib.Dirs {
+		if !filepath.IsAbs(d) {
+			add("iphone_backup.dirs entries must be absolute paths, got %q", d)
+		}
+	}
+	if ib.MaxAge.Std() < time.Hour {
+		add("iphone_backup.max_age must be at least 1h, got %s", ib.MaxAge.Std())
+	}
+	if ib.CheckInterval.Std() < time.Hour {
+		add("iphone_backup.check_interval must be at least 1h, got %s", ib.CheckInterval.Std())
+	}
+	if ib.MaxShrinkPercent <= 0 || ib.MaxShrinkPercent >= 100 {
+		add("iphone_backup.max_shrink_percent must be in (0, 100), got %v", ib.MaxShrinkPercent)
 	}
 
 	return errors.Join(errs...)

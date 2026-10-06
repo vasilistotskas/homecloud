@@ -23,7 +23,7 @@ import { useState } from "react";
 
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
-import { stateLabel, tierLabel } from "../components/labels";
+import { iphoneStateBadge, stateLabel, tierLabel } from "../components/labels";
 import { runRow } from "../components/runs";
 import { formatBytes, formatCount, formatDuration, formatWhen, toDate } from "../format";
 import {
@@ -65,6 +65,7 @@ const tabs = {
   runs: "Syncs",
   integrity: "Integrity checks",
   backups: "Records backups",
+  iphone: "iPhone backups",
   events: "Events",
 } as const;
 type ActivityTab = keyof typeof tabs;
@@ -94,6 +95,7 @@ export function ActivityPage() {
       {tab === "runs" && <Runs />}
       {tab === "integrity" && <ScrubRuns />}
       {tab === "backups" && <BackupRuns />}
+      {tab === "iphone" && <IPhoneBackupRuns />}
       {tab === "events" && <Events />}
     </Page>
   );
@@ -308,6 +310,72 @@ function BackupRuns() {
   );
 }
 
+function IPhoneBackupRuns() {
+  const styles = useStyles();
+  const q = useInfiniteQuery(
+    AgentService.method.listRuns,
+    { kind: RunKind.IPHONE_BACKUP, pageSize, pageToken: "" },
+    { pageParamKey: "pageToken", getNextPageParam: nextPage },
+  );
+  if (q.isPending) {
+    return <Spinner label="Loading iPhone backup checks…" />;
+  }
+  if (q.isError) {
+    return <LoadError what="iPhone backup checks" error={q.error} onRetry={() => void q.refetch()} />;
+  }
+  const runs = q.data.pages.flatMap((p) => p.runs);
+  return (
+    <>
+      <Card className={styles.tableBox}>
+        <Table size="small" aria-label="iPhone backup checks" className={styles.table}>
+          <TableHeader>
+            <TableRow>
+              <TableHeaderCell>Checked</TableHeaderCell>
+              <TableHeaderCell>Devices</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
+              <TableHeaderCell>Result</TableHeaderCell>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {runs.map((run) => {
+              const r = run.iphoneBackup;
+              return (
+                <TableRow key={run.id.toString()}>
+                  <TableCell className={styles.nowrap}>{started(run)}</TableCell>
+                  <TableCell className={styles.detail}>
+                    {r === undefined
+                      ? "—"
+                      : r.devices.length === 0
+                        ? r.error === ""
+                          ? "No backup found"
+                          : "—"
+                        : r.devices.map((d) => (
+                            <div key={d.udid}>
+                              {d.name}{" "}
+                              <Badge appearance="tint" color={iphoneStateBadge[d.state].color}>
+                                {iphoneStateBadge[d.state].label}
+                              </Badge>
+                              {d.reasons.length > 0 && <Text className={styles.muted}> {d.reasons.join("; ")}</Text>}
+                            </div>
+                          ))}
+                  </TableCell>
+                  <TableCell className={styles.num}>{took(run)}</TableCell>
+                  <TableCell className={styles.detail}>
+                    <RunBadge run={run} ok="Healthy" failed="Needs attention" />
+                    {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {runs.length === 0 && <Text className={styles.muted}>The iPhone backups haven&apos;t been checked yet.</Text>}
+      </Card>
+      <MoreButton q={q} />
+    </>
+  );
+}
+
 function RunBadge({ run, ok, failed }: { run: Run; ok: string; failed: string }) {
   switch (run.result) {
     case RunResult.RUNNING:
@@ -342,6 +410,7 @@ const filters = {
       EventKind.QUARANTINED,
       EventKind.QUARANTINE_RELEASED,
       EventKind.DRIVE_HEALTH_CHANGED,
+      EventKind.IPHONE_BACKUP_CHANGED,
     ],
   },
   quarantined: { label: "Quarantined", kinds: [EventKind.QUARANTINED] },
@@ -349,6 +418,7 @@ const filters = {
   changed: { label: "Changed in iCloud", kinds: [EventKind.RENDITION_CHANGED] },
   moved: { label: "Moved", kinds: [EventKind.RENDITION_MOVED] },
   drive: { label: "Drive health", kinds: [EventKind.DRIVE_HEALTH_CHANGED] },
+  iphone: { label: "iPhone backups", kinds: [EventKind.IPHONE_BACKUP_CHANGED] },
   states: { label: "State changes", kinds: [EventKind.STATE_CHANGED] },
 } as const;
 type Filter = keyof typeof filters;
@@ -396,6 +466,15 @@ function describe(e: Event): { kind: string; color: "danger" | "success" | "info
               : "danger",
         text: [driveStateLabel[e.detail.value.to], ...e.detail.value.reasons].join(": "),
       };
+    case "iphoneBackupChanged": {
+      const c = e.detail.value;
+      const tone = iphoneStateBadge[c.to].color;
+      return {
+        kind: "iPhone backup",
+        color: tone === "success" ? "success" : tone === "informative" ? "informative" : "danger",
+        text: [`${c.deviceName}: ${iphoneStateBadge[c.to].label}`, ...c.reasons].join(": "),
+      };
+    }
     case undefined:
       return { kind: "Event", color: "informative", text: "" };
   }

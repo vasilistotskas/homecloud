@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBytes, formatDuration, formatInterval, formatWhen } from "./format";
+import { formatBytes, formatDuration, formatInterval, formatSpan, formatWhen } from "./format";
 
 describe("formatBytes", () => {
   it("uses binary units", () => {
@@ -36,5 +36,14 @@ describe("formatWhen", () => {
     expect(formatWhen(new Date(2026, 9, 5, 14, 0), now)).toMatch(/^Today /);
     expect(formatWhen(new Date(2026, 9, 4, 9, 12), now)).toMatch(/^Yesterday /);
     expect(formatWhen(new Date(2026, 9, 1, 9, 12), now)).not.toMatch(/^(Today|Yesterday)/);
+  });
+});
+
+describe("formatSpan", () => {
+  it("names a span in its largest whole unit", () => {
+    expect(formatSpan(604_800n)).toBe("1 week");
+    expect(formatSpan(3n * 86_400n)).toBe("3 days");
+    expect(formatSpan(3600n)).toBe("1 hour");
+    expect(formatSpan(90n * 60n)).toBe("90 minutes");
   });
 });

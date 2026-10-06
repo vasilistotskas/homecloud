@@ -29,7 +29,7 @@ func (r Result) OK() bool { return r.Err == nil }
 
 // Run executes every check; it never stops early so all problems are visible.
 func Run(ctx context.Context, cfg *config.Config) []Result {
-	return []Result{
+	results := []Result{
 		checkDir("archive root", cfg.Storage.Root),
 		checkVolume(cfg.Storage),
 		checkSpace(cfg.Storage),
@@ -39,6 +39,7 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		checkPin(ctx, "ffprobe version", verify.FFprobePin(cfg.FFmpeg).Check),
 		checkPin(ctx, "ffmpeg version", thumbs.FFmpegPin(cfg.FFmpeg).Check),
 	}
+	return append(results, checkIPhoneBackupDirs(cfg)...)
 }
 
 // Err joins the failures in results, or returns nil when all passed.
@@ -125,4 +126,25 @@ func checkBackupVolume(cfg *config.Config) Result {
 		return Result{Name: name, Err: fmt.Errorf("backup.dir %s is on the archive volume; it must be on another drive", cfg.Backup.Dir)}
 	}
 	return Result{Name: name, Detail: cfg.Backup.Dir}
+}
+
+// checkIPhoneBackupDirs reports each configured iPhone backup directory. A
+// directory that does not exist yet is normal before the first backup: Apple's
+// tool creates it then.
+func checkIPhoneBackupDirs(cfg *config.Config) []Result {
+	out := make([]Result, 0, len(cfg.IPhoneBackup.Dirs))
+	for _, dir := range cfg.IPhoneBackup.Dirs {
+		info, err := os.Stat(dir)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			out = append(out, Result{Name: "iphone backups", Detail: dir + " (no backup yet; created by the first backup)"})
+		case err != nil:
+			out = append(out, Result{Name: "iphone backups", Err: err})
+		case !info.IsDir():
+			out = append(out, Result{Name: "iphone backups", Err: fmt.Errorf("%s is not a directory", dir)})
+		default:
+			out = append(out, Result{Name: "iphone backups", Detail: dir})
+		}
+	}
+	return out
 }

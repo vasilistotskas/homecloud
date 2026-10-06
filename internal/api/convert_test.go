@@ -5,6 +5,7 @@ import (
 	"time"
 
 	agentv1 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1"
+	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -48,5 +49,42 @@ func TestDriveHealthEventToProto(t *testing.T) {
 	}
 	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.EventDriveHealthChanged, Detail: `{"to":"bogus"}`}); err == nil {
 		t.Fatal("an unknown state must be rejected")
+	}
+}
+
+func TestIPhoneBackupEventToProto(t *testing.T) {
+	e, err := eventToProto(ledger.Event{
+		ID: 1, Kind: ledger.EventIPhoneBackupChanged,
+		Detail: `{"subject":"UDID-A","device_name":"iPhone","from":"ok","to":"stale","problems":["old"]}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := e.GetIphoneBackupChanged()
+	if c.GetUdid() != "UDID-A" || c.GetDeviceName() != "iPhone" ||
+		c.GetFrom() != agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
+		c.GetTo() != agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE || c.GetReasons()[0] != "old" {
+		t.Fatalf("event = %v", e)
+	}
+	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.EventIPhoneBackupChanged, Detail: `{"to":"bogus"}`}); err == nil {
+		t.Fatal("an unknown state must be rejected")
+	}
+}
+
+func TestIPhoneBackupRunToProto(t *testing.T) {
+	ok := true
+	done := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	r, err := runToProto(ledger.Run{
+		ID: 7, Kind: app.IPhoneBackupRunKind, StartedAt: done, FinishedAt: &done, OK: &ok,
+		Detail: `{"devices":[{"udid":"U","name":"iPhone","encrypted":true,"completed_at":"2026-10-05T20:00:00Z","files":9,"bytes":1024,"state":"ok"}],"archived":1}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := r.GetIphoneBackup()
+	d := rep.GetDevices()[0]
+	if rep.GetArchived() != 1 || d.GetState() != agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
+		d.GetSizeBytes() != 1024 || !d.GetEncrypted() || d.GetCompletedAt().AsTime().Hour() != 20 {
+		t.Fatalf("run = %v", r)
 	}
 }

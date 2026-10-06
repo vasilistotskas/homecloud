@@ -14,6 +14,7 @@ require (
 	github.com/urfave/cli/v3 v3.14.0
 	golang.org/x/sys v0.48.0
 	google.golang.org/protobuf v1.36.12
+	howett.net/plist v1.0.2-0.20260819222228-760f9a56c6a7
 	modernc.org/sqlite v1.60.1
 )
 

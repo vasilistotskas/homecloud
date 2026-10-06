@@ -15,6 +15,7 @@ import (
 	agentv1 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v1"
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/health"
+	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 )
@@ -82,6 +83,8 @@ func phase(p app.Phase) agentv1.Phase {
 		return agentv1.Phase_PHASE_CHECKING_ARCHIVE
 	case app.PhaseBackingUpLedger:
 		return agentv1.Phase_PHASE_BACKING_UP_LEDGER
+	case app.PhaseCheckingIPhoneBackups:
+		return agentv1.Phase_PHASE_CHECKING_IPHONE_BACKUPS
 	default:
 		return agentv1.Phase_PHASE_UNSPECIFIED
 	}
@@ -124,6 +127,8 @@ func runToProto(r ledger.Run) (*agentv1.Run, error) {
 		out.Scrub, err = scrubToProto(r.Detail)
 	case app.LedgerBackupRunKind:
 		out.LedgerBackup, err = ledgerBackupToProto(r.Detail)
+	case app.IPhoneBackupRunKind:
+		out.IphoneBackup, err = iphoneBackupToProto(r.Detail)
 	default:
 		err = fmt.Errorf("unknown run kind %q", r.Kind)
 	}
@@ -138,6 +143,7 @@ var runKinds = map[agentv1.RunKind]string{
 	agentv1.RunKind_RUN_KIND_CYCLE:         app.CycleRunKind,
 	agentv1.RunKind_RUN_KIND_SCRUB:         app.ScrubRunKind,
 	agentv1.RunKind_RUN_KIND_LEDGER_BACKUP: app.LedgerBackupRunKind,
+	agentv1.RunKind_RUN_KIND_IPHONE_BACKUP: app.IPhoneBackupRunKind,
 }
 
 func scrubToProto(detail string) (*agentv1.ScrubReport, error) {
@@ -166,6 +172,46 @@ func ledgerBackupToProto(detail string) (*agentv1.LedgerBackupReport, error) {
 		Pruned:    int64(rep.Pruned),
 		Error:     rep.Error,
 	}, nil
+}
+
+var iphoneBackupStates = map[iphonebackup.State]agentv1.IPhoneBackupState{
+	iphonebackup.StateOK:          agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK,
+	iphonebackup.StateInProgress:  agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_IN_PROGRESS,
+	iphonebackup.StateShrunk:      agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_SHRUNK,
+	iphonebackup.StateStale:       agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE,
+	iphonebackup.StateIncomplete:  agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_INCOMPLETE,
+	iphonebackup.StateUnencrypted: agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNENCRYPTED,
+	iphonebackup.StateUnreadable:  agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNREADABLE,
+	iphonebackup.StateInvalid:     agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_INVALID,
+}
+
+// iphoneBackupState converts a recorded state; "" (no earlier state) is
+// unspecified.
+func iphoneBackupState(s iphonebackup.State) (agentv1.IPhoneBackupState, error) {
+	if s == "" {
+		return agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_UNSPECIFIED, nil
+	}
+	return lookup(iphoneBackupStates, s, "iphone backup state")
+}
+
+func iphoneBackupToProto(detail string) (*agentv1.IPhoneBackupReport, error) {
+	rep, err := app.ParseIPhoneBackupReport(detail)
+	if err != nil {
+		return nil, err
+	}
+	out := &agentv1.IPhoneBackupReport{Archived: int64(rep.Archived), Error: rep.Error}
+	for _, d := range rep.Devices {
+		state, err := lookup(iphoneBackupStates, d.State, "iphone backup state")
+		if err != nil {
+			return nil, err
+		}
+		out.Devices = append(out.Devices, &agentv1.IPhoneBackup{
+			Udid: d.UDID, Name: d.Name, ProductVersion: d.ProductVersion, Dir: d.Dir,
+			Encrypted: d.Encrypted, CompletedAt: optionalTimePtr(d.CompletedAt),
+			Files: d.Files, SizeBytes: d.Bytes, State: state, Reasons: d.Reasons,
+		})
+	}
+	return out, nil
 }
 
 func cycleToProto(detail string) (*agentv1.CycleReport, error) {
@@ -211,12 +257,13 @@ func appleState(d agentv1.DownloadOutcome) agentv1.AppleAccountState {
 
 // eventKindNames maps API event kinds to the ledger's event kind names.
 var eventKindNames = map[agentv1.EventKind]string{
-	agentv1.EventKind_EVENT_KIND_RENDITION_CHANGED:    ledger.EventRenditionChanged,
-	agentv1.EventKind_EVENT_KIND_STATE_CHANGED:        ledger.EventStateChanged,
-	agentv1.EventKind_EVENT_KIND_QUARANTINED:          ledger.EventQuarantined,
-	agentv1.EventKind_EVENT_KIND_QUARANTINE_RELEASED:  ledger.EventQuarantineReleased,
-	agentv1.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED: ledger.EventDriveHealthChanged,
-	agentv1.EventKind_EVENT_KIND_RENDITION_MOVED:      ledger.EventRenditionMoved,
+	agentv1.EventKind_EVENT_KIND_RENDITION_CHANGED:     ledger.EventRenditionChanged,
+	agentv1.EventKind_EVENT_KIND_STATE_CHANGED:         ledger.EventStateChanged,
+	agentv1.EventKind_EVENT_KIND_QUARANTINED:           ledger.EventQuarantined,
+	agentv1.EventKind_EVENT_KIND_QUARANTINE_RELEASED:   ledger.EventQuarantineReleased,
+	agentv1.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:  ledger.EventDriveHealthChanged,
+	agentv1.EventKind_EVENT_KIND_RENDITION_MOVED:       ledger.EventRenditionMoved,
+	agentv1.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED: ledger.EventIPhoneBackupChanged,
 }
 
 var assetStates = map[ledger.AssetState]agentv1.AssetState{
@@ -318,6 +365,21 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 				c.To, err = driveState(d.To)
 			}
 			out.Detail = &agentv1.Event_DriveHealthChanged{DriveHealthChanged: c}
+		}
+	case ledger.EventIPhoneBackupChanged:
+		var d struct {
+			Subject    string             `json:"subject"`
+			DeviceName string             `json:"device_name"`
+			From       iphonebackup.State `json:"from"`
+			To         iphonebackup.State `json:"to"`
+			Problems   []string           `json:"problems"`
+		}
+		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
+			c := &agentv1.IPhoneBackupChanged{Udid: d.Subject, DeviceName: d.DeviceName, Reasons: d.Problems}
+			if c.From, err = iphoneBackupState(d.From); err == nil {
+				c.To, err = iphoneBackupState(d.To)
+			}
+			out.Detail = &agentv1.Event_IphoneBackupChanged{IphoneBackupChanged: c}
 		}
 	default:
 		err = fmt.Errorf("unknown event kind %q", e.Kind)

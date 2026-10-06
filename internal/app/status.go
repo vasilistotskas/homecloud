@@ -20,6 +20,8 @@ const (
 	// PhaseCheckingArchive re-hashes a share of archived files (scrub).
 	PhaseCheckingArchive
 	PhaseBackingUpLedger
+	// PhaseCheckingIPhoneBackups inspects the local iPhone backups.
+	PhaseCheckingIPhoneBackups
 )
 
 // InCycle reports whether p is a phase of a sync cycle, as opposed to idle

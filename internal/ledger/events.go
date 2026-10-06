@@ -15,6 +15,8 @@ const (
 	EventQuarantineReleased = "quarantine_released"
 	// EventDriveHealthChanged: the archive drive's health verdict changed.
 	EventDriveHealthChanged = "drive_health_changed"
+	// EventIPhoneBackupChanged: a device's local backup changed state (subject: its UDID).
+	EventIPhoneBackupChanged = "iphone_backup_changed"
 )
 
 // Rendition versions, as the downloader names them.

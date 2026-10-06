@@ -71,12 +71,14 @@ func ParseLedgerBackupReport(detail string) (LedgerBackupReport, error) {
 	return rep, nil
 }
 
-// maintain runs the scrub and the ledger backup when they are due. Each is a
-// run of its own kind, so the schedules survive agent restarts.
+// maintain runs the scrub, the ledger backup and the iPhone backup check when
+// they are due. Each is a run of its own kind, so the schedules survive agent
+// restarts.
 func (a *Agent) maintain(ctx context.Context) error {
 	return errors.Join(
 		a.runIfDue(ctx, ScrubRunKind, a.cfg.Schedule.ScrubInterval.Std(), PhaseCheckingArchive, a.scrub),
 		a.runIfDue(ctx, LedgerBackupRunKind, a.cfg.Backup.Interval.Std(), PhaseBackingUpLedger, a.backupLedger),
+		a.runIfDue(ctx, IPhoneBackupRunKind, a.cfg.IPhoneBackup.CheckInterval.Std(), PhaseCheckingIPhoneBackups, a.checkIPhoneBackups),
 	)
 }
 

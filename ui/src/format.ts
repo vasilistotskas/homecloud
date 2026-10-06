@@ -69,21 +69,25 @@ export function formatRelative(d: Date, now: Date = new Date()): string {
   return relative.format(Math.round(hours / 24), "day");
 }
 
-/** "every hour", "every 30 minutes", "every 2 hours", "every day", "every 20 weeks". */
-export function formatInterval(seconds: bigint): string {
+/** "1 hour", "30 minutes", "2 hours", "1 day", "20 weeks". */
+export function formatSpan(seconds: bigint): string {
   const s = Number(seconds);
   const day = 86_400;
+  const plural = (n: number, unit: string) => (n === 1 ? `1 ${unit}` : `${n} ${unit}s`);
   if (s % (7 * day) === 0) {
-    const w = s / (7 * day);
-    return w === 1 ? "every week" : `every ${w} weeks`;
+    return plural(s / (7 * day), "week");
   }
   if (s % day === 0) {
-    const d = s / day;
-    return d === 1 ? "every day" : `every ${d} days`;
+    return plural(s / day, "day");
   }
   if (s % 3600 === 0) {
-    const h = s / 3600;
-    return h === 1 ? "every hour" : `every ${h} hours`;
+    return plural(s / 3600, "hour");
   }
-  return `every ${Math.round(s / 60)} minutes`;
+  return plural(Math.round(s / 60), "minute");
+}
+
+/** "every hour", "every 30 minutes", "every 2 hours", "every day", "every 20 weeks". */
+export function formatInterval(seconds: bigint): string {
+  const span = formatSpan(seconds);
+  return `every ${span.startsWith("1 ") ? span.slice(2) : span}`;
 }

@@ -106,7 +106,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 
 - **P0** — toolchain, repo, CI, this document; spikes: (A) kei `asset_id` ↔ pyicloud identity on 20 assets (gate for P3), (B) kei auth/manifest representation of Live Photos/edits/`added_at`/exit codes, (C) console-less logon launch; `homecloud doctor`.
 - **P1** — kei full sync, ledger, verification, status UI, ntfy. One-time in-session reconciliation of the interim archive, then its removal.
-- **P2** — iCloud Drive mirror; local encrypted iPhone backup + monitor.
+- **P2** — local encrypted iPhone backup + monitor (milestone A, implemented — §8e); iCloud Drive archive (milestones B1–B3, planned).
 - **P3** — staged deleter.
 
 ## 8a. Platforms, API and GUI (decided 2026-10-05)
@@ -162,6 +162,14 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 - **Live status:** verification and scrub wake the status hub after every file; each overview stream sends at most one update per second, so live counts never turn into ledger load. A sync requested during maintenance runs right after it.
 - **Child processes:** `platform.Command` starts every program (kei, ffprobe, ffmpeg, system tools) with its output captured and, on Windows, `CREATE_NO_WINDOW`. Per-file tools are bounded (ffprobe 5 min, a render 2 min); a shared thumbnail render is detached from the request that started it.
 
+## 8e. iPhone backup monitor (implemented, P2 milestone A)
+
+- **Who makes the backups:** Apple's Devices app (Windows; desktop iTunes and libimobiledevice's `idevicebackup2` write the same layout) with "Encrypt local backup" on. The password stays with the owner; homecloud never asks for it, never decrypts `Manifest.db`, and never writes into a backup folder. Backups stay where Apple's tool puts them (owner decision 2026-10-06); homecloud only monitors.
+- **What is read (`internal/iphonebackup`):** per device folder `<UDID>`: `Info.plist` (XML: `Device Name`, `Product Version`, `Unique Identifier`), `Manifest.plist` (binary: `IsEncrypted`), `Status.plist` (binary: `SnapshotState`, `Date`), via howett.net/plist. A `Snapshot` subfolder means a backup is being written; the first backup of a device may lack `Manifest.plist`/`Status.plist` until then. Folders `<UDID>-yyyymmdd-hhmmss` are archived copies: counted, not judged. Key names and types: libimobiledevice `tools/idevicebackup2.c` and The Apple Wiki "ITunes Backup".
+- **Verdict per device, most severe first:** invalid (plists missing/malformed, folder ≠ UDID) › unreadable (a file could not be read in full; every file is read once per check) › unencrypted › incomplete (`SnapshotState` ≠ `finished` with no backup running) › stale (finished longer ago than `max_age`) › shrunk (more than `max_shrink_percent` smaller than the device's last healthy check) › in progress › ok.
+- **Record and alerts:** a maintenance job (run kind `iphone_backup`, every `check_interval`) records an `IPhoneBackupReport`; each device's state change appends `iphone_backup_changed` (subject = UDID; recorded only on change, like drive health). Problems and "no backup on this computer" alert once a day per condition; alerts never name the device or its identifiers.
+- **Owner steps:** install Apple Devices, connect the iPhone, tick "Encrypt local backup", back up once; then keep it connected or on the same Wi-Fi regularly. Until the first backup the app shows "No iPhone backup on this computer yet".
+
 ## 9. Dependencies (verified 2026-10-05)
 
 | Dependency | Version | Source |
@@ -171,7 +179,7 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 | github.com/urfave/cli/v3 | v3.14.0 | https://pkg.go.dev/github.com/urfave/cli/v3?tab=versions |
 | github.com/pelletier/go-toml/v2 | v2.4.3 | https://pkg.go.dev/github.com/pelletier/go-toml/v2?tab=versions |
 | github.com/DeRuina/timberjack | v1.4.8 | https://pkg.go.dev/github.com/DeRuina/timberjack?tab=versions |
-| howett.net/plist *(planned, P2; not yet in go.mod)* | v1.0.1 | https://pkg.go.dev/howett.net/plist |
+| howett.net/plist | v1.0.2-0.20260819222228-760f9a56c6a7 (master; includes the bplist bounds fix #90, newer than v1.0.1) | https://github.com/DHowett/go-plist/commits/main |
 | golang.org/x/sys | v0.48.0 | https://pkg.go.dev/golang.org/x/sys?tab=versions (monitor GO-2026-5024) |
 | golang.org/x/text (indirect) | v0.41.0 | https://pkg.go.dev/golang.org/x/text |
 | github.com/google/go-cmp | v0.7.0 | https://pkg.go.dev/github.com/google/go-cmp?tab=versions |
