@@ -106,8 +106,11 @@ func newApp() *cli.Command {
 				},
 			},
 			{
-				Name:   "open",
-				Usage:  "open the web app in your browser, signed in to the running agent",
+				Name:  "open",
+				Usage: "open the web app in your browser, signed in to the running agent",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{Name: "print", Usage: "print the one-time sign-in link instead of opening a browser (for another device, or a headless host)"},
+				},
 				Action: runOpen,
 			},
 			{
@@ -393,6 +396,10 @@ func runDoctor(ctx context.Context, cmd *cli.Command) error {
 // runOpen asks the running agent for a one-time login code and opens the web
 // app with it, so the browser gets its own session without seeing the token.
 func runOpen(ctx context.Context, cmd *cli.Command) error {
+	cfg, err := loadConfig(cmd)
+	if err != nil {
+		return err
+	}
 	ep, err := auth.ReadEndpoint()
 	if err != nil {
 		return err
@@ -402,9 +409,19 @@ func runOpen(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("request login code: %w", err)
 	}
-	link := ep.URL + "/#/connect?code=" + url.QueryEscape(res.Msg.GetCode())
+	// Behind a proxy the app is used at its public origin; the listen
+	// address is reachable from this host only.
+	base := ep.URL
+	if *cfg.Web.PublicOrigin != "" {
+		base = *cfg.Web.PublicOrigin
+	}
+	code, until := res.Msg.GetCode(), res.Msg.GetExpiresAt().AsTime().Local().Format(time.TimeOnly)
+	link := base + "/#/connect?code=" + url.QueryEscape(code)
+	if cmd.Bool("print") {
+		return printf(cmd, "Sign in at %s\n(or enter code %s at %s; valid until %s, works once)\n", link, code, base, until)
+	}
 	if err := printf(cmd, "Opening %s\nIf the browser does not open, enter code %s on that page (valid until %s, works once).\n",
-		ep.URL, res.Msg.GetCode(), res.Msg.GetExpiresAt().AsTime().Local().Format(time.TimeOnly)); err != nil {
+		base, code, until); err != nil {
 		return err
 	}
 	return platform.OpenURL(link)

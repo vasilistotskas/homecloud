@@ -3,9 +3,9 @@
 //
 // Every request passes, in order:
 //
-//  1. an exact Host check: the listen address, which every client uses
-//     (defeats DNS rebinding),
-//  2. an Origin allow-list (the agent's own origin and the desktop app's),
+//  1. an exact Host check: the listen address, and the public origin's host
+//     when a proxy serves the agent (defeats DNS rebinding),
+//  2. an Origin allow-list (the agent's own origins and the desktop app's),
 //  3. CORS, granted only to the desktop app's origins,
 //  4. security headers,
 //  5. for the API: authentication (bearer token or session cookie, with CSRF
@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -51,6 +52,9 @@ const (
 type Options struct {
 	// Listen is the loopback host:port the server is reachable at.
 	Listen string
+	// PublicOrigin is the https origin a proxy serves the agent at (it
+	// forwards the original Host), or empty.
+	PublicOrigin string
 	// Service implements the API.
 	Service agentv2connect.AgentServiceHandler
 	// App is the built web app (index.html plus hashed assets/).
@@ -63,12 +67,23 @@ type Options struct {
 
 // Handler returns the agent's root HTTP handler.
 func Handler(o Options) (http.Handler, error) {
-	self := "http://" + o.Listen
-	origins := append([]string{self}, DesktopOrigins...)
+	hosts := []string{o.Listen}
+	own := []string{"http://" + o.Listen}
+	if o.PublicOrigin != "" {
+		u, err := url.Parse(o.PublicOrigin)
+		if err != nil {
+			return nil, fmt.Errorf("public origin %q: %w", o.PublicOrigin, err)
+		}
+		hosts = append(hosts, u.Host)
+		own = append(own, o.PublicOrigin)
+	}
+	origins := slices.Concat(own, DesktopOrigins)
 
 	csrf := http.NewCrossOriginProtection()
-	if err := csrf.AddTrustedOrigin(self); err != nil {
-		return nil, fmt.Errorf("trusted origin %q: %w", self, err)
+	for _, origin := range own {
+		if err := csrf.AddTrustedOrigin(origin); err != nil {
+			return nil, fmt.Errorf("trusted origin %q: %w", origin, err)
+		}
 	}
 
 	apiPath, apiHandler := agentv2connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
@@ -87,12 +102,12 @@ func Handler(o Options) (http.Handler, error) {
 		MaxAge:              int(corsMaxAge / time.Second),
 		AllowPrivateNetwork: true,
 	})
-	return checkHost(o.Listen, checkOrigin(origins, c.Handler(secureHeaders(mux)))), nil
+	return checkHost(hosts, checkOrigin(origins, c.Handler(secureHeaders(mux)))), nil
 }
 
-func checkHost(host string, next http.Handler) http.Handler {
+func checkHost(allowed []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Host != host {
+		if !slices.Contains(allowed, r.Host) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}

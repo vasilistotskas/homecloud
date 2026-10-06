@@ -20,7 +20,25 @@ func newAuth(t *testing.T, clock *time.Time) (*Authenticator, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(tok, sessionTTL, func() time.Time { return *clock }), tok
+	return New(tok, sessionTTL, false, func() time.Time { return *clock }), tok
+}
+
+func TestSessionCookieIsSecureBehindHTTPS(t *testing.T) {
+	clock := t0
+	for _, secure := range []bool{false, true} {
+		a := New("token", sessionTTL, secure, func() time.Time { return clock })
+		code, _, err := a.NewLoginCode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cookie, err := a.Exchange(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cookie.Secure != secure {
+			t.Errorf("secure=%v: cookie.Secure = %v", secure, cookie.Secure)
+		}
+	}
 }
 
 func request(header, cookie string) *http.Request {

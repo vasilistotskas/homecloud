@@ -1,0 +1,43 @@
+# homecloud on a NAS: the agent next to its files, used from your own devices
+# at https://<TS_HOSTNAME>.<your tailnet>.ts.net through Tailscale. The agent
+# listens on 127.0.0.1 inside the shared network namespace, so only the
+# Tailscale container can reach it; nothing is published on the LAN.
+#
+#   cp homecloud.env.example .env   # then fill it in
+#   docker compose up -d
+#   docker compose exec homecloud homecloud open --print
+#
+# Set web.public_origin = "https://<TS_HOSTNAME>.<your tailnet>.ts.net" in
+# config.toml. The tailnet needs MagicDNS and HTTPS certificates enabled.
+
+services:
+  tailscale:
+    image: tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065
+    hostname: ${TS_HOSTNAME}
+    environment:
+      # Needed only until the node is registered; its identity is then kept
+      # in TS_STATE_DIR.
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /serve/serve.json
+      # Userspace networking needs no kernel device or extra capabilities.
+      TS_USERSPACE: "true"
+    volumes:
+      - ${HOMECLOUD_DATA}/tailscale:/var/lib/tailscale
+      - ./serve.json:/serve/serve.json:ro
+    restart: unless-stopped
+
+  homecloud:
+    image: ${HOMECLOUD_IMAGE}
+    network_mode: service:tailscale
+    user: "${PUID}:${PGID}"
+    volumes:
+      - ${HOMECLOUD_ARCHIVE}:/archive
+      - ${HOMECLOUD_DATA}/config:/config:ro
+      - ${HOMECLOUD_DATA}/state:/state
+      - ${HOMECLOUD_BACKUPS}:/backups
+      - ${HOMECLOUD_IPHONE_BACKUPS}:/iphone:ro
+    depends_on:
+      - tailscale
+    restart: unless-stopped

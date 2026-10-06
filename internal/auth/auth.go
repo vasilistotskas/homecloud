@@ -65,6 +65,7 @@ func NewToken() (string, error) {
 type Authenticator struct {
 	token      []byte
 	sessionTTL time.Duration
+	secure     bool
 	now        func() time.Time
 
 	mu       sync.Mutex
@@ -74,11 +75,13 @@ type Authenticator struct {
 }
 
 // New returns an Authenticator accepting token as the bearer credential,
-// whose browser sessions last sessionTTL.
-func New(token string, sessionTTL time.Duration, now func() time.Time) *Authenticator {
+// whose browser sessions last sessionTTL. secure marks session cookies
+// Secure, for an agent served over https.
+func New(token string, sessionTTL time.Duration, secure bool, now func() time.Time) *Authenticator {
 	return &Authenticator{
 		token:      []byte(token),
 		sessionTTL: sessionTTL,
+		secure:     secure,
 		now:        now,
 		codes:      map[string]time.Time{},
 		sessions:   map[string]time.Time{},
@@ -149,9 +152,9 @@ func (a *Authenticator) Exchange(code string) (*http.Cookie, error) {
 		return nil, err
 	}
 	a.sessions[id] = a.now().Add(a.sessionTTL)
-	// No Secure attribute: the agent serves plain HTTP on loopback, where
-	// browsers do not uniformly accept Secure cookies. SameSite=Strict, HttpOnly
-	// and the Host/Origin checks in package web protect the session instead.
+	// Secure only behind an https proxy: on plain-HTTP loopback browsers do
+	// not uniformly accept Secure cookies, and SameSite=Strict, HttpOnly and
+	// the Host/Origin checks in package web protect the session instead.
 	return &http.Cookie{ //nolint:gosec // G124: see above
 		Name:     SessionCookie,
 		Value:    id,
@@ -159,6 +162,7 @@ func (a *Authenticator) Exchange(code string) (*http.Cookie, error) {
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(a.sessionTTL / time.Second),
+		Secure:   a.secure,
 	}, nil
 }
 

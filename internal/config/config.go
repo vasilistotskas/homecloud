@@ -96,6 +96,11 @@ type Verify struct {
 // Web configures the local API and web app endpoint.
 type Web struct {
 	Listen string `toml:"listen"`
+	// PublicOrigin is the https origin a proxy on this host serves the agent
+	// at (Tailscale Serve, e.g. https://nas.example.ts.net), so the app can be
+	// used from other devices; "" when it is used on this computer only. It
+	// must be set, so the choice is always explicit.
+	PublicOrigin *string `toml:"public_origin"`
 	// SessionTTL is how long a browser stays signed in after exchanging a
 	// login code.
 	SessionTTL Duration `toml:"session_ttl"`
@@ -242,6 +247,17 @@ var (
 	ntfyTopicPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{24,64}$`)
 )
 
+// ValidatePublicOrigin accepts an https origin written exactly as browsers
+// send it in the Origin header: lowercase scheme and host, an optional port,
+// nothing else.
+func ValidatePublicOrigin(origin string) error {
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || "https://"+u.Host != origin || origin != strings.ToLower(origin) {
+		return fmt.Errorf("must be a lowercase https origin such as https://nas.example.ts.net, got %q", origin)
+	}
+	return nil
+}
+
 // Validate reports every configuration problem at once.
 func (c *Config) Validate() error {
 	var errs []error
@@ -301,6 +317,14 @@ func (c *Config) Validate() error {
 	} else if ap.Addr() != netip.AddrFrom4([4]byte{127, 0, 0, 1}) {
 		// The desktop app's content security policy allows exactly this address.
 		add("web.listen must be 127.0.0.1:<port> (local only, and the address the desktop app trusts), got %q", c.Web.Listen)
+	}
+	switch {
+	case c.Web.PublicOrigin == nil:
+		add(`web.public_origin must be set: "" for this computer only, or the https origin a proxy serves the agent at`)
+	case *c.Web.PublicOrigin != "":
+		if err := ValidatePublicOrigin(*c.Web.PublicOrigin); err != nil {
+			add("web.public_origin: %w", err)
+		}
 	}
 	if t := c.Web.SessionTTL.Std(); t < time.Hour || t > 30*24*time.Hour {
 		add("web.session_ttl must be between 1h and 720h, got %s", t)

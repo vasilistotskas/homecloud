@@ -136,7 +136,7 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 	if err != nil {
 		return err
 	}
-	authn := auth.New(token, cfg.Web.SessionTTL.Std(), time.Now)
+	authn := auth.New(token, cfg.Web.SessionTTL.Std(), *cfg.Web.PublicOrigin != "", time.Now)
 	signer, err := media.NewSigner(time.Now)
 	if err != nil {
 		return err
@@ -150,8 +150,9 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 		return fmt.Errorf("locate the agent executable: %w", err)
 	}
 	h, err := web.Handler(web.Options{
-		Listen: cfg.Web.Listen,
-		App:    assets,
+		Listen:       cfg.Web.Listen,
+		PublicOrigin: *cfg.Web.PublicOrigin,
+		App:          assets,
 		Service: api.New(api.Deps{
 			Config: cfg, ConfigPath: cfgPath, AgentVersion: version,
 			// The CLI is installed next to the agent.

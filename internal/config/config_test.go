@@ -54,6 +54,7 @@ workers = 4
 
 [web]
 listen = "127.0.0.1:8790"
+public_origin = ""
 session_ttl = "168h"
 
 [notify]
@@ -117,7 +118,7 @@ func TestLoadValid(t *testing.T) {
 			ProbeTimeout: Duration(5 * time.Minute), Renderers: 4, RenderTimeout: Duration(2 * time.Minute),
 		},
 		Verify: Verify{Workers: 4},
-		Web:    Web{Listen: "127.0.0.1:8790", SessionTTL: Duration(168 * time.Hour)},
+		Web:    Web{Listen: "127.0.0.1:8790", PublicOrigin: ptr(""), SessionTTL: Duration(168 * time.Hour)},
 		Notify: Notify{
 			Server: "https://ntfy.sh", Topic: "hc_0123456789abcdefABCDEF",
 			RepeatEvery: Duration(24 * time.Hour), Timeout: Duration(30 * time.Second),
@@ -203,6 +204,10 @@ func TestValidate(t *testing.T) {
 		{"no renderers", func(c *Config) { c.FFmpeg.Renderers = 0 }, "ffmpeg.renderers"},
 		{"render timeout too short", func(c *Config) { c.FFmpeg.RenderTimeout = Duration(time.Second) }, "ffmpeg.render_timeout"},
 		{"no verify workers", func(c *Config) { c.Verify.Workers = 0 }, "verify.workers"},
+		{"public origin not set", func(c *Config) { c.Web.PublicOrigin = nil }, "web.public_origin"},
+		{"public origin over http", func(c *Config) { c.Web.PublicOrigin = ptr("http://nas.example.ts.net") }, "web.public_origin"},
+		{"public origin with a path", func(c *Config) { c.Web.PublicOrigin = ptr("https://nas.example.ts.net/app") }, "web.public_origin"},
+		{"public origin in upper case", func(c *Config) { c.Web.PublicOrigin = ptr("https://NAS.example.ts.net") }, "web.public_origin"},
 		{"browser sessions too long", func(c *Config) { c.Web.SessionTTL = Duration(1000 * time.Hour) }, "web.session_ttl"},
 		{"notify timeout too short", func(c *Config) { c.Notify.Timeout = Duration(time.Second) }, "notify.timeout"},
 		{"log files too large", func(c *Config) { c.Logs.MaxSizeMB = 4096 }, "logs.max_size_mb"},

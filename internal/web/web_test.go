@@ -65,6 +65,12 @@ type env struct {
 // before the server starts.
 func setup(t *testing.T, opts ...func(*fakeAgent)) *env {
 	t.Helper()
+	return setupWith(t, "", opts...)
+}
+
+// setupWith is setup with a public origin, as behind Tailscale Serve.
+func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env {
+	t.Helper()
 	ctx := context.Background()
 	db, err := ledger.Open(ctx, filepath.Join(t.TempDir(), "ledger.db"))
 	if err != nil {
@@ -85,7 +91,7 @@ func setup(t *testing.T, opts ...func(*fakeAgent)) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authn := auth.New(token, 7*24*time.Hour, func() time.Time { return t0 })
+	authn := auth.New(token, 7*24*time.Hour, publicOrigin != "", func() time.Time { return t0 })
 	agent := &fakeAgent{hub: app.NewHub(), started: true}
 	for _, opt := range opts {
 		opt(agent)
@@ -99,12 +105,13 @@ func setup(t *testing.T, opts ...func(*fakeAgent)) *env {
 	cfg := &config.Config{
 		Storage:  config.Storage{Root: t.TempDir(), MinFreePercent: 15},
 		ICloud:   config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
-		Web:      config.Web{Listen: listen},
+		Web:      config.Web{Listen: listen, PublicOrigin: &publicOrigin},
 		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
 	}
 
 	h, err := web.Handler(web.Options{
-		Listen: listen,
+		Listen:       listen,
+		PublicOrigin: publicOrigin,
 		Service: api.New(api.Deps{
 			Config: cfg, ConfigPath: "config.toml", AgentVersion: "test",
 			Ledger: db, Agent: agent, Notifier: nopNotifier{}, Auth: authn, Media: signer,
@@ -224,6 +231,51 @@ func TestHostAndOriginChecks(t *testing.T) {
 		if res.status != c.want {
 			t.Errorf("%s: status %d, want %d", c.name, res.status, c.want)
 		}
+	}
+}
+
+// Behind Tailscale Serve the agent sees the public host and origin, which it
+// accepts in addition to its own; nothing else changes.
+func TestPublicOrigin(t *testing.T) {
+	const public = "https://nas.example.ts.net"
+	e := setupWith(t, public)
+	bearer := "Bearer " + e.token
+	cases := []struct {
+		name string
+		hdr  map[string]string
+		want int
+	}{
+		{"public host and origin", map[string]string{"Authorization": bearer, "Host": "nas.example.ts.net", "Origin": public}, http.StatusOK},
+		{"own host still", map[string]string{"Authorization": bearer}, http.StatusOK},
+		{"public host over http", map[string]string{"Authorization": bearer, "Host": "nas.example.ts.net", "Origin": "http://nas.example.ts.net"}, http.StatusForbidden},
+		{"another tailnet host", map[string]string{"Authorization": bearer, "Host": "other.example.ts.net"}, http.StatusForbidden},
+	}
+	for _, c := range cases {
+		res := rawPost(t, e, agentv2connect.AgentServiceGetInfoProcedure, c.hdr)
+		if res.status != c.want {
+			t.Errorf("%s: status %d, want %d", c.name, res.status, c.want)
+		}
+	}
+
+	lc, err := e.client.CreateLoginCode(context.Background(), connect.NewRequest(&agentv2.CreateLoginCodeRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, e.url+agentv2connect.AgentServiceExchangeLoginCodeProcedure,
+		strings.NewReader(`{"code":"`+lc.Msg.GetCode()+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "nas.example.ts.net"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", public)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = res.Body.Close()
+	if cookies := res.Cookies(); res.StatusCode != http.StatusOK || len(cookies) != 1 || !cookies[0].Secure {
+		t.Fatalf("exchange over the public origin: status %d cookies %+v; want one Secure cookie", res.StatusCode, cookies)
 	}
 }
 
