@@ -41,7 +41,9 @@ export function App({ transport, platform }: { transport: Transport; platform: P
   return (
     <ThemeStateProvider>
       {(theme) => (
-        <FluentProvider theme={theme} className={styles.root}>
+        // The root styles lay out the page; portals (toasts, dialogs, menus) only
+        // need the theme, or each would cover the window with the page background.
+        <FluentProvider theme={theme} className={styles.root} applyStylesToPortals={false}>
           <PlatformContext value={platform}>
             <TransportProvider transport={transport}>
               <QueryClientProvider client={queryClient}>

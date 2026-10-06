@@ -254,6 +254,38 @@ describe("App", () => {
     expect(screen.queryByText("Apple sign-in needed")).not.toBeInTheDocument();
   });
 
+  it("shows a toast without covering the app", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { assets: { verified: 1n } }) };
+          await never();
+        },
+        getSettings: () => ({
+          settings: create(SettingsSchema, { ...settings, notifyTopic: "homecloud_topic_for_tests_123" }),
+        }),
+        getInfo: () => ({ agentVersion: "test", apiVersion: "v1", os: "windows" }),
+      });
+    });
+    const user = userEvent.setup();
+    window.location.hash = "#/settings";
+    const { container } = render(<App transport={transport} platform={browser} />);
+    await user.click(await screen.findByRole("button", { name: "Copy" }));
+    const toast = await screen.findByText("Topic copied");
+
+    // The toast's portal carries the theme but not the page's own styles
+    // (full height, page background), which would hide the whole app.
+    const page = container.querySelector(".fui-FluentProvider");
+    const portal = [...document.body.children].find((e) => e.contains(toast));
+    if (page === null || portal === undefined) {
+      throw new Error("no page or portal element");
+    }
+    const pageOnly = [...page.classList].filter((c) => !c.startsWith("fui-FluentProvider"));
+    expect(pageOnly.length).toBeGreaterThan(0);
+    expect([...portal.classList].filter((c) => pageOnly.includes(c))).toEqual([]);
+    window.location.hash = "";
+  });
+
   it("says the archive drive is missing when the agent reports it", async () => {
     const transport = createRouterTransport(({ service }) => {
       service(AgentService, {
