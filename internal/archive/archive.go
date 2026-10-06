@@ -15,8 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 )
 
 // MarkerFile is the file at the archive root that names the archive.
@@ -32,10 +31,11 @@ type marker struct {
 }
 
 // ValidateID accepts an archive id as Init creates it: a canonical,
-// lowercase random (version 4) UUID.
+// lowercase random (version 4) UUID. The version is the high four bits of
+// octet 6 (RFC 9562, section 4.2).
 func ValidateID(id string) error {
 	u, err := uuid.Parse(id)
-	if err != nil || u.Version() != 4 || u.String() != id {
+	if err != nil || u[6]>>4 != 4 || u.String() != id {
 		return fmt.Errorf("%q is not an archive id (a lowercase UUID as homecloud archive init prints it)", id)
 	}
 	return nil
@@ -51,7 +51,7 @@ func Init(root string, now time.Time) (string, error) {
 	if !info.IsDir() {
 		return "", fmt.Errorf("archive root %s is not a folder", root)
 	}
-	id := uuid.NewString()
+	id := uuid.NewV4().String()
 	data, err := json.MarshalIndent(marker{ID: id, CreatedAt: now.UTC()}, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("encode archive marker: %w", err)

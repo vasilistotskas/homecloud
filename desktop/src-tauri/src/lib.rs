@@ -2,10 +2,17 @@
 //! agent serves; this side only finds the agent, keeps the credential for a
 //! homecloud on another device, and offers a few operating-system actions.
 //! The agent itself runs separately and is never supervised here.
+//!
+//! Every command is async and does its blocking work (files, the credential
+//! store, child processes) on a blocking thread: Tauri runs synchronous
+//! commands on the main thread, where they would freeze the window.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 
+use keyring_core::{CredentialStore, Entry};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
@@ -29,12 +36,12 @@ const REMOTE_DOMAIN: &str = ".ts.net";
 /// registered by `homecloud install`.
 const AGENT_NAME: &str = "homecloud-agent";
 
-/// The agent's discovery record (internal/auth.Endpoint).
-#[derive(Deserialize, Serialize)]
+/// The agent's discovery record (internal/auth.Endpoint); other fields are
+/// ignored.
+#[derive(Deserialize)]
 struct Endpoint {
     url: String,
     token: String,
-    agent_version: String,
 }
 
 /// The agent's per-user state directory (internal/platform.StateDir).
@@ -82,6 +89,75 @@ struct Credentials {
     token: String,
 }
 
+/// The operating system's credential store, opened on first use: on Linux,
+/// opening it connects to the Secret Service over D-Bus, which a window that
+/// never pairs does not need.
+#[derive(Default)]
+struct Keychain(Mutex<Option<Arc<CredentialStore>>>);
+
+impl Keychain {
+    fn store(&self) -> Result<Arc<CredentialStore>, String> {
+        let mut store = self
+            .0
+            .lock()
+            .map_err(|_| "the credential store lock is poisoned".to_owned())?;
+        if let Some(s) = store.as_ref() {
+            return Ok(Arc::clone(s));
+        }
+        let opened = open_store()?;
+        *store = Some(Arc::clone(&opened));
+        Ok(opened)
+    }
+
+    /// The entry holding the token for the homecloud at url.
+    fn entry(&self, url: &str) -> Result<Entry, String> {
+        let modifiers = entry_modifiers(url);
+        let modifiers: HashMap<&str, &str> =
+            modifiers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        self.store()?
+            .build(KEYRING_SERVICE, url, Some(&modifiers))
+            .map_err(|e| format!("open the credential for {url}: {e}"))
+    }
+}
+
+/// Windows Credential Manager (Microsoft's CredWrite/CredRead API).
+#[cfg(windows)]
+fn open_store() -> Result<Arc<CredentialStore>, String> {
+    let store: Arc<CredentialStore> = windows_native_keyring_store::Store::new()
+        .map_err(|e| format!("open Windows Credential Manager: {e}"))?;
+    Ok(store)
+}
+
+/// The Secret Service (GNOME Keyring, KDE Wallet) over D-Bus.
+#[cfg(target_os = "linux")]
+fn open_store() -> Result<Arc<CredentialStore>, String> {
+    let store: Arc<CredentialStore> = zbus_secret_service_keyring_store::Store::new()
+        .map_err(|e| format!("open the Secret Service: {e}"))?;
+    Ok(store)
+}
+
+/// Windows: a device token stays on this computer (Local), never roaming with
+/// the user profile, which Credential Manager's default (Enterprise) allows.
+#[cfg(windows)]
+fn entry_modifiers(_url: &str) -> HashMap<&'static str, String> {
+    HashMap::from([("persistence", "Local".to_owned())])
+}
+
+/// Linux: a readable name in the keyring app.
+#[cfg(target_os = "linux")]
+fn entry_modifiers(url: &str) -> HashMap<&'static str, String> {
+    HashMap::from([("label", format!("homecloud device token for {url}"))])
+}
+
+/// Runs blocking work off the main thread.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("background work failed: {e}"))?
+}
+
 fn connection_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
@@ -108,15 +184,8 @@ fn validate_remote_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn keyring_entry(url: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, url).map_err(|e| format!("open the credential store: {e}"))
-}
-
-/// Which agent the app uses. It never fails for a missing file: this PC's
-/// agent is the default.
-#[tauri::command]
-fn connection_settings(app: tauri::AppHandle) -> Result<ConnectionSettings, String> {
-    let path = connection_path(&app)?;
+fn read_settings(app: &tauri::AppHandle) -> Result<ConnectionSettings, String> {
+    let path = connection_path(app)?;
     match std::fs::read(&path) {
         Ok(data) => {
             serde_json::from_slice(&data).map_err(|e| format!("decode {}: {e}", path.display()))
@@ -126,12 +195,19 @@ fn connection_settings(app: tauri::AppHandle) -> Result<ConnectionSettings, Stri
     }
 }
 
+/// Which agent the app uses. It never fails for a missing file: this PC's
+/// agent is the default.
+#[tauri::command]
+async fn connection_settings(app: tauri::AppHandle) -> Result<ConnectionSettings, String> {
+    blocking(move || read_settings(&app)).await
+}
+
 /// The address and token to call the agent with. For this PC's agent they
 /// come from its discovery file, which exists only while it runs; for a paired
 /// device, from the credential store.
 #[tauri::command]
-fn connection_credentials(app: tauri::AppHandle) -> Result<Credentials, String> {
-    match connection_settings(app)? {
+async fn connection_credentials(app: tauri::AppHandle) -> Result<Credentials, String> {
+    blocking(move || match read_settings(&app)? {
         ConnectionSettings::ThisPc => {
             let path = state_dir()?.join(ENDPOINT_FILE);
             let data = std::fs::read(&path)
@@ -144,109 +220,129 @@ fn connection_credentials(app: tauri::AppHandle) -> Result<Credentials, String> 
             })
         }
         ConnectionSettings::Remote { url, .. } => {
-            let token = keyring_entry(&url)?
+            let token = app
+                .state::<Keychain>()
+                .entry(&url)?
                 .get_password()
                 .map_err(|e| format!("read this device's credential for {url}: {e}"))?;
             Ok(Credentials { url, token })
         }
-    }
+    })
+    .await
 }
 
 /// Uses the homecloud at url from now on, with the token pairing returned.
 #[tauri::command]
-fn connect_remote(
+async fn connect_remote(
     app: tauri::AppHandle,
     url: String,
     device_id: String,
     token: String,
 ) -> Result<(), String> {
     validate_remote_url(&url)?;
-    keyring_entry(&url)?
-        .set_password(&token)
-        .map_err(|e| format!("store this device's credential: {e}"))?;
-    let path = connection_path(&app)?;
-    let data = serde_json::to_vec_pretty(&ConnectionSettings::Remote { url, device_id })
-        .map_err(|e| format!("encode the connection: {e}"))?;
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    }
-    // Write beside the file and rename, so a crash never leaves half a file.
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, data).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).map_err(|e| format!("write {}: {e}", path.display()))
+    blocking(move || {
+        app.state::<Keychain>()
+            .entry(&url)?
+            .set_password(&token)
+            .map_err(|e| format!("store this device's credential: {e}"))?;
+        let path = connection_path(&app)?;
+        let data = serde_json::to_vec_pretty(&ConnectionSettings::Remote { url, device_id })
+            .map_err(|e| format!("encode the connection: {e}"))?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+        }
+        // Write beside the file and rename, so a crash never leaves half a file.
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, data).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+        std::fs::rename(&tmp, &path).map_err(|e| format!("write {}: {e}", path.display()))
+    })
+    .await
 }
 
 /// Uses this PC's agent again and forgets the paired device's credential.
 #[tauri::command]
-fn use_this_pc(app: tauri::AppHandle) -> Result<(), String> {
-    if let ConnectionSettings::Remote { url, .. } = connection_settings(app.clone())? {
-        match keyring_entry(&url)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => {}
-            Err(e) => return Err(format!("forget this device's credential: {e}")),
+async fn use_this_pc(app: tauri::AppHandle) -> Result<(), String> {
+    blocking(move || {
+        if let ConnectionSettings::Remote { url, .. } = read_settings(&app)? {
+            match app.state::<Keychain>().entry(&url)?.delete_credential() {
+                Ok(()) | Err(keyring_core::Error::NoEntry) => {}
+                Err(e) => return Err(format!("forget this device's credential: {e}")),
+            }
         }
-    }
-    let path = connection_path(&app)?;
-    match std::fs::remove_file(&path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(format!("remove {}: {e}", path.display())),
-    }
+        let path = connection_path(&app)?;
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("remove {}: {e}", path.display())),
+        }
+    })
+    .await
 }
 
 /// This computer's name, offered as the paired device's name.
 #[tauri::command]
-fn device_name() -> String {
-    #[cfg(windows)]
-    let name = std::env::var("COMPUTERNAME").ok();
-    #[cfg(target_os = "linux")]
-    let name = std::fs::read_to_string("/proc/sys/kernel/hostname").ok();
-    name.map(|n| n.trim().to_owned())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "This computer".to_owned())
+async fn device_name() -> Result<String, String> {
+    blocking(|| {
+        #[cfg(windows)]
+        let name = std::env::var("COMPUTERNAME").ok();
+        #[cfg(target_os = "linux")]
+        let name = std::fs::read_to_string("/proc/sys/kernel/hostname").ok();
+        Ok(name
+            .map(|n| n.trim().to_owned())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "This computer".to_owned()))
+    })
+    .await
 }
 
 /// Starts the agent through the registration `homecloud install` created.
 #[tauri::command]
-fn start_agent() -> Result<(), String> {
-    #[cfg(windows)]
-    let mut cmd = {
-        use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW: no console flashes up for schtasks.
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let mut cmd = Command::new("schtasks");
-        cmd.args(["/Run", "/TN", AGENT_NAME])
-            .creation_flags(CREATE_NO_WINDOW);
-        cmd
-    };
-    #[cfg(target_os = "linux")]
-    let mut cmd = {
-        let mut cmd = Command::new("systemctl");
-        cmd.args(["--user", "start", &format!("{AGENT_NAME}.service")]);
-        cmd
-    };
-    let output = cmd.output().map_err(|e| format!("start the agent: {e}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "start the agent: {} {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-    }
+async fn start_agent() -> Result<(), String> {
+    blocking(|| {
+        #[cfg(windows)]
+        let mut cmd = {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW: no console flashes up for schtasks.
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let mut cmd = Command::new("schtasks");
+            cmd.args(["/Run", "/TN", AGENT_NAME])
+                .creation_flags(CREATE_NO_WINDOW);
+            cmd
+        };
+        #[cfg(target_os = "linux")]
+        let mut cmd = {
+            let mut cmd = Command::new("systemctl");
+            cmd.args(["--user", "start", &format!("{AGENT_NAME}.service")]);
+            cmd
+        };
+        let output = cmd.output().map_err(|e| format!("start the agent: {e}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "start the agent: {} {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ))
+        }
+    })
+    .await
 }
 
 /// Shows an archived file in the system file manager. Only revealing is
 /// offered: nothing is opened or executed.
 #[tauri::command]
-fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let p = Path::new(&path);
-    if !p.is_absolute() || !p.is_file() {
-        return Err(format!("not an existing file: {path}"));
-    }
-    app.opener()
-        .reveal_item_in_dir(p)
-        .map_err(|e| e.to_string())
+async fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    blocking(move || {
+        let p = Path::new(&path);
+        if !p.is_absolute() || !p.is_file() {
+            return Err(format!("not an existing file: {path}"));
+        }
+        app.opener()
+            .reveal_item_in_dir(p)
+            .map_err(|e| e.to_string())
+    })
+    .await
 }
 
 /// Builds and runs the desktop app.
@@ -262,6 +358,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_log::Builder::new().build())
+        .manage(Keychain::default())
         .invoke_handler(tauri::generate_handler![
             connection_settings,
             connection_credentials,

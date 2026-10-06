@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"path"
 	"path/filepath"
 	"sort"
@@ -35,9 +36,8 @@ type DB struct {
 // Open opens (creating if needed) the ledger at file and applies pending migrations.
 func Open(ctx context.Context, file string) (*DB, error) {
 	common := "_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)"
-	base := "file:" + filepath.ToSlash(file)
 
-	w, err := sql.Open("sqlite", base+"?"+common+"&_txlock=immediate")
+	w, err := sql.Open("sqlite", fileURI(file, common+"&_txlock=immediate"))
 	if err != nil {
 		return nil, fmt.Errorf("open ledger writer: %w", err)
 	}
@@ -48,13 +48,25 @@ func Open(ctx context.Context, file string) (*DB, error) {
 		return nil, errors.Join(migrateErr, w.Close())
 	}
 
-	r, err := sql.Open("sqlite", base+"?"+common+"&_pragma=query_only(1)")
+	r, err := sql.Open("sqlite", fileURI(file, common+"&_pragma=query_only(1)"))
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("open ledger reader: %w", err), w.Close())
 	}
 	r.SetMaxOpenConns(readerConns)
 	db.r = r
 	return db, nil
+}
+
+// fileURI is the SQLite URI (https://sqlite.org/uri.html) of the database at
+// file, an absolute path, with query: the path is percent-encoded, so "?",
+// "#" and "%" in a folder name stay part of it, and a Windows drive path is
+// written file:///C:/... .
+func fileURI(file, query string) string {
+	p := filepath.ToSlash(file)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	return (&url.URL{Scheme: "file", Path: p, RawQuery: query}).String()
 }
 
 // Close closes both pools.

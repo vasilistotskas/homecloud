@@ -26,8 +26,7 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
+	"uuid"
 
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 )
@@ -220,7 +219,7 @@ func (a *Authenticator) Pair(ctx context.Context, code, name string) (id, token 
 	if token, err = NewToken(); err != nil {
 		return "", "", err
 	}
-	id = uuid.NewString()
+	id = uuid.New().String()
 	if err := a.devices.AddPairedDevice(ctx, id, name, sha256.Sum256([]byte(token)), a.now()); err != nil {
 		return "", "", fmt.Errorf("pair device: %w", err)
 	}

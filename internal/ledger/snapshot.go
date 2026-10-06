@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 )
 
 // Snapshot writes a consistent, compacted copy of the ledger to dest. The copy
@@ -41,7 +40,7 @@ func (db *DB) Snapshot(ctx context.Context, dest string) (err error) {
 
 // checkFile runs an integrity check on the SQLite database at file, read-only.
 func checkFile(ctx context.Context, file string) (err error) {
-	conn, err := sql.Open("sqlite", "file:"+filepath.ToSlash(file)+"?mode=ro")
+	conn, err := sql.Open("sqlite", fileURI(file, "mode=ro"))
 	if err != nil {
 		return fmt.Errorf("open %s: %w", file, err)
 	}
