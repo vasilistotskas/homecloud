@@ -6,9 +6,9 @@ Personal, private service that makes a local drive the verified home of my iClou
 - Design, decisions, sources and spike findings: [`docs/design.md`](docs/design.md)
 - Status: **P1 done, M1–M4 live, P2 in progress**: iCloud Photos archive with verification,
   weekly integrity re-checks, daily ledger backups, drive health, library browser, local API, web
-  and desktop apps, a monitor of the local iPhone backups, and homecloud's own iCloud sign-in
-  (`homecloud icloud login`, read-only `homecloud drive ls`). The iCloud Drive archive is next.
-  No deletion capability exists yet (P3).
+  and desktop apps, a monitor of the local iPhone backups, homecloud's own iCloud sign-in and the
+  iCloud Drive archive (`Drive/`, never deletes; its app views come next). No deletion capability
+  exists yet (P3).
 
 ## How it works
 
@@ -33,7 +33,7 @@ flowchart TB
     subgraph agent["homecloud-agent · per-user, starts at logon"]
         api["Local API · 127.0.0.1<br/>Connect-RPC, signed /media,<br/>embedded web app"]
         cycle["Cycle<br/>preflight → download → ingest → verify<br/>→ drive health → export → previews"]
-        maint["Maintenance<br/>weekly scrub · daily ledger backup<br/>· daily iPhone backup check"]
+        maint["Maintenance<br/>iCloud Drive sync · weekly scrub<br/>· daily ledger backup · daily iPhone backup check"]
     end
 
     kei["kei (pinned downloader)"]
@@ -41,6 +41,7 @@ flowchart TB
 
     subgraph archive["Archive drive · storage.root"]
         photos[("Photos/ + *.xmp")]
+        drivedir[("Drive/ + .versions/<br/>+ manifest.csv")]
         ledger[("homecloud.db<br/>ledger + audit log")]
         exports[("manifest.csv<br/>README.txt")]
         thumbs[(".cache/thumbnails")]
@@ -64,6 +65,8 @@ flowchart TB
     api --> ledger
     api --> thumbs
     maint -- "re-hash" --> photos
+    drivesvc -- "list · download" --> maint
+    maint -- "verified copies" --> drivedir
     maint -- "checked snapshot" --> backups
     devices --> iphone
     maint -- "read only" --> iphone
@@ -93,12 +96,14 @@ flowchart TD
     ok --> after["Drive health (SMART) · manifest.csv · thumbnails"]
     after --> due{"Maintenance due?"}
     due -- "scrub (weekly)" --> scrub["Re-hash the files confirmed longest ago<br/>(5 %, all within 20 weeks)"]
+    due -- "iCloud Drive (drive.sync_interval)" --> dsync["List iCloud Drive; download new/changed files,<br/>check size + Apple's signature (ZIP check for packages),<br/>keep replaced copies in .versions, record deletions"]
     due -- "backup (daily)" --> snap["Checked ledger snapshot to backup.dir"]
     due -- "iPhone backups (daily)" --> phone["Read every device backup: encrypted, finished,<br/>newer than max_age, readable, not shrunk"]
     due -- no --> wait(["Wait for the next cycle"])
     scrub --> wait
     snap --> wait
     phone --> wait
+    dsync --> wait
 ```
 
 The agent serves a local API ([Connect](https://connectrpc.com), contract in
@@ -165,6 +170,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[notify]` | `server`, `topic` |
 | `[schedule]` | `sync_interval`, `scrub_interval`, `scrub_fraction` |
 | `[backup]` | `dir` (must be on another drive than `storage.root`), `interval`, `keep` |
+| `[drive]` | `sync_interval` (≥ 15m), `workers` (parallel downloads, 1–16) |
 | `[iphone_backup]` | `dirs` (absolute; Apple Devices: `%USERPROFILE%\Apple\MobileSync\Backup`, desktop iTunes: `%APPDATA%\Apple Computer\MobileSync\Backup`), `max_age`, `check_interval`, `max_shrink_percent` |
 
 ## Operating

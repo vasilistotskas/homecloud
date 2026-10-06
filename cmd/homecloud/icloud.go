@@ -165,35 +165,42 @@ func enterCode(ctx context.Context, cmd *cli.Command, l *icloud.Login) error {
 }
 
 // openSession restores the saved session and makes sure it still works.
-func openSession(ctx context.Context) (*icloud.Client, string, error) {
+func openSession(ctx context.Context) (*icloud.Client, *icloud.SessionFile, error) {
 	path, err := icloud.SessionPath()
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
-	saved, err := icloud.LoadSession(path)
+	file, saved, err := icloud.OpenSessionFile(path)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	c, err := icloud.New(icloud.AppleEndpoints, saved, time.Now)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 	if err := c.Refresh(ctx); err != nil {
 		if errors.Is(err, icloud.ErrSignInRequired) {
-			return nil, "", cli.Exit("iCloud sign-in required: run \"homecloud icloud login\"", 1)
+			return nil, nil, cli.Exit("iCloud sign-in required: run \"homecloud icloud login\"", 1)
 		}
-		return nil, "", err
+		return nil, nil, err
 	}
-	return c, path, nil
+	return c, file, nil
+}
+
+// keepSession saves what the session learned, unless a newer sign-in was
+// saved meanwhile (the agent may be syncing).
+func keepSession(c *icloud.Client, file *icloud.SessionFile) error {
+	_, err := file.Save(c.Session())
+	return err
 }
 
 func runICloudStatus(ctx context.Context, cmd *cli.Command) error {
-	c, path, err := openSession(ctx)
+	c, file, err := openSession(ctx)
 	if err != nil {
 		return err
 	}
 	s := c.Session()
-	if err := icloud.SaveSession(path, s); err != nil {
+	if err := keepSession(c, file); err != nil {
 		return err
 	}
 	_, driveErr := c.Service(icloud.ServiceDrive)
@@ -206,7 +213,7 @@ func runICloudStatus(ctx context.Context, cmd *cli.Command) error {
 }
 
 func runDriveLs(ctx context.Context, cmd *cli.Command) error {
-	c, path, err := openSession(ctx)
+	c, file, err := openSession(ctx)
 	if err != nil {
 		return err
 	}
@@ -214,7 +221,7 @@ func runDriveLs(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	if err := icloud.SaveSession(path, c.Session()); err != nil {
+	if err := keepSession(c, file); err != nil {
 		return err
 	}
 	for _, it := range folders[0].Items {

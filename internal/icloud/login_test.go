@@ -486,3 +486,27 @@ func TestSessionSaveAndLoad(t *testing.T) {
 		t.Fatalf("loaded session = %+v, %v", s, err)
 	}
 }
+
+func TestSessionFileNeverOverwritesANewerSignIn(t *testing.T) {
+	path := t.TempDir() + "/" + sessionFile
+	if err := SaveSession(path, Session{TrustToken: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	f, s, err := OpenSessionFile(path)
+	if err != nil || s.TrustToken != "old" {
+		t.Fatalf("OpenSessionFile = %+v, %v", s, err)
+	}
+	if saved, err := f.Save(Session{TrustToken: "refreshed"}); err != nil || !saved {
+		t.Fatalf("Save of an unchanged file: %v, %v", saved, err)
+	}
+	// The owner signs in again while the agent holds the session.
+	if err := SaveSession(path, Session{TrustToken: "new sign-in"}); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err := f.Save(Session{TrustToken: "stale"}); err != nil || saved {
+		t.Fatalf("Save over a newer sign-in: %v, %v", saved, err)
+	}
+	if s, err := LoadSession(path); err != nil || s.TrustToken != "new sign-in" {
+		t.Fatalf("session after the race = %+v, %v", s, err)
+	}
+}

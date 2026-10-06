@@ -85,6 +85,8 @@ func phase(p app.Phase) agentv1.Phase {
 		return agentv1.Phase_PHASE_BACKING_UP_LEDGER
 	case app.PhaseCheckingIPhoneBackups:
 		return agentv1.Phase_PHASE_CHECKING_IPHONE_BACKUPS
+	case app.PhaseSyncingDrive:
+		return agentv1.Phase_PHASE_SYNCING_DRIVE
 	default:
 		return agentv1.Phase_PHASE_UNSPECIFIED
 	}
@@ -129,6 +131,8 @@ func runToProto(r ledger.Run) (*agentv1.Run, error) {
 		out.LedgerBackup, err = ledgerBackupToProto(r.Detail)
 	case app.IPhoneBackupRunKind:
 		out.IphoneBackup, err = iphoneBackupToProto(r.Detail)
+	case app.DriveSyncRunKind:
+		out.DriveSync, err = driveSyncToProto(r.Detail)
 	default:
 		err = fmt.Errorf("unknown run kind %q", r.Kind)
 	}
@@ -144,6 +148,7 @@ var runKinds = map[agentv1.RunKind]string{
 	agentv1.RunKind_RUN_KIND_SCRUB:         app.ScrubRunKind,
 	agentv1.RunKind_RUN_KIND_LEDGER_BACKUP: app.LedgerBackupRunKind,
 	agentv1.RunKind_RUN_KIND_IPHONE_BACKUP: app.IPhoneBackupRunKind,
+	agentv1.RunKind_RUN_KIND_DRIVE_SYNC:    app.DriveSyncRunKind,
 }
 
 func scrubToProto(detail string) (*agentv1.ScrubReport, error) {
@@ -158,6 +163,10 @@ func scrubToProto(detail string) (*agentv1.ScrubReport, error) {
 		Mismatched: int64(rep.Mismatched),
 		Errored:    int64(rep.Errored),
 		Error:      rep.Error,
+		Drive: &agentv1.DriveScrub{
+			Eligible: int64(rep.Drive.Eligible), Checked: int64(rep.Drive.Checked), Passed: int64(rep.Drive.Passed),
+			Damaged: int64(rep.Drive.Damaged), Errored: int64(rep.Drive.Errored),
+		},
 	}, nil
 }
 
@@ -212,6 +221,32 @@ func iphoneBackupToProto(detail string) (*agentv1.IPhoneBackupReport, error) {
 		})
 	}
 	return out, nil
+}
+
+var driveSyncOutcomes = map[string]agentv1.DriveSyncOutcome{
+	app.DriveOutcomeOK:                 agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_OK,
+	app.DriveOutcomePartial:            agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_PARTIAL,
+	app.DriveOutcomeSignInRequired:     agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_SIGN_IN_REQUIRED,
+	app.DriveOutcomeSkippedLowSpace:    agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_SKIPPED_LOW_SPACE,
+	app.DriveOutcomeArchiveUnavailable: agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_ARCHIVE_UNAVAILABLE,
+	app.DriveOutcomeError:              agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_ERROR,
+}
+
+func driveSyncToProto(detail string) (*agentv1.DriveSyncReport, error) {
+	rep, err := app.ParseDriveSyncReport(detail)
+	if err != nil {
+		return nil, err
+	}
+	outcome, err := lookup(driveSyncOutcomes, rep.Outcome, "drive sync outcome")
+	if err != nil {
+		return nil, err
+	}
+	return &agentv1.DriveSyncReport{
+		Outcome: outcome, Listed: int64(rep.Listed), Archived: int64(rep.Archived), Changed: int64(rep.Changed),
+		Repaired: int64(rep.Repaired), Moved: int64(rep.Moved), Deleted: int64(rep.Deleted), Restored: int64(rep.Restored),
+		DownloadedBytes: rep.Bytes, Failed: int64(rep.Failed), Failures: rep.Failures,
+		ManifestRows: int64(rep.ManifestRows), Error: rep.Error,
+	}, nil
 }
 
 func cycleToProto(detail string) (*agentv1.CycleReport, error) {

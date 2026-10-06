@@ -202,6 +202,9 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv1.Overvie
 	if ov.LastIphoneBackup, err = s.lastRun(ctx, app.IPhoneBackupRunKind); err != nil {
 		return nil, err
 	}
+	if ov.LastDriveSync, err = s.lastRun(ctx, app.DriveSyncRunKind); err != nil {
+		return nil, err
+	}
 	if ov.LastCycle != nil {
 		ov.AppleAccount.State = appleState(ov.LastCycle.GetCycle().GetDownload())
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/health"
+	"github.com/vasilistotskas/homecloud/internal/icloud"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
@@ -65,6 +66,10 @@ type Agent struct {
 	checkSpace func() (platform.Space, error)
 	// renderer makes the library browser's thumbnails.
 	renderer *thumbs.Renderer
+	// icloudSession locates homecloud's saved iCloud session, and
+	// icloudEndpoints are Apple's services it talks to.
+	icloudSession   func() (string, error)
+	icloudEndpoints icloud.Endpoints
 
 	hub     *Hub
 	trigger chan struct{}
@@ -86,9 +91,11 @@ func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, k
 		checkSpace: func() (platform.Space, error) {
 			return platform.CheckFreeSpace(cfg.Storage.Root, cfg.Storage.MinFreePercent)
 		},
-		hub:        NewHub(),
-		trigger:    make(chan struct{}, 1),
-		lastAlerts: map[string]time.Time{},
+		icloudSession:   icloud.SessionPath,
+		icloudEndpoints: icloud.AppleEndpoints,
+		hub:             NewHub(),
+		trigger:         make(chan struct{}, 1),
+		lastAlerts:      map[string]time.Time{},
 	}
 }
 
@@ -134,6 +141,8 @@ func (a *Agent) closeInterrupted(ctx context.Context) error {
 			detail = LedgerBackupReport{Error: interruptedError}
 		case IPhoneBackupRunKind:
 			detail = IPhoneBackupReport{Error: interruptedError}
+		case DriveSyncRunKind:
+			detail = DriveSyncReport{Outcome: DriveOutcomeError, Error: interruptedError}
 		default:
 			return fmt.Errorf("run %d has unknown kind %q", r.ID, r.Kind)
 		}

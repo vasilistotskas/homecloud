@@ -294,6 +294,30 @@ func (c *Client) Refresh(ctx context.Context) error {
 	return c.accountLogin(ctx)
 }
 
+// Fetch streams the body of a signed content URL (a file download). The
+// caller closes it.
+func (c *Client) Fetch(ctx context.Context, rawURL string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build download request: %w", err)
+	}
+	req.Header = c.webHeaders()
+	req.Header.Del("Content-Type")
+	req.Header.Set("Accept", "*/*")
+	// A download has no overall deadline: it lasts as long as the file needs.
+	download := *c.http
+	download.Timeout = 0
+	resp, err := download.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", endpointName(rawURL), err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close() //nolint:errcheck,gosec // the status is the error
+		return nil, fmt.Errorf("GET %s: unexpected status %d", endpointName(rawURL), resp.StatusCode)
+	}
+	return resp.Body, nil
+}
+
 // Call sends a JSON request to a web service and decodes a 200 answer into
 // out. An expired session is refreshed once; a session that cannot be
 // refreshed, or a service that needs Advanced Data Protection approval again,

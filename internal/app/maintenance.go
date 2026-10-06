@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vasilistotskas/homecloud/internal/drive"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/verify"
@@ -36,12 +37,24 @@ var (
 // ScrubReport is recorded as the detail of each scrub run.
 type ScrubReport struct {
 	// Eligible is how many verified renditions the archive holds.
-	Eligible   int    `json:"eligible"`
-	Checked    int    `json:"checked"`
-	Passed     int    `json:"passed"`
-	Mismatched int    `json:"mismatched"`
-	Errored    int    `json:"errored"`
-	Error      string `json:"error,omitempty"`
+	Eligible   int `json:"eligible"`
+	Checked    int `json:"checked"`
+	Passed     int `json:"passed"`
+	Mismatched int `json:"mismatched"`
+	Errored    int `json:"errored"`
+	// Drive counts the same for archived iCloud Drive files. A damaged Drive
+	// file is downloaded again by the next Drive sync.
+	Drive DriveScrub `json:"drive"`
+	Error string     `json:"error,omitempty"`
+}
+
+// DriveScrub is a scrub's re-check of archived iCloud Drive files.
+type DriveScrub struct {
+	Eligible int `json:"eligible"`
+	Checked  int `json:"checked"`
+	Passed   int `json:"passed"`
+	Damaged  int `json:"damaged"`
+	Errored  int `json:"errored"`
 }
 
 // LedgerBackupReport is recorded as the detail of each ledger backup run.
@@ -71,11 +84,12 @@ func ParseLedgerBackupReport(detail string) (LedgerBackupReport, error) {
 	return rep, nil
 }
 
-// maintain runs the scrub, the ledger backup and the iPhone backup check when
-// they are due. Each is a run of its own kind, so the schedules survive agent
+// maintain runs the iCloud Drive sync, the scrub, the ledger backup and the
+// iPhone backup check when they are due. Each is a run of its own kind, so the schedules survive agent
 // restarts.
 func (a *Agent) maintain(ctx context.Context) error {
 	return errors.Join(
+		a.runIfDue(ctx, DriveSyncRunKind, a.cfg.Drive.SyncInterval.Std(), PhaseSyncingDrive, a.syncDrive),
 		a.runIfDue(ctx, ScrubRunKind, a.cfg.Schedule.ScrubInterval.Std(), PhaseCheckingArchive, a.scrub),
 		a.runIfDue(ctx, LedgerBackupRunKind, a.cfg.Backup.Interval.Std(), PhaseBackingUpLedger, a.backupLedger),
 		a.runIfDue(ctx, IPhoneBackupRunKind, a.cfg.IPhoneBackup.CheckInterval.Std(), PhaseCheckingIPhoneBackups, a.checkIPhoneBackups),
@@ -148,6 +162,9 @@ func (a *Agent) scrub(ctx context.Context) (any, bool) {
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
+	if err := a.scrubDrive(ctx, &rep.Drive); err != nil {
+		return fail(err)
+	}
 	a.log.Info("scrubbed", "eligible", rep.Eligible, "checked", rep.Checked, "passed", rep.Passed,
 		"mismatched", rep.Mismatched, "errored", rep.Errored)
 	if rep.Mismatched > 0 {
@@ -158,7 +175,60 @@ func (a *Agent) scrub(ctx context.Context) (any, bool) {
 			Tags:     []string{"rotating_light"},
 		})
 	}
-	return rep, rep.Mismatched == 0 && rep.Errored == 0
+	if rep.Drive.Damaged > 0 {
+		a.alert(ctx, notify.Msg{
+			Title:    "homecloud: archived iCloud Drive files changed on disk",
+			Body:     fmt.Sprintf("%d archived iCloud Drive file(s) no longer match their checksum. The next iCloud Drive sync downloads them again and keeps the damaged copies aside. Check the archive drive's health.", rep.Drive.Damaged),
+			Priority: notify.PriorityUrgent,
+			Tags:     []string{"rotating_light"},
+		})
+	}
+	return rep, rep.Mismatched == 0 && rep.Errored == 0 && rep.Drive.Damaged == 0 && rep.Drive.Errored == 0
+}
+
+// scrubDrive re-hashes the same share of archived iCloud Drive files. A copy
+// that no longer matches is marked damaged: the next Drive sync downloads the
+// file again and keeps the damaged copy under .versions.
+func (a *Agent) scrubDrive(ctx context.Context, rep *DriveScrub) error {
+	batch, eligible, err := a.db.DriveScrubBatch(ctx, a.cfg.Schedule.ScrubFraction)
+	if err != nil {
+		return err
+	}
+	rep.Eligible = eligible
+	root := filepath.Join(a.cfg.Storage.Root, drive.Dir)
+	var mu sync.Mutex
+	forEach(ctx, batch, verifyWorkers, func(f ledger.DriveFile) {
+		var outcome error
+		switch err := verify.Content(filepath.Join(root, filepath.FromSlash(f.LocalPath)), uint64(f.Size), f.SHA256); { //nolint:gosec // sizes are never negative
+		case err == nil:
+			outcome = a.db.RecordDriveScrub(ctx, f.DriveWSID, a.now())
+		case errors.Is(err, verify.ErrMismatch):
+			if markErr := a.db.MarkDriveFileDamaged(ctx, f.DriveWSID, err.Error(), a.now()); markErr != nil {
+				outcome = markErr
+			} else {
+				outcome = err
+			}
+		default:
+			outcome = err
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		rep.Checked++
+		switch {
+		case outcome == nil:
+			rep.Passed++
+		case errors.Is(outcome, verify.ErrMismatch):
+			rep.Damaged++
+			a.log.Warn("scrub: iCloud Drive copy damaged; downloaded again next sync", "file", f.DriveWSID, "err", outcome)
+		default:
+			rep.Errored++
+			a.log.Error("scrub error on an iCloud Drive file; checked again next scrub", "file", f.DriveWSID, "err", outcome)
+		}
+	})
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("drive scrub: %w", err)
+	}
+	return nil
 }
 
 // scrubOne returns nil when t still matches, an ErrMismatch-wrapping error

@@ -22,15 +22,15 @@ type ScrubTarget struct {
 // renditions eligible for scrubbing. A non-empty archive always yields at
 // least one target, so every rendition is re-checked within 1/fraction runs.
 func (db *DB) ScrubBatch(ctx context.Context, fraction float64) (_ []ScrubTarget, eligible int, err error) {
-	if fraction <= 0 || fraction > 1 {
-		return nil, 0, fmt.Errorf("scrub fraction %v outside (0, 1]", fraction)
-	}
 	if countErr := db.r.QueryRowContext(ctx, `
 		SELECT count(*) FROM resources r JOIN assets a USING (library, asset_id)
 		WHERE a.state = ? AND r.failure IS NULL`, StateVerified).Scan(&eligible); countErr != nil {
 		return nil, 0, fmt.Errorf("count scrub candidates: %w", countErr)
 	}
-	limit := int(math.Ceil(float64(eligible) * fraction))
+	limit, err := scrubLimit(eligible, fraction)
+	if err != nil {
+		return nil, 0, err
+	}
 
 	rows, err := db.r.QueryContext(ctx, `
 		SELECT r.library, r.asset_id, r.version, r.local_path, r.size_bytes, r.kei_sha256
@@ -70,4 +70,14 @@ func (db *DB) RecordScrub(ctx context.Context, k Key, now time.Time) error {
 		return errors.Join(fmt.Errorf("record scrub for %v: rendition not found", k), nerr)
 	}
 	return nil
+}
+
+// scrubLimit is how many of eligible files one scrub run re-checks: the share
+// fraction, rounded up so that every file is covered within ceil(1/fraction)
+// runs.
+func scrubLimit(eligible int, fraction float64) (int, error) {
+	if fraction <= 0 || fraction > 1 {
+		return 0, fmt.Errorf("scrub fraction %v outside (0, 1]", fraction)
+	}
+	return int(math.Ceil(float64(eligible) * fraction)), nil
 }

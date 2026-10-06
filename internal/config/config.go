@@ -33,6 +33,7 @@ type Config struct {
 	Schedule     Schedule     `toml:"schedule"`
 	Backup       Backup       `toml:"backup"`
 	IPhoneBackup IPhoneBackup `toml:"iphone_backup"`
+	Drive        Drive        `toml:"drive"`
 }
 
 // Storage describes the archive volume.
@@ -89,6 +90,15 @@ type Schedule struct {
 	ScrubInterval Duration `toml:"scrub_interval"`
 	// ScrubFraction is the share of the archive re-hashed per scrub run.
 	ScrubFraction float64 `toml:"scrub_fraction"`
+}
+
+// Drive configures the iCloud Drive archive, kept under <storage.root>/Drive.
+type Drive struct {
+	// SyncInterval is how often iCloud Drive is listed and new or changed
+	// files are archived.
+	SyncInterval Duration `toml:"sync_interval"`
+	// Workers is how many files download at once.
+	Workers int `toml:"workers"`
 }
 
 // IPhoneBackup configures the monitor of local iPhone backups, which Apple's
@@ -256,6 +266,13 @@ func (c *Config) Validate() error {
 	}
 	if c.Backup.Keep < 1 {
 		add("backup.keep must be at least 1, got %d", c.Backup.Keep)
+	}
+
+	if c.Drive.SyncInterval.Std() < 15*time.Minute {
+		add("drive.sync_interval must be at least 15m, got %s", c.Drive.SyncInterval.Std())
+	}
+	if c.Drive.Workers < 1 || c.Drive.Workers > 16 {
+		add("drive.workers must be between 1 and 16, got %d", c.Drive.Workers)
 	}
 
 	ib := c.IPhoneBackup

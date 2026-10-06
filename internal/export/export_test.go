@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -57,5 +58,31 @@ func TestWrite(t *testing.T) {
 	}
 	if left, _ := filepath.Glob(filepath.Join(root, ".*.tmp-*")); len(left) != 0 {
 		t.Fatalf("temp files left: %v", left)
+	}
+}
+
+type driveRows map[string]ledger.DriveFile
+
+func (d driveRows) DriveFiles(context.Context) (map[string]ledger.DriveFile, error) { return d, nil }
+
+func TestWriteDrive(t *testing.T) {
+	root := t.TempDir()
+	at := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	deleted := at.Add(time.Hour)
+	rows, err := WriteDrive(context.Background(), driveRows{
+		"b": {ICloudPath: "iCloud Drive/b.txt", LocalPath: "iCloud Drive/b.txt", Size: 1, SHA256: "s", ArchivedAt: at, DeletedAt: &deleted},
+		"a": {ICloudPath: "iCloud Drive/a:b.txt", LocalPath: "iCloud Drive/a_b.txt", Size: 2, SHA256: "t", ArchivedAt: at, Package: true},
+	}, root)
+	if err != nil || rows != 2 {
+		t.Fatalf("WriteDrive = %d, %v", rows, err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ManifestFile)) //nolint:gosec // test temp path
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(lines[1], "iCloud Drive/a:b.txt,iCloud Drive/a_b.txt,2,t,,true") ||
+		!strings.HasSuffix(lines[2], "2026-10-06T13:00:00Z") {
+		t.Fatalf("manifest:\n%s", data)
 	}
 }

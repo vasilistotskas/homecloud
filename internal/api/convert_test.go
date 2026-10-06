@@ -88,3 +88,23 @@ func TestIPhoneBackupRunToProto(t *testing.T) {
 		t.Fatalf("run = %v", r)
 	}
 }
+
+func TestDriveSyncRunToProto(t *testing.T) {
+	ok := false
+	done := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	r, err := runToProto(ledger.Run{
+		ID: 8, Kind: app.DriveSyncRunKind, StartedAt: done, FinishedAt: &done, OK: &ok,
+		Detail: `{"outcome":"partial","listed":10,"archived":7,"bytes":2048,"failed":1,"failures":["a.pdf: boom"],"manifest_rows":9}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := r.GetDriveSync()
+	if d.GetOutcome() != agentv1.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_PARTIAL || d.GetArchived() != 7 ||
+		d.GetDownloadedBytes() != 2048 || d.GetFailures()[0] != "a.pdf: boom" || d.GetManifestRows() != 9 {
+		t.Fatalf("run = %v", r)
+	}
+	if _, err := runToProto(ledger.Run{ID: 9, Kind: app.DriveSyncRunKind, FinishedAt: &done, OK: &ok, Detail: `{"outcome":"bogus"}`}); err == nil {
+		t.Fatal("an unknown outcome was accepted")
+	}
+}

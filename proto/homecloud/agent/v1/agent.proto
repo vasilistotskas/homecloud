@@ -102,6 +102,8 @@ message Overview {
   // The most recent finished check of the local iPhone backups; absent before
   // the first one.
   Run last_iphone_backup = 10;
+  // The most recent finished iCloud Drive sync; absent before the first one.
+  Run last_drive_sync = 11;
 }
 
 // DriveHealth is what the archive drive reports about itself (SMART) and the
@@ -198,6 +200,8 @@ enum Phase {
   PHASE_BACKING_UP_LEDGER = 7;
   // Inspecting the local iPhone backups.
   PHASE_CHECKING_IPHONE_BACKUPS = 8;
+  // Archiving new and changed iCloud Drive files.
+  PHASE_SYNCING_DRIVE = 9;
 }
 
 // Run is one recorded job execution.
@@ -216,6 +220,8 @@ message Run {
   LedgerBackupReport ledger_backup = 8;
   // Present for kind "iphone_backup" once finished.
   IPhoneBackupReport iphone_backup = 9;
+  // Present for kind "drive_sync" once finished.
+  DriveSyncReport drive_sync = 10;
 }
 
 // RunKind selects one kind of recorded job.
@@ -229,6 +235,8 @@ enum RunKind {
   RUN_KIND_LEDGER_BACKUP = 3;
   // A check of the local iPhone backups (Run.kind "iphone_backup").
   RUN_KIND_IPHONE_BACKUP = 4;
+  // An iCloud Drive sync (Run.kind "drive_sync").
+  RUN_KIND_DRIVE_SYNC = 5;
 }
 
 // ScrubReport is what one re-check of archived files found.
@@ -243,6 +251,58 @@ message ScrubReport {
   int64 errored = 5;
   // Set when the run could not check files at all.
   string error = 6;
+  // The same re-check of archived iCloud Drive files.
+  DriveScrub drive = 7;
+}
+
+// DriveScrub is a scrub's re-check of archived iCloud Drive files.
+message DriveScrub {
+  int64 eligible = 1;
+  int64 checked = 2;
+  int64 passed = 3;
+  // Copies that no longer match; the next Drive sync downloads them again.
+  int64 damaged = 4;
+  int64 errored = 5;
+}
+
+// DriveSyncReport is what one iCloud Drive sync did. Archived files are never
+// deleted: changed files keep their previous copies, deleted ones are recorded.
+message DriveSyncReport {
+  DriveSyncOutcome outcome = 1;
+  // Files listed in iCloud.
+  int64 listed = 2;
+  // Files downloaded for the first time.
+  int64 archived = 3;
+  // Files whose bytes changed in iCloud; the previous copies were kept.
+  int64 changed = 4;
+  // Damaged copies replaced by a fresh download.
+  int64 repaired = 5;
+  // Files moved or renamed in iCloud.
+  int64 moved = 6;
+  // Files newly gone from iCloud; their copies are kept.
+  int64 deleted = 7;
+  // Files back in iCloud after a deletion.
+  int64 restored = 8;
+  int64 downloaded_bytes = 9;
+  // Files that could not be archived this time; retried next sync.
+  int64 failed = 10;
+  repeated string failures = 11;
+  // Files listed in Drive/manifest.csv.
+  int64 manifest_rows = 12;
+  // Set when the sync could not run.
+  string error = 13;
+}
+
+enum DriveSyncOutcome {
+  DRIVE_SYNC_OUTCOME_UNSPECIFIED = 0;
+  DRIVE_SYNC_OUTCOME_OK = 1;
+  // Some files failed and are retried next sync.
+  DRIVE_SYNC_OUTCOME_PARTIAL = 2;
+  // homecloud's iCloud session expired: run "homecloud icloud login".
+  DRIVE_SYNC_OUTCOME_SIGN_IN_REQUIRED = 3;
+  DRIVE_SYNC_OUTCOME_SKIPPED_LOW_SPACE = 4;
+  DRIVE_SYNC_OUTCOME_ARCHIVE_UNAVAILABLE = 5;
+  DRIVE_SYNC_OUTCOME_ERROR = 6;
 }
 
 // LedgerBackupReport is one snapshot of the ledger.

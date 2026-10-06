@@ -66,6 +66,10 @@ dirs = ['@IPHONE_DIR@']
 max_age = "168h"
 check_interval = "24h"
 max_shrink_percent = 50
+
+[drive]
+sync_interval = "6h"
+workers = 4
 `)
 
 func writeConfig(t *testing.T, content string) string {
@@ -95,6 +99,7 @@ func TestLoadValid(t *testing.T) {
 		Notify:   Notify{Server: "https://ntfy.sh", Topic: "hc_0123456789abcdefABCDEF"},
 		Schedule: Schedule{SyncInterval: Duration(time.Hour), ScrubInterval: Duration(168 * time.Hour), ScrubFraction: 0.05},
 		Backup:   Backup{Dir: testBackupDir, Interval: Duration(24 * time.Hour), Keep: 14},
+		Drive:    Drive{SyncInterval: Duration(6 * time.Hour), Workers: 4},
 		IPhoneBackup: IPhoneBackup{
 			Dirs: []string{testIPhoneDir}, MaxAge: Duration(168 * time.Hour),
 			CheckInterval: Duration(24 * time.Hour), MaxShrinkPercent: 50,
@@ -155,6 +160,8 @@ func TestValidate(t *testing.T) {
 		{"relative backup dir", func(c *Config) { c.Backup.Dir = "backups" }, "backup.dir"},
 		{"backup too frequent", func(c *Config) { c.Backup.Interval = Duration(time.Minute) }, "backup.interval"},
 		{"keep no backups", func(c *Config) { c.Backup.Keep = 0 }, "backup.keep"},
+		{"drive syncs too often", func(c *Config) { c.Drive.SyncInterval = Duration(time.Minute) }, "drive.sync_interval"},
+		{"no drive workers", func(c *Config) { c.Drive.Workers = 0 }, "drive.workers"},
 		{"no iphone backup dirs", func(c *Config) { c.IPhoneBackup.Dirs = nil }, "iphone_backup.dirs"},
 		{"relative iphone backup dir", func(c *Config) { c.IPhoneBackup.Dirs = []string{"Backup"} }, "iphone_backup.dirs"},
 		{"iphone max age too short", func(c *Config) { c.IPhoneBackup.MaxAge = Duration(time.Minute) }, "iphone_backup.max_age"},

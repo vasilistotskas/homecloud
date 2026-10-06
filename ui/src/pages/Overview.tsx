@@ -293,6 +293,7 @@ const phaseText: Record<Phase, string> = {
   [Phase.CHECKING_ARCHIVE]: "Re-checking archived files against their checksums…",
   [Phase.BACKING_UP_LEDGER]: "Backing up the archive's records…",
   [Phase.CHECKING_IPHONE_BACKUPS]: "Checking the iPhone backups on this computer…",
+  [Phase.SYNCING_DRIVE]: "Archiving new and changed iCloud Drive files…",
 };
 
 function PhaseBanner({ overview }: { overview: Overview }) {

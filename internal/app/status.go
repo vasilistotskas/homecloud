@@ -22,6 +22,8 @@ const (
 	PhaseBackingUpLedger
 	// PhaseCheckingIPhoneBackups inspects the local iPhone backups.
 	PhaseCheckingIPhoneBackups
+	// PhaseSyncingDrive archives new and changed iCloud Drive files.
+	PhaseSyncingDrive
 )
 
 // InCycle reports whether p is a phase of a sync cycle, as opposed to idle
