@@ -3,6 +3,7 @@ package thumbs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -16,6 +17,47 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
+
+// TestRendersRealSamples renders every file in a folder of real library
+// files (one per format, e.g. HEIC, JPEG, PNG, DNG, WebP, GIF, MOV) as a
+// thumbnail and a preview, checking a pinned FFmpeg build such as the
+// container image's. Opt-in: HOMECLOUD_SAMPLE_DIR, with ffmpeg and ffprobe
+// on PATH.
+func TestRendersRealSamples(t *testing.T) {
+	dir := os.Getenv("HOMECLOUD_SAMPLE_DIR")
+	if dir == "" {
+		t.Skip("HOMECLOUD_SAMPLE_DIR not set")
+	}
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ffprobe, err := exec.LookPath("ffprobe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := New(config.FFmpeg{FFmpeg: ffmpeg, FFprobe: ffprobe, Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, t.TempDir())
+	for i, e := range entries {
+		t.Run(e.Name(), func(t *testing.T) {
+			src := Source{Path: filepath.Join(dir, e.Name()), SHA256: fmt.Sprintf("%064x", i)}
+			for _, size := range []Size{Thumb, Preview} {
+				out, err := r.Ensure(context.Background(), src, size)
+				if err != nil {
+					t.Fatalf("%s: %v", size, err)
+				}
+				probe := platform.Command(context.Background(), ffprobe, //nolint:gosec // test tool from PATH
+					"-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", out)
+				if got, err := probe.Output(); err != nil || strings.TrimSpace(string(got)) != "webp" {
+					t.Fatalf("%s rendered %q, %v", size, got, err)
+				}
+			}
+		})
+	}
+}
 
 func TestRenderArgs(t *testing.T) {
 	got := renderArgs(fileInput("in.HEIC"), "out.webp", "scale=1", true)

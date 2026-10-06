@@ -1,0 +1,11 @@
+# Only sources go into the image build; the image builds the web app itself.
+.git
+**/node_modules
+ui/dist
+desktop
+*.exe
+*.test
+*.out
+coverage.*
+.env
+*.local.toml

@@ -26,6 +26,7 @@ jobs:
       web: ${{ steps.filter.outputs.web }}
       proto: ${{ steps.filter.outputs.proto }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      image: ${{ steps.filter.outputs.image }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dorny/paths-filter@v4.0.3
@@ -61,6 +62,15 @@ jobs:
               - 'desktop/**'
               # The shell packages the built web app.
               - 'ui/**'
+            # The image recipe and its toolchain pins; the code inside it is
+            # checked by the go and web jobs.
+            image:
+              - *workflow
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'go.mod'
+              - 'ui/package.json'
+              - 'ui/pnpm-lock.yaml'
 
   web:
     needs: changes
@@ -235,3 +245,23 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Build
         run: pnpm tauri build --bundles ${{ matrix.bundles }}
+
+  image:
+    needs: changes
+    if: needs.changes.outputs.image == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      # The arm64 runtime stage runs apt under emulation; everything else is
+      # cross-compiled on the runner.
+      - uses: docker/setup-qemu-action@v4.4.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Build linux/amd64 and linux/arm64
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          build-args: VERSION=${{ github.sha }}

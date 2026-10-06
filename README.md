@@ -31,7 +31,7 @@ flowchart TB
     end
     cli["homecloud CLI"]
 
-    subgraph agent["homecloud-agent · per-user, starts at logon"]
+    subgraph agent["homecloud-agent · per-user at logon, or a container on a NAS"]
         api["Local API · 127.0.0.1<br/>Connect-RPC, signed /media,<br/>embedded web app"]
         cycle["Cycle<br/>preflight → download → ingest → verify<br/>→ drive health → export → previews"]
         maint["Maintenance, each on its own interval<br/>iCloud Drive sync · integrity scrub<br/>· ledger backup · iPhone backup check"]
@@ -139,6 +139,30 @@ go build -trimpath -ldflags=-H=windowsgui -o "$dest\homecloud-agent.exe" ./cmd/h
 
 On Linux build both commands without `-ldflags`; `homecloud install` writes a systemd `--user`
 unit (`loginctl enable-linger` keeps it running on a headless host).
+
+### Container (NAS or any Linux host)
+
+`Dockerfile` builds one image for `linux/amd64` and `linux/arm64` with the agent, the CLI, kei
+and FFmpeg, every input pinned (base images by digest, kei by its release checksums, FFmpeg 9.0.2
+from its signed release tarball, with libwebp and zlib only). The agent is the entrypoint.
+
+```sh
+docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(git rev-parse --short HEAD) -t homecloud .
+docker run --rm -v /srv/archive:/archive --entrypoint homecloud homecloud archive init --root /archive   # once; prints storage.archive_id
+```
+
+| Mount | Holds | Config |
+|---|---|---|
+| `/archive` | the archive | `storage.root = '/archive'`, `kei.config = '/archive/kei/config.toml'` |
+| `/config` (read-only) | `config.toml` | found through `HOMECLOUD_CONFIG` |
+| `/state` | the agent's and kei's state, including both iCloud sessions: keep it private | `XDG_STATE_HOME`, `KEI_DATA_DIR` |
+| `/backups` | ledger snapshots, **on another drive than `/archive`** (doctor checks) | `backup.dir = '/backups'` |
+| `/iphone` (read-only) | the iPhone backups to monitor | `iphone_backup.dirs = ['/iphone']` |
+
+Tools: `kei.binary = '/opt/kei/kei'`, `ffmpeg.ffmpeg = '/opt/ffmpeg/bin/ffmpeg'`,
+`ffmpeg.ffprobe = '/opt/ffmpeg/bin/ffprobe'`. Run it as the user that owns the folders
+(`--user UID:GID`). Logs go to stdout (`docker logs`). Archive drive health inside a container
+is not read yet.
 
 ### Desktop app
 
