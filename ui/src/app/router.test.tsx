@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { href, navigate, parseHash, useLocation } from "./router";
@@ -60,9 +60,7 @@ describe("navigate", () => {
 
   it("does nothing for the current location", async () => {
     navigate("/library");
-    await waitFor(() => {
-      expect(window.location.hash).toBe("#/library");
-    });
+    await expect.poll(() => window.location.hash).toBe("#/library");
     const before = window.history.length;
     navigate("/library");
     expect(window.history.length).toBe(before);

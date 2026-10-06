@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   AgentService,
@@ -90,6 +90,28 @@ describe("App", () => {
     expect(window.history.length).toBe(before);
     // A real link: keyboard, middle-click and "open in new tab" work.
     expect(screen.getByRole("link", { name: "View all activity" })).toHaveAttribute("href", "#/activity");
+  });
+
+  it("starts every page at its top", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { assets: { verified: 1n } }) };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+        listDevices: () => ({}),
+      });
+    });
+    const scrollTo = vi.spyOn(window, "scrollTo");
+    render(<App transport={transport} platform={browser} />);
+    await screen.findByText("Your archive is complete and verified");
+    scrollTo.mockClear();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Settings" }));
+    await expect.poll(() => window.location.hash).toBe("#/settings");
+    await expect.poll(() => scrollTo.mock.calls).toContainEqual([0, 0]);
+    scrollTo.mockRestore();
   });
 
   it("puts a failing archive drive first", async () => {

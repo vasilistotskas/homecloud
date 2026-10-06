@@ -3,9 +3,19 @@ import { useSyncExternalStore } from "react";
 /**
  * The app's routes. Routing is hash-based (#/library, #/connect?code=…), so it
  * works the same when the agent serves the app and inside the desktop shell,
- * with no server rewrites.
+ * with no server rewrites. It listens to `hashchange` (Baseline widely
+ * available since 2015) rather than the Navigation API: that is Baseline only
+ * since 2026, and WebKitGTK, the Linux desktop app's engine, enables it by
+ * default only from 2.52 (2.48 and 2.50 ship it off).
  */
-export const paths = ["/", "/library", "/activity", "/quarantine", "/settings", "/connect"] as const;
+export const paths = [
+  "/",
+  "/library",
+  "/activity",
+  "/quarantine",
+  "/settings",
+  "/connect",
+] as const satisfies readonly `/${string}`[];
 export type Path = (typeof paths)[number];
 
 /** Where the app is: a known path (undefined when the hash names no page) and its search parameters. */
