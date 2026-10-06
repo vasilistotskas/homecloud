@@ -219,18 +219,17 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 
 - **Credential:** a device token, 256 random bits, returned once by `PairDevice` in exchange for a one-time login code (the same codes browsers use, so one sign-in model; a code works once, for one purpose). The agent stores only its SHA-256 (migration 0005, `paired_devices`; rows are never deleted, revocation sets `revoked_at`) and looks it up per request, so a revocation takes effect at once. Last-seen is written at most once a minute per device.
 - **Rights:** a device token can do what a browser session can (`KindDevice`), not mint login codes, which stays with the agent token on the agent's host. `PairDevice` is open like `ExchangeLoginCode` (the code is the credential) but sets no cookie, so it needs no CSRF check; the Origin allow-list still applies. A device store that cannot be read answers `Unavailable`, never admits.
-- **Desktop app:** two modes, kept in `connection.json` in the app's config directory: this PC's agent (discovery file and its rotating token, as before) or a paired homecloud (`https://<host>.ts.net`, validated in Rust; the CSP allows `https://*.ts.net` and nothing else remote). The token is kept by the `keyring` crate (v4.2.0: Windows Credential Manager; Secret Service on Linux) under service `homecloud` and the address. The mode is read before the first render, so this-PC-only actions (start the agent, show a file in its folder) are not offered for a NAS. A rejected device token is not retried: the app asks to pair again. **Disconnect** revokes the device there first; **Forget anyway** covers an unreachable homecloud (revoke it there under Paired devices).
+- **Desktop app:** two modes, kept in `connection.json` in the app's config directory: this PC's agent (discovery file and its rotating token, as before) or a paired homecloud (`https://<host>.ts.net`, validated in Rust; the CSP allows `https://*.ts.net` and nothing else remote). The token is kept in the OS credential store through `keyring-core` with one store crate per platform (Windows Credential Manager with Local persistence, so it never roams; the Secret Service on Linux), under service `homecloud` and the address; the store is opened on first use and every command runs off the main thread. The mode is read before the first render, so this-PC-only actions (start the agent, show a file in its folder) are not offered for a NAS. A rejected device token is not retried: the app asks to pair again. **Disconnect** revokes the device there first; **Forget anyway** covers an unreachable homecloud (revoke it there under Paired devices).
 
-## 9. Dependencies (verified 2026-10-05)
+## 9. Dependencies (verified 2026-10-07)
+
+Every non-official dependency was re-evaluated on 2026-10-06/07 (`notes/homecloud/libraries-review.md` in the owner's notepad). Replaced by the standard library or our own code: `google/uuid` (Go 1.27 `uuid`), `urfave/cli` (`flag` + `cmd/homecloud/dispatch.go`), `rs/cors` (`internal/web/cors.go`), `timberjack` (`internal/logfile`), `imagemeta` (`internal/thumbs/dng.go`), `howett.net/plist` (`internal/iphonebackup/plist.go`), `@tanstack/react-router` (`ui/src/app/router.ts`) and the `keyring` crate (its own docs ask applications to link `keyring-core` and store crates instead). Kept where no official alternative exists and our own code would be worse: modernc.org/sqlite, go-toml, godbus/dbus, serde, @tanstack/react-query (required by connect-query) and the lint/format/test tooling.
 
 | Dependency | Version | Source |
 |---|---|---|
 | Go | 1.27.1 | https://go.dev/doc/devel/release |
 | modernc.org/sqlite | v1.60.1 | https://pkg.go.dev/modernc.org/sqlite?tab=versions |
-| github.com/urfave/cli/v3 | v3.14.0 | https://pkg.go.dev/github.com/urfave/cli/v3?tab=versions |
 | github.com/pelletier/go-toml/v2 | v2.4.3 | https://pkg.go.dev/github.com/pelletier/go-toml/v2?tab=versions |
-| github.com/DeRuina/timberjack | v1.4.8 | https://pkg.go.dev/github.com/DeRuina/timberjack?tab=versions |
-| howett.net/plist | v1.0.2-0.20260819222228-760f9a56c6a7 (master; includes the bplist bounds fix #90, newer than v1.0.1) | https://github.com/DHowett/go-plist/commits/main |
 | golang.org/x/sys | v0.48.0 | https://pkg.go.dev/golang.org/x/sys?tab=versions (monitor GO-2026-5024) |
 | golang.org/x/net (publicsuffix) | v0.59.0 | https://proxy.golang.org/golang.org/x/net/@latest (2026-09-08) |
 | golang.org/x/term (password prompt) | v0.46.0 | https://proxy.golang.org/golang.org/x/term/@latest (2026-09-08) |
@@ -238,25 +237,26 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 | github.com/google/go-cmp | v0.7.0 | https://pkg.go.dev/github.com/google/go-cmp?tab=versions |
 | connectrpc.com/connect (+ protoc-gen-connect-go) | v1.21.0 | https://github.com/connectrpc/connect-go/releases |
 | connectrpc.com/cors | v0.1.0 | https://github.com/connectrpc/cors-go/releases |
-| github.com/rs/cors | v1.11.1 | https://proxy.golang.org/github.com/rs/cors/@latest |
 | google.golang.org/protobuf (+ protoc-gen-go) | v1.36.12 | https://github.com/protocolbuffers/protobuf-go/releases |
 | Buf CLI (Go tool) | v1.73.0 | https://github.com/bufbuild/buf/releases |
 | React / react-dom | 19.3.0 | https://www.npmjs.com/package/react |
 | @fluentui/react-components / react-icons | 9.74.9 / 2.0.343 | https://www.npmjs.com/package/@fluentui/react-components |
 | @connectrpc/connect(-web) / connect-query | 2.2.0 / 2.3.1 | https://github.com/connectrpc/connect-es/releases |
 | @bufbuild/protobuf / protoc-gen-es | 2.16.0 | https://github.com/bufbuild/protobuf-es/releases |
-| @tanstack/react-router / react-query | 1.170.41 / 5.104.1 | https://www.npmjs.com/package/@tanstack/react-router |
+| @tanstack/react-query (peer of connect-query) | 5.104.1 | https://www.npmjs.com/package/@tanstack/react-query |
 | Vite / Vitest | 8.3.2 / 5.0.3 | https://www.npmjs.com/package/vite |
 | TypeScript (tsc) / typed lint | 7.0.2 / 6.0.x via @typescript/typescript6 | https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/ |
-| ESLint / typescript-eslint / Prettier | 10.12.0 / 8.71.0 / 3.9.9 | https://www.npmjs.com/package/eslint |
+| ESLint / typescript-eslint / Prettier | 10.12.0 / 8.71.1 / 3.9.9 | https://www.npmjs.com/package/eslint |
 | pnpm / Node.js | 12.9.1 / 24 | https://github.com/pnpm/pnpm/releases |
 | Tauri (crate, CLI, api) | 2.12.1 | https://github.com/tauri-apps/tauri/releases |
 | Tauri plugins: single-instance / window-state / opener / log | 2.5.2 / 2.5.0 / 2.7.0 / 2.10.0 | https://crates.io/crates/tauri-plugin-opener |
+| keyring-core / windows-native-keyring-store / zbus-secret-service-keyring-store (crypto-rust) | 1.0.0 / 1.1.0 / 1.0.1 | https://github.com/open-source-cooperative/keyring-rs/wiki/Keyring |
 | Rust | 1.98.1 | https://blog.rust-lang.org/releases/ |
 | github.com/godbus/dbus/v5 | v5.2.2 | https://github.com/godbus/dbus/releases |
-| github.com/evanoberholster/imagemeta | v1.1.0 | https://github.com/evanoberholster/imagemeta/releases |
 | dorny/paths-filter (CI) | v4.0.3 | https://github.com/dorny/paths-filter/releases |
-| FFmpeg (ffprobe + ffmpeg, one pin) | 9.0.2 (Gyan build) | https://www.gyan.dev/ffmpeg/builds/ |
+| FFmpeg (ffprobe + ffmpeg, one pin) | 9.0.2 (Windows: Gyan build; container: built from the signed release tarball, see Dockerfile) | https://www.gyan.dev/ffmpeg/builds/, https://ffmpeg.org/download.html |
+| Container base images (Dockerfile, pinned by digest) | node:24-trixie-slim, golang:1.27.1-trixie, debian:trixie-slim | https://hub.docker.com/_/debian |
+| tailscale/tailscale (deploy/compose.yaml, pinned by digest) | v1.102.5 | https://github.com/tailscale/tailscale/releases |
 | golangci-lint | v2.14.0 | https://github.com/golangci/golangci-lint/releases |
 | kei | 0.24.1 | https://github.com/rhoopr/kei/releases/tag/v0.24.1 |
 | pyicloud *(planned, P3 sidecar)* | 2.7.0 | https://pypi.org/project/pyicloud/ |
