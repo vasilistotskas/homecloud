@@ -139,8 +139,7 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 }
 
 func code(err error) connect.Code {
-	var ce *connect.Error
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*connect.Error](err); ok {
 		return ce.Code()
 	}
 	return connect.CodeUnknown
@@ -345,7 +344,7 @@ func TestDesktopPreflight(t *testing.T) {
 	}
 	req.Header.Set("Origin", "http://tauri.localhost")
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
-	// Browsers send the list lowercased and sorted (Fetch standard), which rs/cors relies on.
+	// As WebView2 sends it: lowercase, sorted, comma-separated (Fetch standard).
 	req.Header.Set("Access-Control-Request-Headers", "authorization,connect-protocol-version,content-type")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -357,6 +356,9 @@ func TestDesktopPreflight(t *testing.T) {
 	}
 	if got := strings.ToLower(res.Header.Get("Access-Control-Allow-Headers")); !strings.Contains(got, "authorization") {
 		t.Fatalf("allow-headers = %q, want authorization", got)
+	}
+	if res.StatusCode != http.StatusNoContent {
+		t.Fatalf("preflight status = %d, want 204", res.StatusCode)
 	}
 }
 

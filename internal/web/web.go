@@ -27,7 +27,6 @@ import (
 
 	"connectrpc.com/connect"
 	connectcors "connectrpc.com/cors"
-	"github.com/rs/cors"
 
 	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2/agentv2connect"
 	"github.com/vasilistotskas/homecloud/internal/auth"
@@ -94,15 +93,14 @@ func Handler(o Options) (http.Handler, error) {
 	mux.Handle("GET /assets/", app)
 	mux.Handle("GET "+media.Prefix, o.Media)
 
-	c := cors.New(cors.Options{
-		AllowedOrigins:      DesktopOrigins,
-		AllowedMethods:      connectcors.AllowedMethods(),
-		AllowedHeaders:      append(connectcors.AllowedHeaders(), "Authorization"),
-		ExposedHeaders:      connectcors.ExposedHeaders(),
-		MaxAge:              int(corsMaxAge / time.Second),
-		AllowPrivateNetwork: true,
-	})
-	return checkHost(hosts, checkOrigin(origins, c.Handler(secureHeaders(mux)))), nil
+	cors := newCORSPolicy(
+		DesktopOrigins,
+		connectcors.AllowedMethods(),
+		append(connectcors.AllowedHeaders(), "Authorization"),
+		connectcors.ExposedHeaders(),
+		corsMaxAge,
+	)
+	return checkHost(hosts, checkOrigin(origins, cors.handler(secureHeaders(mux)))), nil
 }
 
 func checkHost(allowed []string, next http.Handler) http.Handler {
