@@ -4,9 +4,10 @@
 //
 // A backup directory holds one folder per device, named by the device's UDID.
 // Each holds Info.plist (XML), Manifest.plist and Status.plist (binary), the
-// encrypted Manifest.db and the backed-up files. Folders named
-// <UDID>-yyyymmdd-hhmmss are archived copies the user made; they are reported
-// but not judged.
+// encrypted Manifest.db and the backed-up files; while a backup is written,
+// Apple's tool works in a Snapshot subfolder. Folders named
+// <UDID>-yyyymmdd-hhmmss are copies the user archived; they are counted, not
+// read.
 package iphonebackup
 
 import (
@@ -17,6 +18,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -38,22 +40,22 @@ type Backup struct {
 	SnapshotState string
 	// CompletedAt is Status.plist "Date": when the backup last finished.
 	CompletedAt time.Time
-	// InProgress is set while a backup is being written: Apple's tool works in
-	// a Snapshot subfolder.
-	InProgress bool
-	// Files and Bytes count every file in the folder.
+	// InProgress is set while a backup is being written (a Snapshot
+	// subfolder exists); SnapshotActivity is the newest write in it.
+	InProgress       bool
+	SnapshotActivity time.Time
+	// Files and Bytes count the folder's files, from their metadata.
 	Files, Bytes int64
-	// Unreadable lists files that could not be read in full.
-	Unreadable []string
+	// Unlisted names files or folders whose metadata could not be read.
+	Unlisted []string
 	// Err is set when the folder is not a valid backup (missing or malformed
-	// plists, or a UDID that does not match the folder name).
+	// plists, or a UDID that does not match the folder name). It is never set
+	// while a backup is in progress: the files are then still being written.
 	Err error
 }
 
-// Archived is a backup the user archived in Apple's tool (a frozen copy).
-type Archived struct {
-	Dir, UDID string
-}
+// archivedName matches a copy the user archived in Apple's tool.
+var archivedName = regexp.MustCompile(`^.+-\d{8}-\d{6}$`)
 
 // Plist keys, as written by Apple's backup tools (libimobiledevice
 // tools/idevicebackup2.c; The Apple Wiki "ITunes Backup").
@@ -75,95 +77,99 @@ type statusPlist struct {
 // snapshotDir is where a backup in progress is written.
 const snapshotDir = "Snapshot"
 
-// Scan inspects every device folder in dir. A missing dir means no backup was
-// ever made there, which is not an error. Reading every file in full catches
-// disk errors under the backup.
-func Scan(ctx context.Context, dir string) (current []Backup, archived []Archived, err error) {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, nil
+// Scan inspects every device folder in dir and counts the archived copies. A
+// missing dir means no backup was ever made there, which is not an error.
+// Only metadata is read here; ReadAll reads a folder's bytes.
+func Scan(ctx context.Context, dir string) (current []Backup, archived int, _ error) {
+	// Only a missing directory means "no backup yet": on Windows listing a
+	// file also reports not-found, so the path is checked first.
+	switch info, err := os.Stat(dir); {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, 0, nil
+	case err != nil:
+		return nil, 0, fmt.Errorf("check %s: %w", dir, err)
+	case !info.IsDir():
+		return nil, 0, fmt.Errorf("%s is not a folder", dir)
 	}
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list %s: %w", dir, err)
+		return nil, 0, fmt.Errorf("list %s: %w", dir, err)
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		folder := filepath.Join(dir, e.Name())
-		b := inspect(ctx, folder)
+		if archivedName.MatchString(e.Name()) {
+			archived++
+			continue
+		}
+		b := inspect(ctx, filepath.Join(dir, e.Name()))
 		if err := ctx.Err(); err != nil {
-			return nil, nil, fmt.Errorf("scan %s: %w", dir, err)
+			return nil, 0, fmt.Errorf("scan %s: %w", dir, err)
 		}
-		switch {
-		case b.Err == nil && strings.EqualFold(e.Name(), b.UDID):
-			current = append(current, b)
-		case b.Err == nil && strings.HasPrefix(strings.ToUpper(e.Name()), strings.ToUpper(b.UDID)+"-"):
-			archived = append(archived, Archived{Dir: folder, UDID: b.UDID})
-		case b.Err == nil:
-			b.Err = fmt.Errorf("folder name %q does not match the device's UDID %s", e.Name(), b.UDID)
-			current = append(current, b)
-		default:
-			current = append(current, b)
-		}
+		current = append(current, b)
 	}
 	return current, archived, nil
 }
 
-// inspect reads one backup folder. Problems are reported in Backup.Err or
-// Backup.Unreadable rather than returned, so one bad folder never hides the
-// others.
+// inspect reads one backup folder's plists and file sizes. Problems are
+// reported in the Backup rather than returned, so one bad folder never hides
+// the others.
 func inspect(ctx context.Context, dir string) Backup {
 	b := Backup{Dir: dir}
-	var info infoPlist
-	if err := readPlist(filepath.Join(dir, "Info.plist"), &info); err != nil {
+	activity, inProgress, err := snapshotActivity(ctx, filepath.Join(dir, snapshotDir))
+	if err != nil {
 		b.Err = err
 		return b
 	}
-	if info.UniqueIdentifier == "" {
-		b.Err = fmt.Errorf("%s: Info.plist has no Unique Identifier", dir)
+	b.InProgress, b.SnapshotActivity = inProgress, activity
+
+	// While a backup is written its plists may be missing or half written:
+	// read what is there and judge nothing else.
+	var info infoPlist
+	if err := readPlist(filepath.Join(dir, "Info.plist"), &info); err != nil {
+		if !b.InProgress {
+			b.Err = err
+		}
 		return b
 	}
 	b.UDID, b.DeviceName, b.ProductVersion = info.UniqueIdentifier, info.DeviceName, info.ProductVersion
-
-	if _, err := os.Stat(filepath.Join(dir, snapshotDir)); err == nil {
-		b.InProgress = true
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		b.Err = fmt.Errorf("check %s: %w", snapshotDir, err)
+	if b.InProgress {
+		return b
+	}
+	switch {
+	case info.UniqueIdentifier == "":
+		b.Err = fmt.Errorf("%s: Info.plist has no Unique Identifier", dir)
+		return b
+	case !strings.EqualFold(filepath.Base(dir), info.UniqueIdentifier):
+		b.Err = fmt.Errorf("folder name %q does not match the device's UDID %s", filepath.Base(dir), info.UniqueIdentifier)
 		return b
 	}
 
-	// A device's first backup writes Manifest.plist and Status.plist only as
-	// it goes, so while one is in progress their absence is expected.
 	var manifest manifestPlist
-	switch err := readPlist(filepath.Join(dir, "Manifest.plist"), &manifest); {
-	case errors.Is(err, fs.ErrNotExist) && b.InProgress:
-	case err != nil:
+	if err := readPlist(filepath.Join(dir, "Manifest.plist"), &manifest); err != nil {
 		b.Err = err
 		return b
-	case manifest.IsEncrypted == nil:
+	}
+	if manifest.IsEncrypted == nil {
 		b.Err = fmt.Errorf("%s: Manifest.plist has no IsEncrypted", dir)
 		return b
-	default:
-		b.Encrypted = *manifest.IsEncrypted
 	}
+	b.Encrypted = *manifest.IsEncrypted
 
 	var status statusPlist
-	switch err := readPlist(filepath.Join(dir, "Status.plist"), &status); {
-	case errors.Is(err, fs.ErrNotExist) && b.InProgress:
-	case err != nil:
+	if err := readPlist(filepath.Join(dir, "Status.plist"), &status); err != nil {
 		b.Err = err
 		return b
-	default:
-		b.SnapshotState, b.CompletedAt = status.SnapshotState, status.Date
 	}
+	b.SnapshotState, b.CompletedAt = status.SnapshotState, status.Date
 
 	if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("scan cancelled: %w", err)
 		}
 		if walkErr != nil {
-			b.Unreadable = append(b.Unreadable, path)
+			b.Unlisted = append(b.Unlisted, path)
 			if d != nil && d.IsDir() {
 				return fs.SkipDir
 			}
@@ -172,17 +178,102 @@ func inspect(ctx context.Context, dir string) Backup {
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		n, err := readAll(path)
-		b.Files++
-		b.Bytes += n
+		info, err := d.Info()
 		if err != nil {
-			b.Unreadable = append(b.Unreadable, path)
+			b.Unlisted = append(b.Unlisted, path)
+			return nil //nolint:nilerr // recorded in Unlisted
 		}
+		b.Files++
+		b.Bytes += info.Size()
 		return nil
 	}); err != nil {
 		b.Err = fmt.Errorf("walk %s: %w", dir, err)
 	}
 	return b
+}
+
+// snapshotActivity reports whether dir (a backup's Snapshot folder) exists
+// and the newest modification time in it.
+func snapshotActivity(ctx context.Context, dir string) (time.Time, bool, error) {
+	info, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("check %s: %w", dir, err)
+	}
+	newest := info.ModTime()
+	// Files may vanish while the backup runs; what remains is enough.
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, walkErr error) error { //nolint:errcheck // best view of a folder being written
+		if err := ctx.Err(); err != nil {
+			return err //nolint:wrapcheck // stops the walk; checked by the caller
+		}
+		if walkErr != nil {
+			return nil //nolint:nilerr // entries vanish while the backup is written
+		}
+		if fi, err := d.Info(); err == nil && fi.ModTime().After(newest) {
+			newest = fi.ModTime()
+		}
+		return nil
+	})
+	return newest, true, nil
+}
+
+// readBuffer is the chunk ReadAll reads files in; between chunks it checks for
+// cancellation.
+const readBuffer = 1 << 20
+
+// ReadAll reads every file of a backup folder to its end and returns those
+// that could not be read in full: the check that the disk still delivers the
+// backup. It stops when ctx is cancelled.
+func ReadAll(ctx context.Context, dir string) (unreadable []string, _ error) {
+	buf := make([]byte, readBuffer)
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return fmt.Errorf("read cancelled: %w", ctxErr)
+		}
+		if walkErr != nil {
+			unreadable = append(unreadable, path)
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		if readErr := readFile(ctx, path, buf); readErr != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("read cancelled: %w", ctx.Err())
+			}
+			unreadable = append(unreadable, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+	return unreadable, nil
+}
+
+func readFile(ctx context.Context, path string, buf []byte) error {
+	f, err := os.Open(path) //nolint:gosec // a file of a configured backup folder
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close() //nolint:errcheck // read-only handle
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		_, err := f.Read(buf)
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+	}
 }
 
 // readPlist decodes the XML or binary plist at path into v.
@@ -195,18 +286,4 @@ func readPlist(path string, v any) error {
 		return fmt.Errorf("decode %s: %w", path, err)
 	}
 	return nil
-}
-
-// readAll reads the file at path to its end and returns how many bytes it holds.
-func readAll(path string) (int64, error) {
-	f, err := os.Open(path) //nolint:gosec // a file of a configured backup folder
-	if err != nil {
-		return 0, fmt.Errorf("open %s: %w", path, err)
-	}
-	defer f.Close() //nolint:errcheck // read-only handle
-	n, err := io.Copy(io.Discard, f)
-	if err != nil {
-		return n, fmt.Errorf("read %s: %w", path, err)
-	}
-	return n, nil
 }

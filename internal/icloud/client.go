@@ -34,11 +34,8 @@ const clientID = "d39ba9916b7251055b22c7f910e2ea796ee65e98b2ddecea8f5dde8d9d1a81
 // userAgent is a current desktop browser: Apple's endpoints serve web clients.
 const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
-const (
-	requestTimeout = time.Minute
-	// maxBody bounds a JSON response read into memory.
-	maxBody = 32 << 20
-)
+// maxBody bounds a JSON response read into memory.
+const maxBody = 32 << 20
 
 // Web service keys of the account's service map.
 const (
@@ -118,8 +115,9 @@ type Client struct {
 	session Session
 }
 
-// New returns a client for the saved session s ({} before the first sign-in).
-func New(ep Endpoints, s Session, now func() time.Time) (*Client, error) {
+// New returns a client for the saved session s ({} before the first sign-in)
+// whose calls each take at most timeout.
+func New(ep Endpoints, s Session, timeout time.Duration, now func() time.Time) (*Client, error) {
 	j, err := restoreJar(s.Cookies, now)
 	if err != nil {
 		return nil, err
@@ -129,7 +127,7 @@ func New(ep Endpoints, s Session, now func() time.Time) (*Client, error) {
 		// Calls carry tokens in their bodies: a redirect is never followed
 		// (it ends as an unexpected status), so they reach only Apple's endpoints.
 		http: &http.Client{
-			Jar: j, Timeout: requestTimeout,
+			Jar: j, Timeout: timeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 		jar:     j,

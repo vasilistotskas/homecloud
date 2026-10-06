@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -62,7 +63,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	if out, runErr := makeSource.CombinedOutput(); runErr != nil {
 		t.Fatalf("make source: %v %s", runErr, out)
 	}
-	r := New(config.FFmpeg{FFmpeg: ffmpeg, FFprobe: ffprobe}, filepath.Join(dir, "cache"))
+	r := New(config.FFmpeg{FFmpeg: ffmpeg, FFprobe: ffprobe, Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, filepath.Join(dir, "cache"))
 	sha := strings.Repeat("ab", 32)
 	path, err := r.Ensure(context.Background(), Source{Path: src, SHA256: sha}, Thumb)
 	if err != nil {
@@ -115,7 +116,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 
 func TestPruneKeepsOnlyCurrentSpecs(t *testing.T) {
 	dir := t.TempDir()
-	r := New(config.FFmpeg{}, dir)
+	r := New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, dir)
 	sum := strings.Repeat("ef", 32)
 	current := r.CachePath(sum, Thumb)
 	stale := filepath.Join(dir, "preview-00000000", sum[:2], sum+".webp")
@@ -145,7 +146,7 @@ func TestPruneKeepsOnlyCurrentSpecs(t *testing.T) {
 		}
 	}
 
-	if removed, err := New(config.FFmpeg{}, filepath.Join(dir, "missing")).Prune(); err != nil || removed != 0 {
+	if removed, err := New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, filepath.Join(dir, "missing")).Prune(); err != nil || removed != 0 {
 		t.Fatalf("Prune of a missing cache = %d, %v", removed, err)
 	}
 }

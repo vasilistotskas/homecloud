@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
@@ -15,7 +16,8 @@ type agentLogs struct {
 	agent, kei io.Writer
 }
 
-func openLogs(string) *agentLogs {
+// openLogs ignores the [logs] settings: journald rotates by itself.
+func openLogs(string, config.Logs) *agentLogs {
 	return &agentLogs{agent: os.Stderr, kei: os.Stderr}
 }
 

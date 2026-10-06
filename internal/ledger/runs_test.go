@@ -182,32 +182,3 @@ func TestLastCompletedRunSkipsRunsThatCouldNotWork(t *testing.T) {
 		t.Fatalf("no runs of kind: %v, want ErrNotFound", err)
 	}
 }
-
-func TestRecordIPhoneBackupStatePerDevice(t *testing.T) {
-	db, _ := openTemp(t)
-	ctx := context.Background()
-	steps := []struct {
-		udid, state, wantPrev string
-		wantChanged           bool
-	}{
-		{"UDID-A", "ok", "", true},
-		{"UDID-B", "stale", "", true}, // another device has its own history
-		{"UDID-A", "ok", "ok", false},
-		{"UDID-A", "unencrypted", "ok", true},
-		{"UDID-B", "stale", "stale", false},
-	}
-	for i, s := range steps {
-		prev, changed, err := db.RecordIPhoneBackupState(ctx, s.udid, "iPhone", s.state, nil, t0.Add(time.Duration(i)*time.Hour))
-		if err != nil || prev != s.wantPrev || changed != s.wantChanged {
-			t.Fatalf("step %d (%s %s): prev=%q changed=%v err=%v", i, s.udid, s.state, prev, changed, err)
-		}
-	}
-	// Drive health has no subject and is unaffected by device events.
-	if prev, changed, err := db.RecordDriveHealth(ctx, "ok", nil, t0); err != nil || prev != "" || !changed {
-		t.Fatalf("drive health after device events: prev=%q changed=%v err=%v", prev, changed, err)
-	}
-	events, err := db.Events(ctx, []string{EventIPhoneBackupChanged}, 0, 10)
-	if err != nil || len(events) != 3 {
-		t.Fatalf("backup events = %d, %v; want 3", len(events), err)
-	}
-}

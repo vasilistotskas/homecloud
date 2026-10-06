@@ -7,22 +7,21 @@ import (
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
+	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 )
 
 // IPhoneBackupRunKind is the ledger run kind of an iPhone backup check.
 const IPhoneBackupRunKind = "iphone_backup"
 
-// iphoneBaselineRuns bounds how many past checks are searched for a device's
-// last healthy backup size.
-const iphoneBaselineRuns = 50
-
 // IPhoneBackupReport is recorded as the detail of each iPhone backup check.
 type IPhoneBackupReport struct {
 	Devices []IPhoneBackupDevice `json:"devices"`
 	// Archived counts frozen copies the user archived in Apple's tool.
-	Archived int    `json:"archived"`
-	Error    string `json:"error,omitempty"`
+	Archived int `json:"archived"`
+	// DirErrors lists backup directories that could not be checked.
+	DirErrors []string `json:"dir_errors,omitempty"`
+	Error     string   `json:"error,omitempty"`
 }
 
 // IPhoneBackupDevice is one device's current backup and its verdict.
@@ -37,6 +36,8 @@ type IPhoneBackupDevice struct {
 	Bytes          int64              `json:"bytes"`
 	State          iphonebackup.State `json:"state"`
 	Reasons        []string           `json:"reasons,omitempty"`
+	// LastFullReadAt is when every file was last read in full.
+	LastFullReadAt *time.Time `json:"last_full_read_at,omitempty"`
 }
 
 // ParseIPhoneBackupReport decodes the detail recorded for a finished check.
@@ -48,51 +49,55 @@ func ParseIPhoneBackupReport(detail string) (IPhoneBackupReport, error) {
 	return rep, nil
 }
 
-// checkIPhoneBackups inspects every configured backup directory, judges each
-// device's current backup, records state changes and alerts on problems. It is
-// healthy when at least one device has a backup and none has a problem.
+// checkIPhoneBackups inspects every configured backup directory and judges
+// each device's current backup against what the ledger remembers of its
+// folder; every iphone_backup.read_interval it also reads every file. State
+// changes are recorded and problems alerted. The check is healthy when at
+// least one device has a backup, every directory could be checked, and no
+// backup has a problem.
 func (a *Agent) checkIPhoneBackups(ctx context.Context) (any, bool) {
 	var rep IPhoneBackupReport
-	baseline, err := a.iphoneBaselines(ctx)
+	records, err := a.db.IPhoneBackupRecords(ctx)
 	if err != nil {
 		rep.Error = err.Error()
 		return rep, false
 	}
-	policy := iphonebackup.Policy{
-		MaxAge:           a.cfg.IPhoneBackup.MaxAge.Std(),
-		MaxShrinkPercent: a.cfg.IPhoneBackup.MaxShrinkPercent,
-	}
 	healthy := true
 	for _, dir := range a.cfg.IPhoneBackup.Dirs {
 		current, archived, err := iphonebackup.Scan(ctx, dir)
-		if err != nil {
-			a.log.Error("iphone backup check failed", "dir", dir, "err", err)
-			rep.Error = err.Error()
+		if ctx.Err() != nil {
+			rep.Error = ctx.Err().Error()
 			return rep, false
 		}
-		rep.Archived += len(archived)
+		if err != nil {
+			a.log.Error("iphone backup directory could not be checked", "dir", dir, "err", err)
+			rep.DirErrors = append(rep.DirErrors, err.Error())
+			healthy = false
+			continue
+		}
+		rep.Archived += archived
 		for _, b := range current {
-			v := iphonebackup.Evaluate(b, baseline[b.UDID], policy, a.now())
-			d := IPhoneBackupDevice{
-				UDID: b.UDID, Name: b.DeviceName, ProductVersion: b.ProductVersion, Dir: b.Dir,
-				Encrypted: b.Encrypted, Files: b.Files, Bytes: b.Bytes,
-				State: v.State, Reasons: v.Reasons,
-			}
-			if !b.CompletedAt.IsZero() {
-				d.CompletedAt = &b.CompletedAt
-			}
-			rep.Devices = append(rep.Devices, d)
-			if _, _, err := a.db.RecordIPhoneBackupState(ctx, d.UDID, d.Name, string(d.State), d.Reasons, a.now()); err != nil {
+			d, err := a.judgeIPhoneBackup(ctx, b, records[b.Dir])
+			if err != nil {
 				rep.Error = err.Error()
 				return rep, false
 			}
-			if v.State != iphonebackup.StateOK && v.State != iphonebackup.StateInProgress {
+			rep.Devices = append(rep.Devices, d)
+			if !d.State.Healthy() {
 				healthy = false
-				a.alertIPhoneBackup(ctx, d.UDID, v)
+				a.alertIPhoneBackup(ctx, d.Dir, d.State)
 			}
 		}
 	}
-	if len(rep.Devices) == 0 {
+	switch {
+	case len(rep.DirErrors) > 0:
+		a.alertRepeated(ctx, alertIPhoneCheck, notify.Msg{
+			Title:    "homecloud: iPhone backups could not be checked",
+			Body:     "A configured iPhone backup folder could not be read. Check that it exists and that this account can read it.",
+			Priority: notify.PriorityHigh,
+			Tags:     []string{"iphone"},
+		})
+	case len(rep.Devices) == 0:
 		healthy = false
 		a.alertRepeated(ctx, alertIPhoneNone, notify.Msg{
 			Title:    "homecloud: no iPhone backup on this computer",
@@ -101,50 +106,68 @@ func (a *Agent) checkIPhoneBackups(ctx context.Context) (any, bool) {
 			Tags:     []string{"iphone"},
 		})
 	}
-	a.log.Info("iphone backups checked", "devices", len(rep.Devices), "archived", rep.Archived, "healthy", healthy)
+	a.log.Info("iphone backups checked", "devices", len(rep.Devices), "archived", rep.Archived,
+		"dir_errors", len(rep.DirErrors), "healthy", healthy)
 	return rep, healthy
 }
 
-// alertIPhoneBackup alerts once a day per device and problem. The message
-// names neither the device nor its identifiers: ntfy topics are public.
-func (a *Agent) alertIPhoneBackup(ctx context.Context, udid string, v iphonebackup.Verdict) {
+// judgeIPhoneBackup reads the folder in full when that is due, judges it, and
+// saves what the ledger remembers of it.
+func (a *Agent) judgeIPhoneBackup(ctx context.Context, b iphonebackup.Backup, rec ledger.IPhoneBackupRecord) (IPhoneBackupDevice, error) {
+	now := a.now()
+	if b.Err == nil && !b.InProgress &&
+		(rec.LastFullReadAt == nil || now.Sub(*rec.LastFullReadAt) >= a.cfg.IPhoneBackup.ReadInterval.Std()) {
+		unreadable, err := iphonebackup.ReadAll(ctx, b.Dir)
+		if err != nil {
+			return IPhoneBackupDevice{}, err
+		}
+		rec.LastFullReadAt, rec.UnreadableFiles = &now, len(unreadable)
+	}
+	prev := iphonebackup.Record{Baseline: rec.BaselineBytes, PendingShrink: rec.PendingShrinkBytes}
+	if rec.JudgedCompletedAt != nil {
+		prev.Judged = *rec.JudgedCompletedAt
+	}
+	v, next := iphonebackup.Judge(b, rec.UnreadableFiles, prev, iphonebackup.Policy{
+		MaxAge:           a.cfg.IPhoneBackup.MaxAge.Std(),
+		StalledAfter:     a.cfg.IPhoneBackup.StalledAfter.Std(),
+		MaxShrinkPercent: a.cfg.IPhoneBackup.MaxShrinkPercent,
+	}, now)
+
+	rec.Folder, rec.UDID, rec.DeviceName, rec.State = b.Dir, b.UDID, b.DeviceName, string(v.State)
+	rec.BaselineBytes, rec.PendingShrinkBytes = next.Baseline, next.PendingShrink
+	if !next.Judged.IsZero() {
+		rec.JudgedCompletedAt = &next.Judged
+	}
+	if err := a.db.SaveIPhoneBackup(ctx, rec, v.Reasons, now); err != nil {
+		return IPhoneBackupDevice{}, err
+	}
+	d := IPhoneBackupDevice{
+		UDID: b.UDID, Name: b.DeviceName, ProductVersion: b.ProductVersion, Dir: b.Dir,
+		Encrypted: b.Encrypted, Files: b.Files, Bytes: b.Bytes,
+		State: v.State, Reasons: v.Reasons, LastFullReadAt: rec.LastFullReadAt,
+	}
+	if !b.CompletedAt.IsZero() {
+		d.CompletedAt = &b.CompletedAt
+	}
+	return d, nil
+}
+
+// alertIPhoneBackup alerts once per notify.repeat_every per backup folder and
+// problem. The message names neither the device nor its identifiers: ntfy
+// topics are public.
+func (a *Agent) alertIPhoneBackup(ctx context.Context, folder string, s iphonebackup.State) {
 	body := map[iphonebackup.State]string{
 		iphonebackup.StateInvalid:     "A local iPhone backup folder is not a readable backup.",
 		iphonebackup.StateUnreadable:  "Some files of a local iPhone backup could not be read from disk.",
 		iphonebackup.StateUnencrypted: "A local iPhone backup is not encrypted. Turn on \"Encrypt local backup\" in Apple's Devices app.",
-		iphonebackup.StateIncomplete:  "The last local iPhone backup did not finish.",
+		iphonebackup.StateIncomplete:  "A local iPhone backup did not finish.",
 		iphonebackup.StateStale:       fmt.Sprintf("A local iPhone backup is older than %s. Connect the iPhone to this computer or check Apple's Devices app.", iphonebackup.Span(a.cfg.IPhoneBackup.MaxAge.Std())),
 		iphonebackup.StateShrunk:      "A local iPhone backup is much smaller than before. Check it in Apple's Devices app.",
-	}[v.State]
-	a.alertRepeated(ctx, alertIPhonePrefix+udid+"/"+string(v.State), notify.Msg{
+	}[s]
+	a.alertRepeated(ctx, alertIPhonePrefix+folder+"/"+string(s), notify.Msg{
 		Title:    "homecloud: iPhone backup needs attention",
 		Body:     body,
 		Priority: notify.PriorityHigh,
 		Tags:     []string{"iphone"},
 	})
-}
-
-// iphoneBaselines returns, per UDID, the size of the device's most recent
-// backup that was judged OK.
-func (a *Agent) iphoneBaselines(ctx context.Context) (map[string]int64, error) {
-	runs, err := a.db.Runs(ctx, IPhoneBackupRunKind, 0, iphoneBaselineRuns)
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]int64{}
-	for _, r := range runs { // newest first
-		if r.FinishedAt == nil {
-			continue
-		}
-		rep, err := ParseIPhoneBackupReport(r.Detail)
-		if err != nil {
-			return nil, fmt.Errorf("run %d: %w", r.ID, err)
-		}
-		for _, d := range rep.Devices {
-			if _, seen := out[d.UDID]; !seen && d.State == iphonebackup.StateOK {
-				out[d.UDID] = d.Bytes
-			}
-		}
-	}
-	return out, nil
 }

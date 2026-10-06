@@ -33,6 +33,7 @@ min_free_percent = 15
 [icloud]
 apple_id = "someone@example.com"
 include_hidden = true
+request_timeout = "1m"
 
 [kei]
 binary = '@KEI_BINARY@'
@@ -43,13 +44,22 @@ config = '@KEI_CONFIG@'
 ffprobe = '@FFPROBE@'
 ffmpeg = '@FFMPEG@'
 version = "9.0.2"
+probe_timeout = "5m"
+renderers = 4
+render_timeout = "2m"
+
+[verify]
+workers = 4
 
 [web]
 listen = "127.0.0.1:8790"
+session_ttl = "168h"
 
 [notify]
 server = "https://ntfy.sh"
 topic = "hc_0123456789abcdefABCDEF"
+repeat_every = "24h"
+timeout = "30s"
 
 [schedule]
 sync_interval = "1h"
@@ -66,11 +76,17 @@ dirs = ['@IPHONE_DIR@']
 max_age = "168h"
 check_interval = "24h"
 max_shrink_percent = 50
+read_interval = "168h"
+stalled_after = "6h"
 
 [drive]
 sync_interval = "6h"
 workers = 4
 stall_timeout = "2m"
+
+[logs]
+max_size_mb = 20
+max_backups = 10
 `)
 
 func writeConfig(t *testing.T, content string) string {
@@ -93,18 +109,27 @@ func TestLoadValid(t *testing.T) {
 			VolumeID:       testVolumeID,
 			MinFreePercent: 15,
 		},
-		ICloud:   ICloud{AppleID: "someone@example.com", IncludeHidden: ptr(true)},
-		Kei:      Kei{Binary: testKeiBinary, Version: "0.24.1", Config: testKeiConfig},
-		FFmpeg:   FFmpeg{FFprobe: testFFprobeBin, FFmpeg: testFFmpegBin, Version: "9.0.2"},
-		Web:      Web{Listen: "127.0.0.1:8790"},
-		Notify:   Notify{Server: "https://ntfy.sh", Topic: "hc_0123456789abcdefABCDEF"},
+		ICloud: ICloud{AppleID: "someone@example.com", IncludeHidden: ptr(true), RequestTimeout: Duration(time.Minute)},
+		Kei:    Kei{Binary: testKeiBinary, Version: "0.24.1", Config: testKeiConfig},
+		FFmpeg: FFmpeg{
+			FFprobe: testFFprobeBin, FFmpeg: testFFmpegBin, Version: "9.0.2",
+			ProbeTimeout: Duration(5 * time.Minute), Renderers: 4, RenderTimeout: Duration(2 * time.Minute),
+		},
+		Verify: Verify{Workers: 4},
+		Web:    Web{Listen: "127.0.0.1:8790", SessionTTL: Duration(168 * time.Hour)},
+		Notify: Notify{
+			Server: "https://ntfy.sh", Topic: "hc_0123456789abcdefABCDEF",
+			RepeatEvery: Duration(24 * time.Hour), Timeout: Duration(30 * time.Second),
+		},
 		Schedule: Schedule{SyncInterval: Duration(time.Hour), ScrubInterval: Duration(168 * time.Hour), ScrubFraction: 0.05},
 		Backup:   Backup{Dir: testBackupDir, Interval: Duration(24 * time.Hour), Keep: 14},
 		Drive:    Drive{SyncInterval: Duration(6 * time.Hour), Workers: 4, StallTimeout: Duration(2 * time.Minute)},
 		IPhoneBackup: IPhoneBackup{
 			Dirs: []string{testIPhoneDir}, MaxAge: Duration(168 * time.Hour),
 			CheckInterval: Duration(24 * time.Hour), MaxShrinkPercent: 50,
+			ReadInterval: Duration(168 * time.Hour), StalledAfter: Duration(6 * time.Hour),
 		},
+		Logs: Logs{MaxSizeMB: 20, MaxBackups: 10},
 	}
 	if diff := cmp.Diff(want, cfg); diff != "" {
 		t.Errorf("config mismatch (-want +got):\n%s", diff)
@@ -164,7 +189,23 @@ func TestValidate(t *testing.T) {
 		{"drive syncs too often", func(c *Config) { c.Drive.SyncInterval = Duration(time.Minute) }, "drive.sync_interval"},
 		{"no drive workers", func(c *Config) { c.Drive.Workers = 0 }, "drive.workers"},
 		{"drive stall timeout too short", func(c *Config) { c.Drive.StallTimeout = Duration(time.Second) }, "drive.stall_timeout"},
+		{"iphone dir twice", func(c *Config) {
+			c.IPhoneBackup.Dirs = append(c.IPhoneBackup.Dirs, strings.ToUpper(c.IPhoneBackup.Dirs[0]))
+		}, "iphone_backup.dirs"},
+		{"iphone check slower than max age", func(c *Config) { c.IPhoneBackup.CheckInterval = Duration(200 * time.Hour) }, "iphone_backup.check_interval"},
+		{"iphone read more often than checks", func(c *Config) { c.IPhoneBackup.ReadInterval = Duration(time.Hour) }, "iphone_backup.read_interval"},
+		{"iphone stalled too soon", func(c *Config) { c.IPhoneBackup.StalledAfter = Duration(time.Minute) }, "iphone_backup.stalled_after"},
+		{"alerts repeat too often", func(c *Config) { c.Notify.RepeatEvery = Duration(time.Minute) }, "notify.repeat_every"},
 		{"no iphone backup dirs", func(c *Config) { c.IPhoneBackup.Dirs = nil }, "iphone_backup.dirs"},
+		{"icloud requests time out too soon", func(c *Config) { c.ICloud.RequestTimeout = Duration(time.Second) }, "icloud.request_timeout"},
+		{"probe timeout too long", func(c *Config) { c.FFmpeg.ProbeTimeout = Duration(2 * time.Hour) }, "ffmpeg.probe_timeout"},
+		{"no renderers", func(c *Config) { c.FFmpeg.Renderers = 0 }, "ffmpeg.renderers"},
+		{"render timeout too short", func(c *Config) { c.FFmpeg.RenderTimeout = Duration(time.Second) }, "ffmpeg.render_timeout"},
+		{"no verify workers", func(c *Config) { c.Verify.Workers = 0 }, "verify.workers"},
+		{"browser sessions too long", func(c *Config) { c.Web.SessionTTL = Duration(1000 * time.Hour) }, "web.session_ttl"},
+		{"notify timeout too short", func(c *Config) { c.Notify.Timeout = Duration(time.Second) }, "notify.timeout"},
+		{"log files too large", func(c *Config) { c.Logs.MaxSizeMB = 4096 }, "logs.max_size_mb"},
+		{"no rotated logs kept", func(c *Config) { c.Logs.MaxBackups = 0 }, "logs.max_backups"},
 		{"relative iphone backup dir", func(c *Config) { c.IPhoneBackup.Dirs = []string{"Backup"} }, "iphone_backup.dirs"},
 		{"iphone max age too short", func(c *Config) { c.IPhoneBackup.MaxAge = Duration(time.Minute) }, "iphone_backup.max_age"},
 		{"iphone checks too frequent", func(c *Config) { c.IPhoneBackup.CheckInterval = Duration(time.Minute) }, "iphone_backup.check_interval"},

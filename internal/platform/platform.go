@@ -13,6 +13,10 @@
 //	NotifyReady() / NotifyStopping()     service-manager readiness protocol
 //	StateDir() (string, error)           per-user runtime state directory
 //	WriteSecretFile(path, data) error    atomic write readable only by the current user
+//
+// Shared by both: WriteFile (atomic write of a file others may read) and
+// WriteFileIfChanged.
+//
 //	OpenURL(url) error                   open a URL in the default browser
 //	MarkHidden(path) error               hide a file or folder from file managers
 //	DriveHealthOf(ctx, path)             SMART health of the drive holding path

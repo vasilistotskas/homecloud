@@ -55,13 +55,13 @@ func TestDriveHealthEventToProto(t *testing.T) {
 func TestIPhoneBackupEventToProto(t *testing.T) {
 	e, err := eventToProto(ledger.Event{
 		ID: 1, Kind: ledger.EventIPhoneBackupChanged,
-		Detail: `{"subject":"UDID-A","device_name":"iPhone","from":"ok","to":"stale","problems":["old"]}`,
+		Detail: `{"subject":"C:\\Backup\\UDID-A","udid":"UDID-A","device_name":"iPhone","from":"ok","to":"stale","problems":["old"]}`,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	c := e.GetIphoneBackupChanged()
-	if c.GetUdid() != "UDID-A" || c.GetDeviceName() != "iPhone" ||
+	if c.GetUdid() != "UDID-A" || c.GetDir() != `C:\Backup\UDID-A` || c.GetDeviceName() != "iPhone" ||
 		c.GetFrom() != agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
 		c.GetTo() != agentv1.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE || c.GetReasons()[0] != "old" {
 		t.Fatalf("event = %v", e)

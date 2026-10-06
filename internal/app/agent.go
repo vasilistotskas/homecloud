@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
@@ -30,10 +29,6 @@ type Notifier interface {
 	Send(ctx context.Context, m notify.Msg) error
 }
 
-// repeatAlertEvery throttles alerts about a condition that persists across
-// cycles (sign-in needed, archive drive missing, low space).
-const repeatAlertEvery = 24 * time.Hour
-
 // Alert keys of throttled alerts.
 const (
 	alertSignIn  = "sign-in"
@@ -42,8 +37,10 @@ const (
 	alertBackup  = "ledger-backup"
 	// alertIPhoneNone: no local iPhone backup exists at all.
 	alertIPhoneNone = "iphone-backup-none"
-	// alertIPhonePrefix + UDID + "/" + state: one device's backup problem.
+	// alertIPhonePrefix + folder + "/" + state: one backup folder's problem.
 	alertIPhonePrefix = "iphone-backup/"
+	// alertIPhoneCheck: a configured backup directory could not be checked.
+	alertIPhoneCheck = "iphone-backup-check"
 )
 
 // CycleRunKind is the ledger run kind of a sync cycle.
@@ -73,9 +70,6 @@ type Agent struct {
 
 	hub     *Hub
 	trigger chan struct{}
-
-	mu         sync.Mutex
-	lastAlerts map[string]time.Time
 }
 
 // NewAgent returns an idle agent. keiLog receives kei's own output.
@@ -95,7 +89,6 @@ func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, k
 		icloudEndpoints: icloud.AppleEndpoints,
 		hub:             NewHub(),
 		trigger:         make(chan struct{}, 1),
-		lastAlerts:      map[string]time.Time{},
 	}
 }
 
@@ -343,16 +336,16 @@ func (a *Agent) alertAuth(ctx context.Context) {
 	})
 }
 
-// alertRepeated sends m at most once per repeatAlertEvery for key, so a
-// condition that persists across hourly cycles alerts once a day.
+// alertRepeated sends m at most once per notify.repeat_every for key, so a
+// condition that persists across cycles does not alert every cycle. The ledger
+// keeps the throttle, so restarts do not resend. When the throttle cannot be
+// read the alert is sent: a duplicate is better than a lost alert.
 func (a *Agent) alertRepeated(ctx context.Context, key string, m notify.Msg) {
-	a.mu.Lock()
-	last, seen := a.lastAlerts[key]
-	due := !seen || a.now().Sub(last) >= repeatAlertEvery
-	if due {
-		a.lastAlerts[key] = a.now()
+	due, err := a.db.AlertDue(ctx, key, a.cfg.Notify.RepeatEvery.Std(), a.now())
+	if err != nil {
+		a.log.Error("alert throttle unavailable; sending", "key", key, "err", err)
+		due = true
 	}
-	a.mu.Unlock()
 	if due {
 		a.alert(ctx, m)
 	}

@@ -34,7 +34,7 @@ func setup(t *testing.T, clock *time.Time) (*Signer, http.Handler) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := thumbs.New(config.FFmpeg{}, t.TempDir())
+	r := thumbs.New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, t.TempDir())
 	// A cached rendering lets the test run without ffmpeg.
 	cached := r.CachePath(sha, thumbs.Thumb)
 	if err := os.MkdirAll(filepath.Dir(cached), 0o700); err != nil {

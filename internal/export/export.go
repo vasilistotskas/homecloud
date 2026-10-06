@@ -8,15 +8,13 @@ import (
 	"context"
 	_ "embed"
 	"encoding/csv"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // Files written at the archive root.
@@ -69,10 +67,10 @@ func Write(ctx context.Context, db Ledger, root string) (int, error) {
 	if err := w.Error(); err != nil {
 		return 0, fmt.Errorf("export manifest: %w", err)
 	}
-	if err := replace(filepath.Join(root, ManifestFile), buf.Bytes()); err != nil {
+	if err := platform.WriteFile(filepath.Join(root, ManifestFile), buf.Bytes()); err != nil {
 		return 0, err
 	}
-	if err := writeIfChanged(filepath.Join(root, ReadmeFile), readme); err != nil {
+	if _, err := platform.WriteFileIfChanged(filepath.Join(root, ReadmeFile), readme, platform.WriteFile); err != nil {
 		return 0, err
 	}
 	return rows, nil
@@ -83,43 +81,4 @@ func timestamp(t *time.Time) string {
 		return ""
 	}
 	return t.UTC().Format(time.RFC3339)
-}
-
-func writeIfChanged(path string, data []byte) error {
-	current, err := os.ReadFile(path) //nolint:gosec // fixed file under the configured archive root
-	switch {
-	case err == nil && bytes.Equal(current, data):
-		return nil
-	case err != nil && !errors.Is(err, fs.ErrNotExist):
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-	return replace(path, data)
-}
-
-// replace writes data to a temporary file beside path and renames it over
-// path, so readers never see a partial file.
-func replace(path string, data []byte) (err error) {
-	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("create temp for %s: %w", path, err)
-	}
-	tmp := f.Name()
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, os.Remove(tmp))
-		}
-	}()
-	if _, err = f.Write(data); err != nil {
-		return errors.Join(fmt.Errorf("write %s: %w", tmp, err), f.Close())
-	}
-	if err = f.Sync(); err != nil {
-		return errors.Join(fmt.Errorf("sync %s: %w", tmp, err), f.Close())
-	}
-	if err = f.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", tmp, err)
-	}
-	if err = os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("replace %s: %w", path, err)
-	}
-	return nil
 }

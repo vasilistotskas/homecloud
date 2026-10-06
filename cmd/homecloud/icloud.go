@@ -75,7 +75,7 @@ func runICloudLogin(ctx context.Context, cmd *cli.Command) error {
 	}
 	// A fresh session that keeps only the trust token of the same Apple
 	// Account, so a code may not be needed.
-	c, err := icloud.New(icloud.AppleEndpoints, icloud.LoginSession(path, cfg.ICloud.AppleID), time.Now)
+	c, err := icloud.New(icloud.AppleEndpoints, icloud.LoginSession(path, cfg.ICloud.AppleID), cfg.ICloud.RequestTimeout.Std(), time.Now)
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,11 @@ func requestCode(ctx context.Context, cmd *cli.Command, l *icloud.Login, isText 
 }
 
 // openSession restores the saved session and makes sure it still works.
-func openSession(ctx context.Context) (*icloud.Client, *icloud.SessionFile, error) {
+func openSession(ctx context.Context, cmd *cli.Command) (*icloud.Client, *icloud.SessionFile, error) {
+	cfg, err := loadConfig(cmd)
+	if err != nil {
+		return nil, nil, err
+	}
 	path, err := icloud.SessionPath()
 	if err != nil {
 		return nil, nil, err
@@ -196,7 +200,7 @@ func openSession(ctx context.Context) (*icloud.Client, *icloud.SessionFile, erro
 	if err != nil {
 		return nil, nil, err
 	}
-	c, err := icloud.New(icloud.AppleEndpoints, saved, time.Now)
+	c, err := icloud.New(icloud.AppleEndpoints, saved, cfg.ICloud.RequestTimeout.Std(), time.Now)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -217,7 +221,7 @@ func keepSession(c *icloud.Client, file *icloud.SessionFile) error {
 }
 
 func runICloudStatus(ctx context.Context, cmd *cli.Command) error {
-	c, file, err := openSession(ctx)
+	c, file, err := openSession(ctx, cmd)
 	if err != nil {
 		return err
 	}
@@ -243,7 +247,7 @@ func runICloudStatus(ctx context.Context, cmd *cli.Command) error {
 }
 
 func runDriveLs(ctx context.Context, cmd *cli.Command) error {
-	c, file, err := openSession(ctx)
+	c, file, err := openSession(ctx, cmd)
 	if err != nil {
 		return err
 	}

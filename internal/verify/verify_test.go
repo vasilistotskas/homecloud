@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 )
@@ -144,7 +145,7 @@ func TestProbeReal(t *testing.T) {
 	if bin == "" || sample == "" {
 		t.Skip("HOMECLOUD_FFPROBE / HOMECLOUD_SAMPLE_VIDEO not set")
 	}
-	cfg := config.FFmpeg{FFprobe: bin}
+	cfg := config.FFmpeg{FFprobe: bin, ProbeTimeout: config.Duration(time.Minute)}
 	ctx := context.Background()
 	if err := Structure(sample); err != nil {
 		t.Fatalf("Structure(real): %v", err)

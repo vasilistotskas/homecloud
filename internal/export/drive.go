@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 var driveHeader = []string{
@@ -58,7 +59,7 @@ func WriteDrive(ctx context.Context, db DriveLedger, driveRoot string) (int, err
 	if err := w.Error(); err != nil {
 		return 0, fmt.Errorf("export drive manifest: %w", err)
 	}
-	if err := replace(filepath.Join(driveRoot, ManifestFile), buf.Bytes()); err != nil {
+	if err := platform.WriteFile(filepath.Join(driveRoot, ManifestFile), buf.Bytes()); err != nil {
 		return 0, err
 	}
 	return len(rows), nil

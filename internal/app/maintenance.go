@@ -15,6 +15,8 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/drive"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
+	"github.com/vasilistotskas/homecloud/internal/parallel"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/verify"
 )
 
@@ -23,9 +25,6 @@ const (
 	ScrubRunKind        = "scrub"
 	LedgerBackupRunKind = "ledger_backup"
 )
-
-// ledgerBackupTimeLayout names snapshots so that name order is time order.
-const ledgerBackupTimeLayout = "20060102T150405Z"
 
 // ledgerBackupName matches the snapshots the agent writes and may prune, and
 // ledgerBackupPartial a snapshot that was interrupted while being written.
@@ -142,7 +141,7 @@ func (a *Agent) scrub(ctx context.Context) (any, bool) {
 	rep.Eligible = eligible
 
 	var mu sync.Mutex
-	forEach(ctx, batch, verifyWorkers, func(t ledger.ScrubTarget) {
+	parallel.ForEach(ctx, batch, a.cfg.Verify.Workers, func(t ledger.ScrubTarget) {
 		defer a.hub.Changed() // live views follow quarantines as they happen
 		outcome := a.scrubOne(ctx, t)
 		mu.Lock()
@@ -197,7 +196,7 @@ func (a *Agent) scrubDrive(ctx context.Context, rep *DriveScrub) error {
 	rep.Eligible = eligible
 	root := filepath.Join(a.cfg.Storage.Root, drive.Dir)
 	var mu sync.Mutex
-	forEach(ctx, batch, verifyWorkers, func(f ledger.DriveFile) {
+	parallel.ForEach(ctx, batch, a.cfg.Verify.Workers, func(f ledger.DriveFile) {
 		var outcome error
 		switch err := verify.Content(filepath.Join(root, filepath.FromSlash(f.LocalPath)), uint64(f.Size), f.SHA256); { //nolint:gosec // sizes are never negative
 		case err == nil:
@@ -272,7 +271,7 @@ func (a *Agent) writeLedgerBackup(ctx context.Context, rep *LedgerBackupReport) 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
-	dest := filepath.Join(dir, "homecloud-"+a.now().UTC().Format(ledgerBackupTimeLayout)+".db")
+	dest := filepath.Join(dir, "homecloud-"+a.now().UTC().Format(platform.FileTimeLayout)+".db")
 	if err := a.db.Snapshot(ctx, dest); err != nil {
 		return err
 	}
@@ -314,26 +313,4 @@ func pruneLedgerBackups(dir string, keep int) (int, error) {
 		}
 	}
 	return len(old), nil
-}
-
-// forEach calls fn for each item on workers goroutines and stops handing out
-// items once ctx ends.
-func forEach[T any](ctx context.Context, items []T, workers int, fn func(T)) {
-	work := make(chan T)
-	var wg sync.WaitGroup
-	for range workers {
-		wg.Go(func() {
-			for it := range work {
-				fn(it)
-			}
-		})
-	}
-	for _, it := range items {
-		if ctx.Err() != nil {
-			break
-		}
-		work <- it
-	}
-	close(work)
-	wg.Wait()
 }

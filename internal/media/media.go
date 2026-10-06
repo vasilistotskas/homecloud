@@ -33,9 +33,11 @@ const (
 	// validity is how long a URL works at least.
 	validity = 12 * time.Hour
 	keyBytes = 32
-	// cacheFor matches the shortest remaining validity of a URL.
-	cacheFor = "private, max-age=43200"
 )
+
+// cacheFor lets browsers keep an image as long as the shortest remaining
+// validity of its URL.
+var cacheFor = fmt.Sprintf("private, max-age=%d", int(validity/time.Second))
 
 // Signer mints and checks media URLs with a key that changes every time the
 // agent starts.

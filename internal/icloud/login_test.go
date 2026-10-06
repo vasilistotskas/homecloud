@@ -82,7 +82,7 @@ func newFakeApple(t *testing.T) *fakeApple {
 
 func (f *fakeApple) client(t *testing.T, s Session) *Client {
 	t.Helper()
-	c, err := New(Endpoints{Auth: f.srv.URL + "/appleauth/auth", Setup: f.srv.URL + "/setup/ws/1", Home: f.srv.URL}, s, time.Now)
+	c, err := New(Endpoints{Auth: f.srv.URL + "/appleauth/auth", Setup: f.srv.URL + "/setup/ws/1", Home: f.srv.URL}, s, time.Minute, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +466,7 @@ func TestCallRefreshesAnExpiredSessionOnce(t *testing.T) {
 }
 
 func TestServiceBeforeSignIn(t *testing.T) {
-	c, err := New(AppleEndpoints, Session{}, time.Now)
+	c, err := New(AppleEndpoints, Session{}, time.Minute, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +521,7 @@ func TestSignInTellsARefusedAccountFromAWrongPassword(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	t.Cleanup(srv.Close)
-	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Now)
+	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Minute, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,7 +581,7 @@ func TestCallsNeverFollowRedirects(t *testing.T) {
 		http.Redirect(w, r, "/elsewhere", http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(srv.Close)
-	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{Services: map[string]Service{ServiceDrive: {URL: srv.URL}}}, time.Now)
+	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{Services: map[string]Service{ServiceDrive: {URL: srv.URL}}}, time.Minute, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func TestOversizedResponseIsAnError(t *testing.T) {
 		_, _ = w.Write(bytes.Repeat([]byte(" "), maxBody+1))
 	}))
 	t.Cleanup(srv.Close)
-	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Now)
+	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Minute, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,7 +612,7 @@ func TestTrustedPhonesKnowsEmptyFromUnknown(t *testing.T) {
 		`{"somethingElse":true}`:                                         true,
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, body) }))
-		c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Now)
+		c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Minute, time.Now)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -28,7 +29,7 @@ func TestSend(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	n := New(config.Notify{Server: srv.URL, Topic: "homecloud_topic_for_tests_123"})
+	n := New(config.Notify{Server: srv.URL, Topic: "homecloud_topic_for_tests_123", Timeout: config.Duration(time.Minute)})
 	err := n.Send(context.Background(), Msg{Title: "Αντίγραφο", Body: "ok", Priority: PriorityHigh, Tags: []string{"floppy_disk"}})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
@@ -45,7 +46,7 @@ func TestSendNon200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := New(config.Notify{Server: srv.URL, Topic: "t"}).Send(context.Background(), Msg{Body: "x"})
+	err := New(config.Notify{Server: srv.URL, Topic: "t", Timeout: config.Duration(time.Minute)}).Send(context.Background(), Msg{Body: "x"})
 	if err == nil || !strings.Contains(err.Error(), "HTTP 429") {
 		t.Fatalf("want HTTP 429 error, got %v", err)
 	}

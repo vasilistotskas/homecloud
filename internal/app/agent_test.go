@@ -133,7 +133,8 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 	n := &recordingNotifier{}
 	cfg := &config.Config{
 		Storage: config.Storage{Root: filepath.Dir(manifest)},
-		ICloud:  config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
+		ICloud:  config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden, RequestTimeout: config.Duration(time.Minute)},
+		Verify:  config.Verify{Workers: 2},
 		Kei:     config.Kei{Binary: exe, Config: "unused.toml"},
 		Schedule: config.Schedule{
 			SyncInterval:  config.Duration(time.Hour),
@@ -141,14 +142,16 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 			ScrubFraction: 1,
 		},
 		Backup: config.Backup{Dir: filepath.Join(t.TempDir(), "ledger-backups"), Interval: config.Duration(24 * time.Hour), Keep: 2},
+		Notify: config.Notify{RepeatEvery: config.Duration(24 * time.Hour), Timeout: config.Duration(time.Minute)},
 		Drive:  config.Drive{SyncInterval: config.Duration(6 * time.Hour), Workers: 2, StallTimeout: config.Duration(time.Minute)},
 		IPhoneBackup: config.IPhoneBackup{
 			Dirs: []string{filepath.Join(t.TempDir(), "MobileSync", "Backup")}, MaxAge: config.Duration(7 * 24 * time.Hour),
 			CheckInterval: config.Duration(24 * time.Hour), MaxShrinkPercent: 50,
+			ReadInterval: config.Duration(7 * 24 * time.Hour), StalledAfter: config.Duration(6 * time.Hour),
 		},
 	}
 	// No ffmpeg in tests: previews fail and are logged, as they would without one.
-	renderer := thumbs.New(config.FFmpeg{FFmpeg: filepath.Join(t.TempDir(), "no-ffmpeg"), FFprobe: filepath.Join(t.TempDir(), "no-ffprobe")}, ThumbnailDir(cfg))
+	renderer := thumbs.New(config.FFmpeg{FFmpeg: filepath.Join(t.TempDir(), "no-ffmpeg"), FFprobe: filepath.Join(t.TempDir(), "no-ffprobe"), Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, ThumbnailDir(cfg))
 	agent := NewAgent(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), n, io.Discard, renderer,
 		func() time.Time { return *clock })
 	// Tests have no configured volume; the archive counts as present.

@@ -13,6 +13,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/parallel"
 	"github.com/vasilistotskas/homecloud/internal/verify"
 )
 
@@ -23,9 +24,6 @@ const LedgerWriterLock = "homecloud-ledger-writer"
 
 // LedgerFile is the ledger's file name inside storage.root.
 const LedgerFile = "homecloud.db"
-
-// verifyWorkers bounds concurrent verification (disk- and hash-bound).
-const verifyWorkers = 4
 
 // LedgerPath returns the ledger location for cfg.
 func LedgerPath(cfg *config.Config) string {
@@ -95,7 +93,7 @@ func Verify(ctx context.Context, cfg *config.Config, db *ledger.DB, log *slog.Lo
 		stats VerifyStats
 	)
 	record := func(f func(*VerifyStats)) { mu.Lock(); f(&stats); mu.Unlock() }
-	forEach(ctx, pending, verifyWorkers, func(p ledger.PendingResource) {
+	parallel.ForEach(ctx, pending, cfg.Verify.Workers, func(p ledger.PendingResource) {
 		outcome := verifyOne(ctx, cfg, db, p, now)
 		record(func(s *VerifyStats) {
 			s.Checked++

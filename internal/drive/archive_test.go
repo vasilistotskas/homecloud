@@ -204,7 +204,7 @@ func newHarness(t *testing.T) *harness {
 	c, err := icloud.New(local, icloud.Session{Services: map[string]icloud.Service{
 		icloud.ServiceDrive: {URL: f.srv.URL + "/drive"},
 		icloud.ServiceDocs:  {URL: f.srv.URL + "/docs"},
-	}}, time.Now)
+	}}, time.Minute, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

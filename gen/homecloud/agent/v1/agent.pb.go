@@ -342,6 +342,8 @@ func (DriveSyncOutcome) EnumDescriptor() ([]byte, []int) {
 	return file_homecloud_agent_v1_agent_proto_rawDescGZIP(), []int{4}
 }
 
+// IPhoneBackupState values are ordered from healthy (OK) to most severe
+// (INVALID); clients may rank by value. New values keep that order.
 type IPhoneBackupState int32
 
 const (
@@ -559,6 +561,7 @@ const (
 	EventKind_EVENT_KIND_DRIVE_FILE_DELETED    EventKind = 11
 	EventKind_EVENT_KIND_DRIVE_FILE_RESTORED   EventKind = 12
 	EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED    EventKind = 13
+	EventKind_EVENT_KIND_DRIVE_FILE_REPAIRED   EventKind = 14
 )
 
 // Enum value maps for EventKind.
@@ -578,6 +581,7 @@ var (
 		11: "EVENT_KIND_DRIVE_FILE_DELETED",
 		12: "EVENT_KIND_DRIVE_FILE_RESTORED",
 		13: "EVENT_KIND_DRIVE_FILE_DAMAGED",
+		14: "EVENT_KIND_DRIVE_FILE_REPAIRED",
 	}
 	EventKind_value = map[string]int32{
 		"EVENT_KIND_UNSPECIFIED":           0,
@@ -594,6 +598,7 @@ var (
 		"EVENT_KIND_DRIVE_FILE_DELETED":    11,
 		"EVENT_KIND_DRIVE_FILE_RESTORED":   12,
 		"EVENT_KIND_DRIVE_FILE_DAMAGED":    13,
+		"EVENT_KIND_DRIVE_FILE_REPAIRED":   14,
 	}
 )
 
@@ -640,6 +645,8 @@ const (
 	DriveFileChange_DRIVE_FILE_CHANGE_RESTORED DriveFileChange = 5
 	// The copy no longer matched its checksum; downloaded again next sync.
 	DriveFileChange_DRIVE_FILE_CHANGE_DAMAGED DriveFileChange = 6
+	// A damaged or missing copy was replaced by a fresh download.
+	DriveFileChange_DRIVE_FILE_CHANGE_REPAIRED DriveFileChange = 7
 )
 
 // Enum value maps for DriveFileChange.
@@ -652,6 +659,7 @@ var (
 		4: "DRIVE_FILE_CHANGE_DELETED",
 		5: "DRIVE_FILE_CHANGE_RESTORED",
 		6: "DRIVE_FILE_CHANGE_DAMAGED",
+		7: "DRIVE_FILE_CHANGE_REPAIRED",
 	}
 	DriveFileChange_value = map[string]int32{
 		"DRIVE_FILE_CHANGE_UNSPECIFIED": 0,
@@ -661,6 +669,7 @@ var (
 		"DRIVE_FILE_CHANGE_DELETED":     4,
 		"DRIVE_FILE_CHANGE_RESTORED":    5,
 		"DRIVE_FILE_CHANGE_DAMAGED":     6,
+		"DRIVE_FILE_CHANGE_REPAIRED":    7,
 	}
 )
 
@@ -1317,9 +1326,11 @@ type ICloudDrive struct {
 	// Archived files no longer in iCloud; their copies are kept.
 	DeletedInIcloud int64 `protobuf:"varint,3,opt,name=deleted_in_icloud,json=deletedInIcloud,proto3" json:"deleted_in_icloud,omitempty"`
 	// When the owner last signed homecloud in to iCloud; absent if never.
-	SignedInAt    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=signed_in_at,json=signedInAt,proto3" json:"signed_in_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SignedInAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=signed_in_at,json=signedInAt,proto3" json:"signed_in_at,omitempty"`
+	// Set when the saved session cannot be read; signing in again replaces it.
+	SessionProblem string `protobuf:"bytes,5,opt,name=session_problem,json=sessionProblem,proto3" json:"session_problem,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ICloudDrive) Reset() {
@@ -1378,6 +1389,13 @@ func (x *ICloudDrive) GetSignedInAt() *timestamppb.Timestamp {
 		return x.SignedInAt
 	}
 	return nil
+}
+
+func (x *ICloudDrive) GetSessionProblem() string {
+	if x != nil {
+		return x.SessionProblem
+	}
+	return ""
 }
 
 // DriveHealth is what the archive drive reports about itself (SMART) and the
@@ -2354,7 +2372,9 @@ type IPhoneBackupReport struct {
 	// Frozen copies archived in Apple's tool; reported, not judged.
 	Archived int64 `protobuf:"varint,2,opt,name=archived,proto3" json:"archived,omitempty"`
 	// Set when the check failed.
-	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	Error string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	// Backup directories that could not be checked.
+	DirErrors     []string `protobuf:"bytes,4,rep,name=dir_errors,json=dirErrors,proto3" json:"dir_errors,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2410,6 +2430,13 @@ func (x *IPhoneBackupReport) GetError() string {
 	return ""
 }
 
+func (x *IPhoneBackupReport) GetDirErrors() []string {
+	if x != nil {
+		return x.DirErrors
+	}
+	return nil
+}
+
 // IPhoneBackup is one device's current local backup and its verdict.
 type IPhoneBackup struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -2426,9 +2453,11 @@ type IPhoneBackup struct {
 	SizeBytes   int64                  `protobuf:"varint,8,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	State       IPhoneBackupState      `protobuf:"varint,9,opt,name=state,proto3,enum=homecloud.agent.v1.IPhoneBackupState" json:"state,omitempty"`
 	// Every problem found; empty when the backup is healthy.
-	Reasons       []string `protobuf:"bytes,10,rep,name=reasons,proto3" json:"reasons,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Reasons []string `protobuf:"bytes,10,rep,name=reasons,proto3" json:"reasons,omitempty"`
+	// When every file was last read in full (iphone_backup.read_interval).
+	LastFullReadAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=last_full_read_at,json=lastFullReadAt,proto3" json:"last_full_read_at,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *IPhoneBackup) Reset() {
@@ -2527,6 +2556,13 @@ func (x *IPhoneBackup) GetState() IPhoneBackupState {
 func (x *IPhoneBackup) GetReasons() []string {
 	if x != nil {
 		return x.Reasons
+	}
+	return nil
+}
+
+func (x *IPhoneBackup) GetLastFullReadAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastFullReadAt
 	}
 	return nil
 }
@@ -3416,15 +3452,16 @@ func (x *RenditionMoved) GetTo() string {
 	return ""
 }
 
-// DriveHealthChanged: the archive drive's health state changed.
-// IPhoneBackupChanged: a device's local backup changed state.
+// IPhoneBackupChanged: a local backup folder changed state.
 type IPhoneBackupChanged struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Udid          string                 `protobuf:"bytes,1,opt,name=udid,proto3" json:"udid,omitempty"`
-	DeviceName    string                 `protobuf:"bytes,2,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
-	From          IPhoneBackupState      `protobuf:"varint,3,opt,name=from,proto3,enum=homecloud.agent.v1.IPhoneBackupState" json:"from,omitempty"`
-	To            IPhoneBackupState      `protobuf:"varint,4,opt,name=to,proto3,enum=homecloud.agent.v1.IPhoneBackupState" json:"to,omitempty"`
-	Reasons       []string               `protobuf:"bytes,5,rep,name=reasons,proto3" json:"reasons,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Udid       string                 `protobuf:"bytes,1,opt,name=udid,proto3" json:"udid,omitempty"`
+	DeviceName string                 `protobuf:"bytes,2,opt,name=device_name,json=deviceName,proto3" json:"device_name,omitempty"`
+	From       IPhoneBackupState      `protobuf:"varint,3,opt,name=from,proto3,enum=homecloud.agent.v1.IPhoneBackupState" json:"from,omitempty"`
+	To         IPhoneBackupState      `protobuf:"varint,4,opt,name=to,proto3,enum=homecloud.agent.v1.IPhoneBackupState" json:"to,omitempty"`
+	Reasons    []string               `protobuf:"bytes,5,rep,name=reasons,proto3" json:"reasons,omitempty"`
+	// The backup folder: it identifies the backup (one device may have several).
+	Dir           string `protobuf:"bytes,6,opt,name=dir,proto3" json:"dir,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3494,6 +3531,14 @@ func (x *IPhoneBackupChanged) GetReasons() []string {
 	return nil
 }
 
+func (x *IPhoneBackupChanged) GetDir() string {
+	if x != nil {
+		return x.Dir
+	}
+	return ""
+}
+
+// DriveHealthChanged: the archive drive's health state changed.
 type DriveHealthChanged struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	From          DriveHealthState       `protobuf:"varint,1,opt,name=from,proto3,enum=homecloud.agent.v1.DriveHealthState" json:"from,omitempty"`
@@ -5293,13 +5338,14 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x12last_iphone_backup\x18\n" +
 	" \x01(\v2\x17.homecloud.agent.v1.RunR\x10lastIphoneBackup\x12?\n" +
 	"\x0flast_drive_sync\x18\v \x01(\v2\x17.homecloud.agent.v1.RunR\rlastDriveSync\x12B\n" +
-	"\ficloud_drive\x18\f \x01(\v2\x1f.homecloud.agent.v1.ICloudDriveR\vicloudDrive\"\xa3\x01\n" +
+	"\ficloud_drive\x18\f \x01(\v2\x1f.homecloud.agent.v1.ICloudDriveR\vicloudDrive\"\xcc\x01\n" +
 	"\vICloudDrive\x12\x14\n" +
 	"\x05files\x18\x01 \x01(\x03R\x05files\x12\x14\n" +
 	"\x05bytes\x18\x02 \x01(\x03R\x05bytes\x12*\n" +
 	"\x11deleted_in_icloud\x18\x03 \x01(\x03R\x0fdeletedInIcloud\x12<\n" +
 	"\fsigned_in_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"signedInAt\"\xc3\x04\n" +
+	"signedInAt\x12'\n" +
+	"\x0fsession_problem\x18\x05 \x01(\tR\x0esessionProblem\"\xc3\x04\n" +
 	"\vDriveHealth\x12:\n" +
 	"\x05state\x18\x01 \x01(\x0e2$.homecloud.agent.v1.DriveHealthStateR\x05state\x129\n" +
 	"\n" +
@@ -5397,11 +5443,13 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"size_bytes\x18\x02 \x01(\x03R\tsizeBytes\x12\x16\n" +
 	"\x06pruned\x18\x03 \x01(\x03R\x06pruned\x12\x14\n" +
-	"\x05error\x18\x04 \x01(\tR\x05error\"\x82\x01\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\xa1\x01\n" +
 	"\x12IPhoneBackupReport\x12:\n" +
 	"\adevices\x18\x01 \x03(\v2 .homecloud.agent.v1.IPhoneBackupR\adevices\x12\x1a\n" +
 	"\barchived\x18\x02 \x01(\x03R\barchived\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\xda\x02\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\x12\x1d\n" +
+	"\n" +
+	"dir_errors\x18\x04 \x03(\tR\tdirErrors\"\xa1\x03\n" +
 	"\fIPhoneBackup\x12\x12\n" +
 	"\x04udid\x18\x01 \x01(\tR\x04udid\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12'\n" +
@@ -5414,7 +5462,8 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"size_bytes\x18\b \x01(\x03R\tsizeBytes\x12;\n" +
 	"\x05state\x18\t \x01(\x0e2%.homecloud.agent.v1.IPhoneBackupStateR\x05state\x12\x18\n" +
 	"\areasons\x18\n" +
-	" \x03(\tR\areasons\"\x89\x03\n" +
+	" \x03(\tR\areasons\x12E\n" +
+	"\x11last_full_read_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x0elastFullReadAt\"\x89\x03\n" +
 	"\vCycleReport\x12?\n" +
 	"\bdownload\x18\x01 \x01(\x0e2#.homecloud.agent.v1.DownloadOutcomeR\bdownload\x12\x16\n" +
 	"\x06assets\x18\x02 \x01(\x03R\x06assets\x12\x1e\n" +
@@ -5485,14 +5534,15 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x0eRenditionMoved\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x12\n" +
 	"\x04from\x18\x02 \x01(\tR\x04from\x12\x0e\n" +
-	"\x02to\x18\x03 \x01(\tR\x02to\"\xd6\x01\n" +
+	"\x02to\x18\x03 \x01(\tR\x02to\"\xe8\x01\n" +
 	"\x13IPhoneBackupChanged\x12\x12\n" +
 	"\x04udid\x18\x01 \x01(\tR\x04udid\x12\x1f\n" +
 	"\vdevice_name\x18\x02 \x01(\tR\n" +
 	"deviceName\x129\n" +
 	"\x04from\x18\x03 \x01(\x0e2%.homecloud.agent.v1.IPhoneBackupStateR\x04from\x125\n" +
 	"\x02to\x18\x04 \x01(\x0e2%.homecloud.agent.v1.IPhoneBackupStateR\x02to\x12\x18\n" +
-	"\areasons\x18\x05 \x03(\tR\areasons\"\x9e\x01\n" +
+	"\areasons\x18\x05 \x03(\tR\areasons\x12\x10\n" +
+	"\x03dir\x18\x06 \x01(\tR\x03dir\"\x9e\x01\n" +
 	"\x12DriveHealthChanged\x128\n" +
 	"\x04from\x18\x01 \x01(\x0e2$.homecloud.agent.v1.DriveHealthStateR\x04from\x124\n" +
 	"\x02to\x18\x02 \x01(\x0e2$.homecloud.agent.v1.DriveHealthStateR\x02to\x12\x18\n" +
@@ -5689,7 +5739,7 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x16DOWNLOAD_OUTCOME_ERROR\x10\x05\x12&\n" +
 	"\"DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE\x10\x06\x12(\n" +
 	"$DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE\x10\a\x12 \n" +
-	"\x1cDOWNLOAD_OUTCOME_INTERRUPTED\x10\b*\xe4\x03\n" +
+	"\x1cDOWNLOAD_OUTCOME_INTERRUPTED\x10\b*\x88\x04\n" +
 	"\tEventKind\x12\x1a\n" +
 	"\x16EVENT_KIND_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cEVENT_KIND_RENDITION_CHANGED\x10\x01\x12\x1c\n" +
@@ -5705,7 +5755,8 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x12!\n" +
 	"\x1dEVENT_KIND_DRIVE_FILE_DELETED\x10\v\x12\"\n" +
 	"\x1eEVENT_KIND_DRIVE_FILE_RESTORED\x10\f\x12!\n" +
-	"\x1dEVENT_KIND_DRIVE_FILE_DAMAGED\x10\r*\xee\x01\n" +
+	"\x1dEVENT_KIND_DRIVE_FILE_DAMAGED\x10\r\x12\"\n" +
+	"\x1eEVENT_KIND_DRIVE_FILE_REPAIRED\x10\x0e*\x8e\x02\n" +
 	"\x0fDriveFileChange\x12!\n" +
 	"\x1dDRIVE_FILE_CHANGE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aDRIVE_FILE_CHANGE_ARCHIVED\x10\x01\x12\x1d\n" +
@@ -5713,7 +5764,8 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x17DRIVE_FILE_CHANGE_MOVED\x10\x03\x12\x1d\n" +
 	"\x19DRIVE_FILE_CHANGE_DELETED\x10\x04\x12\x1e\n" +
 	"\x1aDRIVE_FILE_CHANGE_RESTORED\x10\x05\x12\x1d\n" +
-	"\x19DRIVE_FILE_CHANGE_DAMAGED\x10\x06*\x98\x01\n" +
+	"\x19DRIVE_FILE_CHANGE_DAMAGED\x10\x06\x12\x1e\n" +
+	"\x1aDRIVE_FILE_CHANGE_REPAIRED\x10\a*\x98\x01\n" +
 	"\n" +
 	"AssetState\x12\x1b\n" +
 	"\x17ASSET_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
@@ -5886,92 +5938,93 @@ var file_homecloud_agent_v1_agent_proto_depIdxs = []int32{
 	34,  // 31: homecloud.agent.v1.IPhoneBackupReport.devices:type_name -> homecloud.agent.v1.IPhoneBackup
 	76,  // 32: homecloud.agent.v1.IPhoneBackup.completed_at:type_name -> google.protobuf.Timestamp
 	5,   // 33: homecloud.agent.v1.IPhoneBackup.state:type_name -> homecloud.agent.v1.IPhoneBackupState
-	7,   // 34: homecloud.agent.v1.CycleReport.download:type_name -> homecloud.agent.v1.DownloadOutcome
-	3,   // 35: homecloud.agent.v1.ListRunsRequest.kind:type_name -> homecloud.agent.v1.RunKind
-	28,  // 36: homecloud.agent.v1.ListRunsResponse.runs:type_name -> homecloud.agent.v1.Run
-	76,  // 37: homecloud.agent.v1.Event.at:type_name -> google.protobuf.Timestamp
-	40,  // 38: homecloud.agent.v1.Event.asset:type_name -> homecloud.agent.v1.AssetRef
-	41,  // 39: homecloud.agent.v1.Event.rendition_changed:type_name -> homecloud.agent.v1.RenditionChanged
-	42,  // 40: homecloud.agent.v1.Event.state_changed:type_name -> homecloud.agent.v1.StateChanged
-	43,  // 41: homecloud.agent.v1.Event.quarantined:type_name -> homecloud.agent.v1.Quarantined
-	44,  // 42: homecloud.agent.v1.Event.quarantine_released:type_name -> homecloud.agent.v1.QuarantineReleased
-	47,  // 43: homecloud.agent.v1.Event.drive_health_changed:type_name -> homecloud.agent.v1.DriveHealthChanged
-	45,  // 44: homecloud.agent.v1.Event.rendition_moved:type_name -> homecloud.agent.v1.RenditionMoved
-	46,  // 45: homecloud.agent.v1.Event.iphone_backup_changed:type_name -> homecloud.agent.v1.IPhoneBackupChanged
-	39,  // 46: homecloud.agent.v1.Event.drive_file:type_name -> homecloud.agent.v1.DriveFileEvent
-	9,   // 47: homecloud.agent.v1.DriveFileEvent.change:type_name -> homecloud.agent.v1.DriveFileChange
-	10,  // 48: homecloud.agent.v1.StateChanged.from:type_name -> homecloud.agent.v1.AssetState
-	10,  // 49: homecloud.agent.v1.StateChanged.to:type_name -> homecloud.agent.v1.AssetState
-	11,  // 50: homecloud.agent.v1.Quarantined.tier:type_name -> homecloud.agent.v1.Tier
-	5,   // 51: homecloud.agent.v1.IPhoneBackupChanged.from:type_name -> homecloud.agent.v1.IPhoneBackupState
-	5,   // 52: homecloud.agent.v1.IPhoneBackupChanged.to:type_name -> homecloud.agent.v1.IPhoneBackupState
-	0,   // 53: homecloud.agent.v1.DriveHealthChanged.from:type_name -> homecloud.agent.v1.DriveHealthState
-	0,   // 54: homecloud.agent.v1.DriveHealthChanged.to:type_name -> homecloud.agent.v1.DriveHealthState
-	8,   // 55: homecloud.agent.v1.ListEventsRequest.kinds:type_name -> homecloud.agent.v1.EventKind
-	38,  // 56: homecloud.agent.v1.ListEventsResponse.events:type_name -> homecloud.agent.v1.Event
-	12,  // 57: homecloud.agent.v1.ListAssetsRequest.kind:type_name -> homecloud.agent.v1.AssetKind
-	52,  // 58: homecloud.agent.v1.ListAssetsResponse.items:type_name -> homecloud.agent.v1.LibraryItem
-	40,  // 59: homecloud.agent.v1.LibraryItem.asset:type_name -> homecloud.agent.v1.AssetRef
-	12,  // 60: homecloud.agent.v1.LibraryItem.kind:type_name -> homecloud.agent.v1.AssetKind
-	76,  // 61: homecloud.agent.v1.LibraryItem.created_at:type_name -> google.protobuf.Timestamp
-	10,  // 62: homecloud.agent.v1.LibraryItem.state:type_name -> homecloud.agent.v1.AssetState
-	55,  // 63: homecloud.agent.v1.ListQuarantineResponse.assets:type_name -> homecloud.agent.v1.QuarantinedAsset
-	40,  // 64: homecloud.agent.v1.QuarantinedAsset.asset:type_name -> homecloud.agent.v1.AssetRef
-	76,  // 65: homecloud.agent.v1.QuarantinedAsset.quarantined_at:type_name -> google.protobuf.Timestamp
-	56,  // 66: homecloud.agent.v1.QuarantinedAsset.failures:type_name -> homecloud.agent.v1.Failure
-	11,  // 67: homecloud.agent.v1.Failure.tier:type_name -> homecloud.agent.v1.Tier
-	59,  // 68: homecloud.agent.v1.GetAssetResponse.asset:type_name -> homecloud.agent.v1.Asset
-	40,  // 69: homecloud.agent.v1.Asset.ref:type_name -> homecloud.agent.v1.AssetRef
-	10,  // 70: homecloud.agent.v1.Asset.state:type_name -> homecloud.agent.v1.AssetState
-	76,  // 71: homecloud.agent.v1.Asset.state_changed_at:type_name -> google.protobuf.Timestamp
-	76,  // 72: homecloud.agent.v1.Asset.created_at:type_name -> google.protobuf.Timestamp
-	76,  // 73: homecloud.agent.v1.Asset.added_at:type_name -> google.protobuf.Timestamp
-	76,  // 74: homecloud.agent.v1.Asset.last_seen_at:type_name -> google.protobuf.Timestamp
-	60,  // 75: homecloud.agent.v1.Asset.renditions:type_name -> homecloud.agent.v1.Rendition
-	13,  // 76: homecloud.agent.v1.Rendition.media_type:type_name -> homecloud.agent.v1.MediaType
-	11,  // 77: homecloud.agent.v1.Rendition.required_tiers:type_name -> homecloud.agent.v1.Tier
-	61,  // 78: homecloud.agent.v1.Rendition.passes:type_name -> homecloud.agent.v1.TierPass
-	56,  // 79: homecloud.agent.v1.Rendition.failure:type_name -> homecloud.agent.v1.Failure
-	11,  // 80: homecloud.agent.v1.TierPass.tier:type_name -> homecloud.agent.v1.Tier
-	76,  // 81: homecloud.agent.v1.TierPass.at:type_name -> google.protobuf.Timestamp
-	70,  // 82: homecloud.agent.v1.GetSettingsResponse.settings:type_name -> homecloud.agent.v1.Settings
-	71,  // 83: homecloud.agent.v1.Settings.downloader:type_name -> homecloud.agent.v1.ToolPin
-	71,  // 84: homecloud.agent.v1.Settings.video_probe:type_name -> homecloud.agent.v1.ToolPin
-	71,  // 85: homecloud.agent.v1.Settings.thumbnailer:type_name -> homecloud.agent.v1.ToolPin
-	76,  // 86: homecloud.agent.v1.CreateLoginCodeResponse.expires_at:type_name -> google.protobuf.Timestamp
-	14,  // 87: homecloud.agent.v1.AgentService.GetInfo:input_type -> homecloud.agent.v1.GetInfoRequest
-	16,  // 88: homecloud.agent.v1.AgentService.GetOverview:input_type -> homecloud.agent.v1.GetOverviewRequest
-	18,  // 89: homecloud.agent.v1.AgentService.WatchOverview:input_type -> homecloud.agent.v1.WatchOverviewRequest
-	36,  // 90: homecloud.agent.v1.AgentService.ListRuns:input_type -> homecloud.agent.v1.ListRunsRequest
-	48,  // 91: homecloud.agent.v1.AgentService.ListEvents:input_type -> homecloud.agent.v1.ListEventsRequest
-	50,  // 92: homecloud.agent.v1.AgentService.ListAssets:input_type -> homecloud.agent.v1.ListAssetsRequest
-	53,  // 93: homecloud.agent.v1.AgentService.ListQuarantine:input_type -> homecloud.agent.v1.ListQuarantineRequest
-	57,  // 94: homecloud.agent.v1.AgentService.GetAsset:input_type -> homecloud.agent.v1.GetAssetRequest
-	62,  // 95: homecloud.agent.v1.AgentService.ReleaseQuarantine:input_type -> homecloud.agent.v1.ReleaseQuarantineRequest
-	64,  // 96: homecloud.agent.v1.AgentService.StartSync:input_type -> homecloud.agent.v1.StartSyncRequest
-	66,  // 97: homecloud.agent.v1.AgentService.SendTestNotification:input_type -> homecloud.agent.v1.SendTestNotificationRequest
-	68,  // 98: homecloud.agent.v1.AgentService.GetSettings:input_type -> homecloud.agent.v1.GetSettingsRequest
-	72,  // 99: homecloud.agent.v1.AgentService.CreateLoginCode:input_type -> homecloud.agent.v1.CreateLoginCodeRequest
-	74,  // 100: homecloud.agent.v1.AgentService.ExchangeLoginCode:input_type -> homecloud.agent.v1.ExchangeLoginCodeRequest
-	15,  // 101: homecloud.agent.v1.AgentService.GetInfo:output_type -> homecloud.agent.v1.GetInfoResponse
-	17,  // 102: homecloud.agent.v1.AgentService.GetOverview:output_type -> homecloud.agent.v1.GetOverviewResponse
-	19,  // 103: homecloud.agent.v1.AgentService.WatchOverview:output_type -> homecloud.agent.v1.WatchOverviewResponse
-	37,  // 104: homecloud.agent.v1.AgentService.ListRuns:output_type -> homecloud.agent.v1.ListRunsResponse
-	49,  // 105: homecloud.agent.v1.AgentService.ListEvents:output_type -> homecloud.agent.v1.ListEventsResponse
-	51,  // 106: homecloud.agent.v1.AgentService.ListAssets:output_type -> homecloud.agent.v1.ListAssetsResponse
-	54,  // 107: homecloud.agent.v1.AgentService.ListQuarantine:output_type -> homecloud.agent.v1.ListQuarantineResponse
-	58,  // 108: homecloud.agent.v1.AgentService.GetAsset:output_type -> homecloud.agent.v1.GetAssetResponse
-	63,  // 109: homecloud.agent.v1.AgentService.ReleaseQuarantine:output_type -> homecloud.agent.v1.ReleaseQuarantineResponse
-	65,  // 110: homecloud.agent.v1.AgentService.StartSync:output_type -> homecloud.agent.v1.StartSyncResponse
-	67,  // 111: homecloud.agent.v1.AgentService.SendTestNotification:output_type -> homecloud.agent.v1.SendTestNotificationResponse
-	69,  // 112: homecloud.agent.v1.AgentService.GetSettings:output_type -> homecloud.agent.v1.GetSettingsResponse
-	73,  // 113: homecloud.agent.v1.AgentService.CreateLoginCode:output_type -> homecloud.agent.v1.CreateLoginCodeResponse
-	75,  // 114: homecloud.agent.v1.AgentService.ExchangeLoginCode:output_type -> homecloud.agent.v1.ExchangeLoginCodeResponse
-	101, // [101:115] is the sub-list for method output_type
-	87,  // [87:101] is the sub-list for method input_type
-	87,  // [87:87] is the sub-list for extension type_name
-	87,  // [87:87] is the sub-list for extension extendee
-	0,   // [0:87] is the sub-list for field type_name
+	76,  // 34: homecloud.agent.v1.IPhoneBackup.last_full_read_at:type_name -> google.protobuf.Timestamp
+	7,   // 35: homecloud.agent.v1.CycleReport.download:type_name -> homecloud.agent.v1.DownloadOutcome
+	3,   // 36: homecloud.agent.v1.ListRunsRequest.kind:type_name -> homecloud.agent.v1.RunKind
+	28,  // 37: homecloud.agent.v1.ListRunsResponse.runs:type_name -> homecloud.agent.v1.Run
+	76,  // 38: homecloud.agent.v1.Event.at:type_name -> google.protobuf.Timestamp
+	40,  // 39: homecloud.agent.v1.Event.asset:type_name -> homecloud.agent.v1.AssetRef
+	41,  // 40: homecloud.agent.v1.Event.rendition_changed:type_name -> homecloud.agent.v1.RenditionChanged
+	42,  // 41: homecloud.agent.v1.Event.state_changed:type_name -> homecloud.agent.v1.StateChanged
+	43,  // 42: homecloud.agent.v1.Event.quarantined:type_name -> homecloud.agent.v1.Quarantined
+	44,  // 43: homecloud.agent.v1.Event.quarantine_released:type_name -> homecloud.agent.v1.QuarantineReleased
+	47,  // 44: homecloud.agent.v1.Event.drive_health_changed:type_name -> homecloud.agent.v1.DriveHealthChanged
+	45,  // 45: homecloud.agent.v1.Event.rendition_moved:type_name -> homecloud.agent.v1.RenditionMoved
+	46,  // 46: homecloud.agent.v1.Event.iphone_backup_changed:type_name -> homecloud.agent.v1.IPhoneBackupChanged
+	39,  // 47: homecloud.agent.v1.Event.drive_file:type_name -> homecloud.agent.v1.DriveFileEvent
+	9,   // 48: homecloud.agent.v1.DriveFileEvent.change:type_name -> homecloud.agent.v1.DriveFileChange
+	10,  // 49: homecloud.agent.v1.StateChanged.from:type_name -> homecloud.agent.v1.AssetState
+	10,  // 50: homecloud.agent.v1.StateChanged.to:type_name -> homecloud.agent.v1.AssetState
+	11,  // 51: homecloud.agent.v1.Quarantined.tier:type_name -> homecloud.agent.v1.Tier
+	5,   // 52: homecloud.agent.v1.IPhoneBackupChanged.from:type_name -> homecloud.agent.v1.IPhoneBackupState
+	5,   // 53: homecloud.agent.v1.IPhoneBackupChanged.to:type_name -> homecloud.agent.v1.IPhoneBackupState
+	0,   // 54: homecloud.agent.v1.DriveHealthChanged.from:type_name -> homecloud.agent.v1.DriveHealthState
+	0,   // 55: homecloud.agent.v1.DriveHealthChanged.to:type_name -> homecloud.agent.v1.DriveHealthState
+	8,   // 56: homecloud.agent.v1.ListEventsRequest.kinds:type_name -> homecloud.agent.v1.EventKind
+	38,  // 57: homecloud.agent.v1.ListEventsResponse.events:type_name -> homecloud.agent.v1.Event
+	12,  // 58: homecloud.agent.v1.ListAssetsRequest.kind:type_name -> homecloud.agent.v1.AssetKind
+	52,  // 59: homecloud.agent.v1.ListAssetsResponse.items:type_name -> homecloud.agent.v1.LibraryItem
+	40,  // 60: homecloud.agent.v1.LibraryItem.asset:type_name -> homecloud.agent.v1.AssetRef
+	12,  // 61: homecloud.agent.v1.LibraryItem.kind:type_name -> homecloud.agent.v1.AssetKind
+	76,  // 62: homecloud.agent.v1.LibraryItem.created_at:type_name -> google.protobuf.Timestamp
+	10,  // 63: homecloud.agent.v1.LibraryItem.state:type_name -> homecloud.agent.v1.AssetState
+	55,  // 64: homecloud.agent.v1.ListQuarantineResponse.assets:type_name -> homecloud.agent.v1.QuarantinedAsset
+	40,  // 65: homecloud.agent.v1.QuarantinedAsset.asset:type_name -> homecloud.agent.v1.AssetRef
+	76,  // 66: homecloud.agent.v1.QuarantinedAsset.quarantined_at:type_name -> google.protobuf.Timestamp
+	56,  // 67: homecloud.agent.v1.QuarantinedAsset.failures:type_name -> homecloud.agent.v1.Failure
+	11,  // 68: homecloud.agent.v1.Failure.tier:type_name -> homecloud.agent.v1.Tier
+	59,  // 69: homecloud.agent.v1.GetAssetResponse.asset:type_name -> homecloud.agent.v1.Asset
+	40,  // 70: homecloud.agent.v1.Asset.ref:type_name -> homecloud.agent.v1.AssetRef
+	10,  // 71: homecloud.agent.v1.Asset.state:type_name -> homecloud.agent.v1.AssetState
+	76,  // 72: homecloud.agent.v1.Asset.state_changed_at:type_name -> google.protobuf.Timestamp
+	76,  // 73: homecloud.agent.v1.Asset.created_at:type_name -> google.protobuf.Timestamp
+	76,  // 74: homecloud.agent.v1.Asset.added_at:type_name -> google.protobuf.Timestamp
+	76,  // 75: homecloud.agent.v1.Asset.last_seen_at:type_name -> google.protobuf.Timestamp
+	60,  // 76: homecloud.agent.v1.Asset.renditions:type_name -> homecloud.agent.v1.Rendition
+	13,  // 77: homecloud.agent.v1.Rendition.media_type:type_name -> homecloud.agent.v1.MediaType
+	11,  // 78: homecloud.agent.v1.Rendition.required_tiers:type_name -> homecloud.agent.v1.Tier
+	61,  // 79: homecloud.agent.v1.Rendition.passes:type_name -> homecloud.agent.v1.TierPass
+	56,  // 80: homecloud.agent.v1.Rendition.failure:type_name -> homecloud.agent.v1.Failure
+	11,  // 81: homecloud.agent.v1.TierPass.tier:type_name -> homecloud.agent.v1.Tier
+	76,  // 82: homecloud.agent.v1.TierPass.at:type_name -> google.protobuf.Timestamp
+	70,  // 83: homecloud.agent.v1.GetSettingsResponse.settings:type_name -> homecloud.agent.v1.Settings
+	71,  // 84: homecloud.agent.v1.Settings.downloader:type_name -> homecloud.agent.v1.ToolPin
+	71,  // 85: homecloud.agent.v1.Settings.video_probe:type_name -> homecloud.agent.v1.ToolPin
+	71,  // 86: homecloud.agent.v1.Settings.thumbnailer:type_name -> homecloud.agent.v1.ToolPin
+	76,  // 87: homecloud.agent.v1.CreateLoginCodeResponse.expires_at:type_name -> google.protobuf.Timestamp
+	14,  // 88: homecloud.agent.v1.AgentService.GetInfo:input_type -> homecloud.agent.v1.GetInfoRequest
+	16,  // 89: homecloud.agent.v1.AgentService.GetOverview:input_type -> homecloud.agent.v1.GetOverviewRequest
+	18,  // 90: homecloud.agent.v1.AgentService.WatchOverview:input_type -> homecloud.agent.v1.WatchOverviewRequest
+	36,  // 91: homecloud.agent.v1.AgentService.ListRuns:input_type -> homecloud.agent.v1.ListRunsRequest
+	48,  // 92: homecloud.agent.v1.AgentService.ListEvents:input_type -> homecloud.agent.v1.ListEventsRequest
+	50,  // 93: homecloud.agent.v1.AgentService.ListAssets:input_type -> homecloud.agent.v1.ListAssetsRequest
+	53,  // 94: homecloud.agent.v1.AgentService.ListQuarantine:input_type -> homecloud.agent.v1.ListQuarantineRequest
+	57,  // 95: homecloud.agent.v1.AgentService.GetAsset:input_type -> homecloud.agent.v1.GetAssetRequest
+	62,  // 96: homecloud.agent.v1.AgentService.ReleaseQuarantine:input_type -> homecloud.agent.v1.ReleaseQuarantineRequest
+	64,  // 97: homecloud.agent.v1.AgentService.StartSync:input_type -> homecloud.agent.v1.StartSyncRequest
+	66,  // 98: homecloud.agent.v1.AgentService.SendTestNotification:input_type -> homecloud.agent.v1.SendTestNotificationRequest
+	68,  // 99: homecloud.agent.v1.AgentService.GetSettings:input_type -> homecloud.agent.v1.GetSettingsRequest
+	72,  // 100: homecloud.agent.v1.AgentService.CreateLoginCode:input_type -> homecloud.agent.v1.CreateLoginCodeRequest
+	74,  // 101: homecloud.agent.v1.AgentService.ExchangeLoginCode:input_type -> homecloud.agent.v1.ExchangeLoginCodeRequest
+	15,  // 102: homecloud.agent.v1.AgentService.GetInfo:output_type -> homecloud.agent.v1.GetInfoResponse
+	17,  // 103: homecloud.agent.v1.AgentService.GetOverview:output_type -> homecloud.agent.v1.GetOverviewResponse
+	19,  // 104: homecloud.agent.v1.AgentService.WatchOverview:output_type -> homecloud.agent.v1.WatchOverviewResponse
+	37,  // 105: homecloud.agent.v1.AgentService.ListRuns:output_type -> homecloud.agent.v1.ListRunsResponse
+	49,  // 106: homecloud.agent.v1.AgentService.ListEvents:output_type -> homecloud.agent.v1.ListEventsResponse
+	51,  // 107: homecloud.agent.v1.AgentService.ListAssets:output_type -> homecloud.agent.v1.ListAssetsResponse
+	54,  // 108: homecloud.agent.v1.AgentService.ListQuarantine:output_type -> homecloud.agent.v1.ListQuarantineResponse
+	58,  // 109: homecloud.agent.v1.AgentService.GetAsset:output_type -> homecloud.agent.v1.GetAssetResponse
+	63,  // 110: homecloud.agent.v1.AgentService.ReleaseQuarantine:output_type -> homecloud.agent.v1.ReleaseQuarantineResponse
+	65,  // 111: homecloud.agent.v1.AgentService.StartSync:output_type -> homecloud.agent.v1.StartSyncResponse
+	67,  // 112: homecloud.agent.v1.AgentService.SendTestNotification:output_type -> homecloud.agent.v1.SendTestNotificationResponse
+	69,  // 113: homecloud.agent.v1.AgentService.GetSettings:output_type -> homecloud.agent.v1.GetSettingsResponse
+	73,  // 114: homecloud.agent.v1.AgentService.CreateLoginCode:output_type -> homecloud.agent.v1.CreateLoginCodeResponse
+	75,  // 115: homecloud.agent.v1.AgentService.ExchangeLoginCode:output_type -> homecloud.agent.v1.ExchangeLoginCodeResponse
+	102, // [102:116] is the sub-list for method output_type
+	88,  // [88:102] is the sub-list for method input_type
+	88,  // [88:88] is the sub-list for extension type_name
+	88,  // [88:88] is the sub-list for extension extendee
+	0,   // [0:88] is the sub-list for field type_name
 }
 
 func init() { file_homecloud_agent_v1_agent_proto_init() }

@@ -2,9 +2,7 @@ package kei
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -118,20 +116,14 @@ func WriteConfig(cfg *config.Config) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	have, err := os.ReadFile(cfg.Kei.Config)
-	switch {
-	case err == nil && bytes.Equal(have, want):
-		return false, nil
-	case err != nil && !errors.Is(err, fs.ErrNotExist):
-		return false, fmt.Errorf("read kei config: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(cfg.Kei.Config), 0o700); err != nil {
+	if err = os.MkdirAll(filepath.Dir(cfg.Kei.Config), 0o700); err != nil {
 		return false, fmt.Errorf("create kei config directory: %w", err)
 	}
-	if err := platform.WriteSecretFile(cfg.Kei.Config, want); err != nil {
+	changed, err := platform.WriteFileIfChanged(cfg.Kei.Config, want, platform.WriteSecretFile)
+	if err != nil {
 		return false, fmt.Errorf("write kei config: %w", err)
 	}
-	return true, nil
+	return changed, nil
 }
 
 // ConfigCurrent reports whether kei.config holds exactly what RenderConfig produces.

@@ -28,12 +28,14 @@ type Config struct {
 	ICloud       ICloud       `toml:"icloud"`
 	Kei          Kei          `toml:"kei"`
 	FFmpeg       FFmpeg       `toml:"ffmpeg"`
+	Verify       Verify       `toml:"verify"`
 	Web          Web          `toml:"web"`
 	Notify       Notify       `toml:"notify"`
 	Schedule     Schedule     `toml:"schedule"`
 	Backup       Backup       `toml:"backup"`
 	IPhoneBackup IPhoneBackup `toml:"iphone_backup"`
 	Drive        Drive        `toml:"drive"`
+	Logs         Logs         `toml:"logs"`
 }
 
 // Storage describes the archive volume.
@@ -55,6 +57,9 @@ type ICloud struct {
 	// IncludeHidden archives photos hidden in iCloud Photos, kept apart under
 	// Photos/Hidden and hidden on disk. It must be set explicitly.
 	IncludeHidden *bool `toml:"include_hidden"`
+	// RequestTimeout bounds one call of homecloud's own iCloud client (sign-in
+	// and iCloud Drive listing); downloads are bounded by drive.stall_timeout.
+	RequestTimeout Duration `toml:"request_timeout"`
 }
 
 // Kei pins the kei downloader. homecloud generates kei's configuration at
@@ -71,17 +76,41 @@ type FFmpeg struct {
 	FFprobe string `toml:"ffprobe"`
 	FFmpeg  string `toml:"ffmpeg"`
 	Version string `toml:"version"`
+	// ProbeTimeout bounds one ffprobe run on a video. Probing reads container
+	// metadata, which takes seconds even for large videos; a run this long is
+	// hung, and its file is retried at the next sync.
+	ProbeTimeout Duration `toml:"probe_timeout"`
+	// Renderers is how many thumbnails and previews render at once.
+	Renderers int `toml:"renderers"`
+	// RenderTimeout bounds rendering one thumbnail or preview; a hung render
+	// is retried at the next request.
+	RenderTimeout Duration `toml:"render_timeout"`
+}
+
+// Verify configures checking archived files.
+type Verify struct {
+	// Workers is how many files are checked at once, by sync cycles and by
+	// integrity checks.
+	Workers int `toml:"workers"`
 }
 
 // Web configures the local API and web app endpoint.
 type Web struct {
 	Listen string `toml:"listen"`
+	// SessionTTL is how long a browser stays signed in after exchanging a
+	// login code.
+	SessionTTL Duration `toml:"session_ttl"`
 }
 
 // Notify configures ntfy push notifications.
 type Notify struct {
 	Server string `toml:"server"`
 	Topic  string `toml:"topic"`
+	// RepeatEvery is how often an alert about a condition that persists
+	// (sign-in needed, drive missing, low space, a backup problem) repeats.
+	RepeatEvery Duration `toml:"repeat_every"`
+	// Timeout bounds sending one notification.
+	Timeout Duration `toml:"timeout"`
 }
 
 // Schedule configures background job cadence.
@@ -104,19 +133,34 @@ type Drive struct {
 	StallTimeout Duration `toml:"stall_timeout"`
 }
 
+// Logs configures the agent's rotating log files under <storage.root>/logs on
+// Windows. On Linux the agent logs to journald, which rotates by itself.
+type Logs struct {
+	// MaxSizeMB is the size at which a log file is rotated.
+	MaxSizeMB int `toml:"max_size_mb"`
+	// MaxBackups is how many rotated files are kept per log.
+	MaxBackups int `toml:"max_backups"`
+}
+
 // IPhoneBackup configures the monitor of local iPhone backups, which Apple's
 // Devices app (or iTunes, or idevicebackup2) writes; homecloud only reads them.
 type IPhoneBackup struct {
-	// Dirs are the backup directories to watch, e.g.
-	// %USERPROFILE%\Apple\MobileSync\Backup for the Apple Devices app.
+	// Dirs are the backup directories to watch, as absolute paths, e.g.
+	// C:\Users\<you>\Apple\MobileSync\Backup for the Apple Devices app.
 	Dirs []string `toml:"dirs"`
 	// MaxAge is the oldest acceptable finished backup.
 	MaxAge Duration `toml:"max_age"`
-	// CheckInterval is how often the backups are inspected (each check reads
-	// every backed-up file once).
+	// CheckInterval is how often the backups' metadata and sizes are checked.
 	CheckInterval Duration `toml:"check_interval"`
+	// ReadInterval is how often every backed-up file is read in full, which
+	// proves the disk still delivers the backup but takes as long as reading
+	// the whole backup.
+	ReadInterval Duration `toml:"read_interval"`
+	// StalledAfter is how long a backup in progress may go without writing
+	// before it counts as stopped.
+	StalledAfter Duration `toml:"stalled_after"`
 	// MaxShrinkPercent is the largest acceptable size drop against the last
-	// healthy backup, in percent.
+	// normal backup, in percent.
 	MaxShrinkPercent float64 `toml:"max_shrink_percent"`
 }
 
@@ -219,6 +263,9 @@ func (c *Config) Validate() error {
 	if c.ICloud.IncludeHidden == nil {
 		add("icloud.include_hidden must be set to true or false")
 	}
+	if t := c.ICloud.RequestTimeout.Std(); t < 10*time.Second || t > 10*time.Minute {
+		add("icloud.request_timeout must be between 10s and 10m, got %s", t)
+	}
 
 	type field struct{ key, value string }
 	for _, f := range []field{
@@ -237,11 +284,27 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	if t := c.FFmpeg.ProbeTimeout.Std(); t < 30*time.Second || t > time.Hour {
+		add("ffmpeg.probe_timeout must be between 30s and 1h, got %s", t)
+	}
+	if c.FFmpeg.Renderers < 1 || c.FFmpeg.Renderers > 16 {
+		add("ffmpeg.renderers must be between 1 and 16, got %d", c.FFmpeg.Renderers)
+	}
+	if t := c.FFmpeg.RenderTimeout.Std(); t < 10*time.Second || t > 30*time.Minute {
+		add("ffmpeg.render_timeout must be between 10s and 30m, got %s", t)
+	}
+	if c.Verify.Workers < 1 || c.Verify.Workers > 32 {
+		add("verify.workers must be between 1 and 32, got %d", c.Verify.Workers)
+	}
+
 	if ap, err := netip.ParseAddrPort(c.Web.Listen); err != nil {
 		add("web.listen must be ip:port, got %q: %w", c.Web.Listen, err)
 	} else if ap.Addr() != netip.AddrFrom4([4]byte{127, 0, 0, 1}) {
 		// The desktop app's content security policy allows exactly this address.
 		add("web.listen must be 127.0.0.1:<port> (local only, and the address the desktop app trusts), got %q", c.Web.Listen)
+	}
+	if t := c.Web.SessionTTL.Std(); t < time.Hour || t > 30*24*time.Hour {
+		add("web.session_ttl must be between 1h and 720h, got %s", t)
 	}
 
 	if u, err := url.Parse(c.Notify.Server); err != nil || u.Scheme != "https" || u.Host == "" || strings.TrimSuffix(u.Path, "/") != "" {
@@ -249,6 +312,12 @@ func (c *Config) Validate() error {
 	}
 	if !ntfyTopicPattern.MatchString(c.Notify.Topic) {
 		add("notify.topic must be 24-64 characters of [A-Za-z0-9_-] (topics are public; length is the secret)")
+	}
+	if c.Notify.RepeatEvery.Std() < time.Hour {
+		add("notify.repeat_every must be at least 1h, got %s", c.Notify.RepeatEvery.Std())
+	}
+	if t := c.Notify.Timeout.Std(); t < 5*time.Second || t > 2*time.Minute {
+		add("notify.timeout must be between 5s and 2m, got %s", t)
 	}
 
 	if c.Schedule.SyncInterval.Std() < time.Minute {
@@ -281,20 +350,39 @@ func (c *Config) Validate() error {
 		add("drive.stall_timeout must be between 30s and 10m, got %s", st)
 	}
 
+	if c.Logs.MaxSizeMB < 1 || c.Logs.MaxSizeMB > 1024 {
+		add("logs.max_size_mb must be between 1 and 1024, got %d", c.Logs.MaxSizeMB)
+	}
+	if c.Logs.MaxBackups < 1 || c.Logs.MaxBackups > 100 {
+		add("logs.max_backups must be between 1 and 100, got %d", c.Logs.MaxBackups)
+	}
+
 	ib := c.IPhoneBackup
 	if len(ib.Dirs) == 0 {
 		add("iphone_backup.dirs must name at least one backup directory")
 	}
+	seenDirs := map[string]bool{}
 	for _, d := range ib.Dirs {
 		if !filepath.IsAbs(d) {
 			add("iphone_backup.dirs entries must be absolute paths, got %q", d)
 		}
+		key := strings.ToLower(filepath.Clean(d))
+		if seenDirs[key] {
+			add("iphone_backup.dirs lists %q twice", d)
+		}
+		seenDirs[key] = true
 	}
 	if ib.MaxAge.Std() < time.Hour {
 		add("iphone_backup.max_age must be at least 1h, got %s", ib.MaxAge.Std())
 	}
-	if ib.CheckInterval.Std() < time.Hour {
-		add("iphone_backup.check_interval must be at least 1h, got %s", ib.CheckInterval.Std())
+	if ib.CheckInterval.Std() < time.Hour || ib.CheckInterval.Std() > ib.MaxAge.Std() {
+		add("iphone_backup.check_interval must be between 1h and iphone_backup.max_age, got %s", ib.CheckInterval.Std())
+	}
+	if ib.ReadInterval.Std() < ib.CheckInterval.Std() {
+		add("iphone_backup.read_interval must be at least iphone_backup.check_interval, got %s", ib.ReadInterval.Std())
+	}
+	if ib.StalledAfter.Std() < time.Hour {
+		add("iphone_backup.stalled_after must be at least 1h, got %s", ib.StalledAfter.Std())
 	}
 	if ib.MaxShrinkPercent <= 0 || ib.MaxShrinkPercent >= 100 {
 		add("iphone_backup.max_shrink_percent must be in (0, 100), got %v", ib.MaxShrinkPercent)

@@ -1,7 +1,6 @@
 package platform
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,29 +21,11 @@ func StateDir() (string, error) {
 }
 
 // WriteSecretFile atomically replaces path with data in a file of mode 0600.
-func WriteSecretFile(path string, data []byte) (err error) {
+func WriteSecretFile(path string, data []byte) error {
 	// CreateTemp creates the file with mode 0600.
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("create temp for %q: %w", path, err)
 	}
-	tmp := f.Name()
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, os.Remove(tmp))
-		}
-	}()
-	if _, err = f.Write(data); err != nil {
-		return errors.Join(fmt.Errorf("write %q: %w", tmp, err), f.Close())
-	}
-	if err = f.Sync(); err != nil {
-		return errors.Join(fmt.Errorf("sync %q: %w", tmp, err), f.Close())
-	}
-	if err = f.Close(); err != nil {
-		return fmt.Errorf("close %q: %w", tmp, err)
-	}
-	if err = os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("replace %q: %w", path, err)
-	}
-	return nil
+	return commit(f, path, data)
 }

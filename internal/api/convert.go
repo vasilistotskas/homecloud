@@ -21,16 +21,25 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 )
 
-// page validates a page size and decodes a page token into a "before id" cursor.
-func page(size int32, token string) (int, int64, error) {
+// pageSize validates a requested page size; 0 selects def.
+func pageSize(size int32, def int) (int, error) {
 	switch {
 	case size < 0 || size > maxPageSize:
-		return 0, 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("page_size must be 0..%d", maxPageSize))
+		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("page_size must be 0..%d", maxPageSize))
 	case size == 0:
-		size = defaultPageSize
+		return def, nil
+	}
+	return int(size), nil
+}
+
+// page validates a page size and decodes a page token into a "before id" cursor.
+func page(requested int32, token string) (int, int64, error) {
+	size, err := pageSize(requested, defaultPageSize)
+	if err != nil {
+		return 0, 0, err
 	}
 	if token == "" {
-		return int(size), 0, nil
+		return size, 0, nil
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
@@ -40,7 +49,7 @@ func page(size int32, token string) (int, int64, error) {
 	if err != nil || before <= 0 {
 		return 0, 0, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
 	}
-	return int(size), before, nil
+	return size, before, nil
 }
 
 func encodePageToken(lastID int64) string {
@@ -209,7 +218,7 @@ func iphoneBackupToProto(detail string) (*agentv1.IPhoneBackupReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &agentv1.IPhoneBackupReport{Archived: int64(rep.Archived), Error: rep.Error}
+	out := &agentv1.IPhoneBackupReport{Archived: int64(rep.Archived), Error: rep.Error, DirErrors: rep.DirErrors}
 	for _, d := range rep.Devices {
 		state, err := lookup(iphoneBackupStates, d.State, "iphone backup state")
 		if err != nil {
@@ -219,6 +228,7 @@ func iphoneBackupToProto(detail string) (*agentv1.IPhoneBackupReport, error) {
 			Udid: d.UDID, Name: d.Name, ProductVersion: d.ProductVersion, Dir: d.Dir,
 			Encrypted: d.Encrypted, CompletedAt: optionalTimePtr(d.CompletedAt),
 			Files: d.Files, SizeBytes: d.Bytes, State: state, Reasons: d.Reasons,
+			LastFullReadAt: optionalTimePtr(d.LastFullReadAt),
 		})
 	}
 	return out, nil
@@ -306,6 +316,7 @@ var eventKindNames = map[agentv1.EventKind]string{
 	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_DELETED:    ledger.EventDriveFileDeleted,
 	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_RESTORED:   ledger.EventDriveFileRestored,
 	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED:    ledger.EventDriveFileDamaged,
+	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_REPAIRED:   ledger.EventDriveFileRepaired,
 }
 
 // driveFileChanges maps the ledger's iCloud Drive event kinds to the API's.
@@ -316,6 +327,7 @@ var driveFileChanges = map[string]agentv1.DriveFileChange{
 	ledger.EventDriveFileDeleted:  agentv1.DriveFileChange_DRIVE_FILE_CHANGE_DELETED,
 	ledger.EventDriveFileRestored: agentv1.DriveFileChange_DRIVE_FILE_CHANGE_RESTORED,
 	ledger.EventDriveFileDamaged:  agentv1.DriveFileChange_DRIVE_FILE_CHANGE_DAMAGED,
+	ledger.EventDriveFileRepaired: agentv1.DriveFileChange_DRIVE_FILE_CHANGE_REPAIRED,
 }
 
 var assetStates = map[ledger.AssetState]agentv1.AssetState{
@@ -420,21 +432,23 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 		}
 	case ledger.EventIPhoneBackupChanged:
 		var d struct {
-			Subject    string             `json:"subject"`
+			Folder     string             `json:"subject"`
+			UDID       string             `json:"udid"`
 			DeviceName string             `json:"device_name"`
 			From       iphonebackup.State `json:"from"`
 			To         iphonebackup.State `json:"to"`
 			Problems   []string           `json:"problems"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
-			c := &agentv1.IPhoneBackupChanged{Udid: d.Subject, DeviceName: d.DeviceName, Reasons: d.Problems}
+			c := &agentv1.IPhoneBackupChanged{Udid: d.UDID, Dir: d.Folder, DeviceName: d.DeviceName, Reasons: d.Problems}
 			if c.From, err = iphoneBackupState(d.From); err == nil {
 				c.To, err = iphoneBackupState(d.To)
 			}
 			out.Detail = &agentv1.Event_IphoneBackupChanged{IphoneBackupChanged: c}
 		}
 	case ledger.EventDriveFileArchived, ledger.EventDriveFileChanged, ledger.EventDriveFileMoved,
-		ledger.EventDriveFileDeleted, ledger.EventDriveFileRestored, ledger.EventDriveFileDamaged:
+		ledger.EventDriveFileDeleted, ledger.EventDriveFileRestored, ledger.EventDriveFileDamaged,
+		ledger.EventDriveFileRepaired:
 		var d struct {
 			Path   string `json:"path"`
 			From   string `json:"from"`

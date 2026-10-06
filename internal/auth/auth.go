@@ -29,8 +29,6 @@ const (
 	SessionCookie = "homecloud_session"
 	// CodeTTL is how long a login code can be exchanged.
 	CodeTTL = 2 * time.Minute
-	// SessionTTL bounds a browser session.
-	SessionTTL = 7 * 24 * time.Hour
 	// maxFailedExchanges invalidates every outstanding code after this many
 	// wrong guesses, so codes cannot be brute-forced.
 	maxFailedExchanges = 5
@@ -65,8 +63,9 @@ func NewToken() (string, error) {
 
 // Authenticator validates credentials and manages login codes and sessions.
 type Authenticator struct {
-	token []byte
-	now   func() time.Time
+	token      []byte
+	sessionTTL time.Duration
+	now        func() time.Time
 
 	mu       sync.Mutex
 	codes    map[string]time.Time // code → expiry
@@ -74,13 +73,15 @@ type Authenticator struct {
 	failures int
 }
 
-// New returns an Authenticator accepting token as the bearer credential.
-func New(token string, now func() time.Time) *Authenticator {
+// New returns an Authenticator accepting token as the bearer credential,
+// whose browser sessions last sessionTTL.
+func New(token string, sessionTTL time.Duration, now func() time.Time) *Authenticator {
 	return &Authenticator{
-		token:    []byte(token),
-		now:      now,
-		codes:    map[string]time.Time{},
-		sessions: map[string]time.Time{},
+		token:      []byte(token),
+		sessionTTL: sessionTTL,
+		now:        now,
+		codes:      map[string]time.Time{},
+		sessions:   map[string]time.Time{},
 	}
 }
 
@@ -147,7 +148,7 @@ func (a *Authenticator) Exchange(code string) (*http.Cookie, error) {
 	if err != nil {
 		return nil, err
 	}
-	a.sessions[id] = a.now().Add(SessionTTL)
+	a.sessions[id] = a.now().Add(a.sessionTTL)
 	// No Secure attribute: the agent serves plain HTTP on loopback, where
 	// browsers do not uniformly accept Secure cookies. SameSite=Strict, HttpOnly
 	// and the Host/Origin checks in package web protect the session instead.
@@ -157,7 +158,7 @@ func (a *Authenticator) Exchange(code string) (*http.Cookie, error) {
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int(SessionTTL / time.Second),
+		MaxAge:   int(a.sessionTTL / time.Second),
 	}, nil
 }
 

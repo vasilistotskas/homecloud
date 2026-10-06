@@ -262,13 +262,15 @@ const verifiedPredicate = `(verified_content_at IS NOT NULL
 	AND (requires_structure = 0 OR verified_structure_at IS NOT NULL)
 	AND (requires_probe = 0 OR verified_probe_at IS NOT NULL))`
 
+// appendEvent adds an audit event. An empty library and asset id are stored
+// as NULL: the event concerns no Photos asset.
 func appendEvent(ctx context.Context, tx *sql.Tx, ts, library, assetID, kind string, detail map[string]any) error {
 	payload, err := json.Marshal(detail)
 	if err != nil {
 		return fmt.Errorf("encode event %s: %w", kind, err)
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO events (at, library, asset_id, kind, detail) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO events (at, library, asset_id, kind, detail) VALUES (?, nullif(?, ''), nullif(?, ''), ?, ?)`,
 		ts, library, assetID, kind, string(payload)); err != nil {
 		return fmt.Errorf("append event %s: %w", kind, err)
 	}

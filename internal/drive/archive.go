@@ -19,6 +19,8 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/icloud"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/parallel"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // Dir is the archive's Drive folder, under storage.root.
@@ -33,9 +35,6 @@ const (
 	// deletes from.
 	partialDir = ".partial"
 )
-
-// versionStamp names a .versions folder; it has no characters Windows forbids.
-const versionStamp = "20060102T150405Z"
 
 // maxFailures bounds how many failure messages a report keeps.
 const maxFailures = 20
@@ -257,29 +256,18 @@ func sameTime(a *time.Time, b time.Time) bool {
 func (a *Archive) download(ctx context.Context, jobs []job, rep *Report, mu *sync.Mutex) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
-	work := make(chan job)
-	var wg sync.WaitGroup
-	for range a.Workers {
-		wg.Go(func() {
-			for j := range work {
-				if ctx.Err() != nil {
-					continue
-				}
-				err := a.archive(ctx, j, rep, mu)
-				switch {
-				case errors.Is(err, icloud.ErrSignInRequired):
-					cancel(err)
-				case err != nil && ctx.Err() == nil:
-					rep.fail(mu, "%s: %v", strings.Join(j.file.Path, "/"), err)
-				}
-			}
-		})
-	}
-	for _, j := range jobs {
-		work <- j
-	}
-	close(work)
-	wg.Wait()
+	parallel.ForEach(ctx, jobs, a.Workers, func(j job) {
+		if ctx.Err() != nil {
+			return // handed out just before the sync stopped
+		}
+		err := a.archive(ctx, j, rep, mu)
+		switch {
+		case errors.Is(err, icloud.ErrSignInRequired):
+			cancel(err)
+		case err != nil && ctx.Err() == nil:
+			rep.fail(mu, "%s: %v", strings.Join(j.file.Path, "/"), err)
+		}
+	})
 	if err := context.Cause(ctx); err != nil {
 		return fmt.Errorf("drive sync: %w", err)
 	}
@@ -432,7 +420,7 @@ func (a *Archive) keep(local string) (string, error) {
 	case !info.Mode().IsRegular():
 		return "", fmt.Errorf("%s is not a file (%s); it is left in place", local, info.Mode().Type())
 	}
-	stamp := a.Now().UTC().Format(versionStamp)
+	stamp := a.Now().UTC().Format(platform.FileTimeLayout)
 	for n := 1; n <= maxVersionSuffix; n++ {
 		folder := stamp
 		if n > 1 {

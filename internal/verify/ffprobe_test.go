@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 )
@@ -32,7 +33,7 @@ func TestFFprobeVersionPattern(t *testing.T) {
 }
 
 func TestProbeUnstartableFFprobeIsTransient(t *testing.T) {
-	cfg := config.FFmpeg{FFprobe: filepath.Join(t.TempDir(), "no-ffprobe")}
+	cfg := config.FFmpeg{FFprobe: filepath.Join(t.TempDir(), "no-ffprobe"), ProbeTimeout: config.Duration(time.Minute)}
 	err := Probe(context.Background(), cfg, filepath.Join(t.TempDir(), "clip.mov"))
 	if err == nil || errors.Is(err, ErrMismatch) {
 		t.Fatalf("Probe with a missing ffprobe = %v; want a transient error, never a mismatch", err)

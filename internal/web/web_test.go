@@ -85,7 +85,7 @@ func setup(t *testing.T, opts ...func(*fakeAgent)) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authn := auth.New(token, func() time.Time { return t0 })
+	authn := auth.New(token, 7*24*time.Hour, func() time.Time { return t0 })
 	agent := &fakeAgent{hub: app.NewHub(), started: true}
 	for _, opt := range opts {
 		opt(agent)
@@ -215,6 +215,7 @@ func TestHostAndOriginChecks(t *testing.T) {
 	}{
 		{"own host", map[string]string{"Authorization": bearer}, http.StatusOK},
 		{"rebinding host", map[string]string{"Authorization": bearer, "Host": "evil.example:80"}, http.StatusForbidden},
+		{"localhost alias", map[string]string{"Authorization": bearer, "Host": strings.Replace(e.host, "127.0.0.1", "localhost", 1)}, http.StatusForbidden},
 		{"foreign origin", map[string]string{"Authorization": bearer, "Origin": "https://evil.example"}, http.StatusForbidden},
 		{"desktop origin", map[string]string{"Authorization": bearer, "Origin": "http://tauri.localhost"}, http.StatusOK},
 	}

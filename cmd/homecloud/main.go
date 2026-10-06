@@ -374,8 +374,8 @@ func runOpen(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("request login code: %w", err)
 	}
 	link := ep.URL + "/#/connect?code=" + url.QueryEscape(res.Msg.GetCode())
-	if err := printf(cmd, "Opening %s\nIf the browser does not open, enter code %s on that page (valid for %s, works once).\n",
-		ep.URL, res.Msg.GetCode(), auth.CodeTTL); err != nil {
+	if err := printf(cmd, "Opening %s\nIf the browser does not open, enter code %s on that page (valid until %s, works once).\n",
+		ep.URL, res.Msg.GetCode(), res.Msg.GetExpiresAt().AsTime().Local().Format(time.TimeOnly)); err != nil {
 		return err
 	}
 	return platform.OpenURL(link)

@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strconv"
-	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -44,16 +43,11 @@ type probeReport struct {
 	} `json:"format"`
 }
 
-// probeTimeout bounds one ffprobe run. Probing reads container metadata, which
-// takes seconds even for multi-gigabyte videos; a run this long is hung, and
-// its file is retried next cycle instead of stalling the cycle.
-const probeTimeout = 5 * time.Minute
-
 // Probe runs ffprobe on a video (tier 3). It requires a clean exit with no
 // diagnostics, a positive container duration, and at least one video stream
 // with a positive duration.
 func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, cfg.ProbeTimeout.Std())
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	cmd := platform.Command(ctx, cfg.FFprobe,

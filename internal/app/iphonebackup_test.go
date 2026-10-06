@@ -111,20 +111,57 @@ func TestIPhoneBackupCheckRecordsStateAndAlertsOnceADay(t *testing.T) {
 	}
 }
 
-func TestIPhoneBackupBaselineIsTheLastHealthySize(t *testing.T) {
+func TestIPhoneBackupFullReadRunsOnItsOwnInterval(t *testing.T) {
 	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
 	agent, _ := newTestAgent(t, fixture(t, false), "0", &clock)
 	ctx := context.Background()
 	writeIPhoneBackup(t, agent.cfg.IPhoneBackup.Dirs[0], true, clock)
+	readAt := func() time.Time {
+		t.Helper()
+		recs, err := agent.db.IPhoneBackupRecords(ctx)
+		if err != nil || len(recs) != 1 {
+			t.Fatalf("records = %v, %v", recs, err)
+		}
+		for _, r := range recs {
+			if r.LastFullReadAt == nil {
+				t.Fatal("never read in full")
+			}
+			return *r.LastFullReadAt
+		}
+		return time.Time{}
+	}
 	if _, ok := agent.checkIPhoneBackups(ctx); !ok {
 		t.Fatal("first check not healthy")
 	}
-	// Record it as a run so the next check can find the baseline.
-	if err := agent.maintain(ctx); err != nil {
+	first := readAt()
+	clock = clock.Add(24 * time.Hour) // a daily check, inside the weekly read interval
+	agent.checkIPhoneBackups(ctx)
+	if !readAt().Equal(first) {
+		t.Fatal("the full read ran again before read_interval passed")
+	}
+	clock = clock.Add(7 * 24 * time.Hour)
+	agent.checkIPhoneBackups(ctx)
+	if !readAt().After(first) {
+		t.Fatal("the full read did not run after read_interval")
+	}
+}
+
+func TestIPhoneBackupUnreadableDirectoryAlerts(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
+	// A file where the backup directory should be cannot be listed.
+	dir := agent.cfg.IPhoneBackup.Dirs[0]
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	base, err := agent.iphoneBaselines(ctx)
-	if err != nil || base[testUDID] == 0 {
-		t.Fatalf("baselines = %v, %v", base, err)
+	if err := os.WriteFile(dir, []byte("not a folder"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rep, ok := agent.checkIPhoneBackups(context.Background())
+	if r := rep.(IPhoneBackupReport); ok || len(r.DirErrors) != 1 {
+		t.Fatalf("check = %+v, ok=%v", r, ok)
+	}
+	if countTitle(n, "homecloud: iPhone backups could not be checked") != 1 {
+		t.Fatalf("alerts = %v", n.titles())
 	}
 }

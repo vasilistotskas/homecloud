@@ -12,13 +12,15 @@ import (
 
 var t0 = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 
+const sessionTTL = 7 * 24 * time.Hour
+
 func newAuth(t *testing.T, clock *time.Time) (*Authenticator, string) {
 	t.Helper()
 	tok, err := NewToken()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(tok, func() time.Time { return *clock }), tok
+	return New(tok, sessionTTL, func() time.Time { return *clock }), tok
 }
 
 func request(header, cookie string) *http.Request {
@@ -78,7 +80,7 @@ func TestLoginCodeFlow(t *testing.T) {
 	if _, err := a.Exchange(code); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("reused code = %v, want ErrInvalidCode", err)
 	}
-	clock = clock.Add(SessionTTL)
+	clock = clock.Add(sessionTTL)
 	if got := a.Authenticate(request("", cookie.Value)); got != KindNone {
 		t.Fatalf("expired session = %v", got)
 	}

@@ -165,12 +165,13 @@ func (s *Service) icloudDrive(ctx context.Context) (*agentv1.ICloudDrive, error)
 	if err != nil {
 		return nil, internal(err)
 	}
-	signedIn, err := s.agent.ICloudSignedInAt()
-	if err != nil {
-		return nil, internal(err)
-	}
 	out := &agentv1.ICloudDrive{Files: files, Bytes: bytes, DeletedInIcloud: deleted}
-	if !signedIn.IsZero() {
+	// A session that cannot be read is a state of the iCloud Drive card, not
+	// a failure of the whole overview.
+	switch signedIn, err := s.agent.ICloudSignedInAt(); {
+	case err != nil:
+		out.SessionProblem = err.Error()
+	case !signedIn.IsZero():
 		out.SignedInAt = timestamppb.New(signedIn)
 	}
 	return out, nil
@@ -468,15 +469,11 @@ func internal(err error) error {
 // ListAssets implements AgentService.
 func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv1.ListAssetsRequest]) (*connect.Response[agentv1.ListAssetsResponse], error) {
 	m := req.Msg
-	size := int(m.GetPageSize())
-	switch {
-	case size < 0 || size > maxPageSize:
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("page_size must be 0..%d", maxPageSize))
-	case size == 0:
-		size = defaultLibraryPage
+	size, err := pageSize(m.GetPageSize(), defaultLibraryPage)
+	if err != nil {
+		return nil, err
 	}
 	q := ledger.LibraryQuery{HiddenDir: s.hiddenDir, Hidden: m.GetHidden(), Limit: size}
-	var err error
 	if q.Kind, err = assetKindFilter(m.GetKind()); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}

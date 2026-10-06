@@ -19,7 +19,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -40,11 +39,6 @@ const (
 	thumbEdge   = 320
 	previewEdge = 1600
 	webpQuality = "75"
-	// renderers bounds concurrent ffmpeg processes.
-	renderers = 4
-	// renderTimeout bounds rendering one image (ffprobe and ffmpeg). A render
-	// takes well under a second; one this long is hung and is retried later.
-	renderTimeout = 2 * time.Minute
 )
 
 // sizeFilters shape each size. Thumbnails fill and crop a square (small
@@ -105,7 +99,7 @@ type call struct {
 // New returns a Renderer caching into dir, which it owns: Prune deletes
 // anything in dir that is not a current rendering.
 func New(cfg config.FFmpeg, dir string) *Renderer {
-	return &Renderer{cfg: cfg, dir: dir, sem: make(chan struct{}, renderers), inflight: map[string]*call{}}
+	return &Renderer{cfg: cfg, dir: dir, sem: make(chan struct{}, cfg.Renderers), inflight: map[string]*call{}}
 }
 
 // specDir names the cache directory of size after the ffmpeg arguments that
@@ -178,8 +172,8 @@ func (r *Renderer) Ensure(ctx context.Context, src Source, size Size) (string, e
 	r.mu.Unlock()
 
 	// The render serves every waiter and fills the cache, so it does not end
-	// when the request that started it is cancelled; renderTimeout bounds it.
-	renderCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), renderTimeout)
+	// when the request that started it is cancelled; ffmpeg.render_timeout bounds it.
+	renderCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.cfg.RenderTimeout.Std())
 	c.err = r.render(renderCtx, src, size, path)
 	cancel()
 	r.mu.Lock()

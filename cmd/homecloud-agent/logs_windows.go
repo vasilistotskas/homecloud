@@ -10,12 +10,8 @@ import (
 
 	"github.com/DeRuina/timberjack"
 
+	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
-)
-
-const (
-	logMaxSizeMB  = 20
-	logMaxBackups = 10
 )
 
 // agentLogs are the agent's log destinations. A windowsgui process has no
@@ -25,10 +21,10 @@ type agentLogs struct {
 	closers    []io.Closer
 }
 
-func openLogs(root string) *agentLogs {
+func openLogs(root string, cfg config.Logs) *agentLogs {
 	dir := filepath.Join(root, "logs")
-	agent := &timberjack.Logger{Filename: filepath.Join(dir, "homecloud-agent.log"), MaxSize: logMaxSizeMB, MaxBackups: logMaxBackups, LocalTime: true}
-	kei := &timberjack.Logger{Filename: filepath.Join(dir, "kei.log"), MaxSize: logMaxSizeMB, MaxBackups: logMaxBackups, LocalTime: true}
+	agent := &timberjack.Logger{Filename: filepath.Join(dir, "homecloud-agent.log"), MaxSize: cfg.MaxSizeMB, MaxBackups: cfg.MaxBackups, LocalTime: true}
+	kei := &timberjack.Logger{Filename: filepath.Join(dir, "kei.log"), MaxSize: cfg.MaxSizeMB, MaxBackups: cfg.MaxBackups, LocalTime: true}
 	return &agentLogs{agent: agent, kei: kei, closers: []io.Closer{agent, kei}}
 }
 

@@ -20,7 +20,7 @@ func driveClient(t *testing.T, handler http.HandlerFunc) *icloud.Client {
 	local := icloud.Endpoints{Auth: srv.URL + "/auth", Setup: srv.URL + "/setup", Home: srv.URL}
 	c, err := icloud.New(local, icloud.Session{
 		Services: map[string]icloud.Service{icloud.ServiceDrive: {URL: srv.URL}},
-	}, time.Now)
+	}, time.Minute, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestFoldersRejectsUnknownTypes(t *testing.T) {
 }
 
 func TestFoldersWithoutASessionNeedsSignIn(t *testing.T) {
-	c, err := icloud.New(icloud.AppleEndpoints, icloud.Session{}, time.Now)
+	c, err := icloud.New(icloud.AppleEndpoints, icloud.Session{}, time.Minute, time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

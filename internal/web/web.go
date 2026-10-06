@@ -3,8 +3,9 @@
 //
 // Every request passes, in order:
 //
-//  1. an exact Host allow-list (defeats DNS rebinding),
-//  2. an Origin allow-list (the agent's own origins and the desktop app's),
+//  1. an exact Host check: the listen address, which every client uses
+//     (defeats DNS rebinding),
+//  2. an Origin allow-list (the agent's own origin and the desktop app's),
 //  3. CORS, granted only to the desktop app's origins,
 //  4. security headers,
 //  5. for the API: authentication (bearer token or session cookie, with CSRF
@@ -33,7 +34,7 @@ import (
 )
 
 // DesktopOrigins are the origins of the Tauri desktop app's webview:
-// http://tauri.localhost on Windows, tauri://localhost on Linux and macOS
+// http://tauri.localhost on Windows, tauri://localhost on Linux
 // (tauri-utils config, useHttpsScheme = false).
 var DesktopOrigins = []string{"http://tauri.localhost", "tauri://localhost"}
 
@@ -62,22 +63,12 @@ type Options struct {
 
 // Handler returns the agent's root HTTP handler.
 func Handler(o Options) (http.Handler, error) {
-	_, port, err := net.SplitHostPort(o.Listen)
-	if err != nil {
-		return nil, fmt.Errorf("listen address %q: %w", o.Listen, err)
-	}
-	hosts := []string{o.Listen, net.JoinHostPort("localhost", port)}
-	self := make([]string, 0, len(hosts))
-	for _, h := range hosts {
-		self = append(self, "http://"+h)
-	}
-	origins := slices.Concat(self, DesktopOrigins)
+	self := "http://" + o.Listen
+	origins := append([]string{self}, DesktopOrigins...)
 
 	csrf := http.NewCrossOriginProtection()
-	for _, o := range self {
-		if err := csrf.AddTrustedOrigin(o); err != nil {
-			return nil, fmt.Errorf("trusted origin %q: %w", o, err)
-		}
+	if err := csrf.AddTrustedOrigin(self); err != nil {
+		return nil, fmt.Errorf("trusted origin %q: %w", self, err)
 	}
 
 	apiPath, apiHandler := agentv1connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
@@ -96,12 +87,12 @@ func Handler(o Options) (http.Handler, error) {
 		MaxAge:              int(corsMaxAge / time.Second),
 		AllowPrivateNetwork: true,
 	})
-	return checkHost(hosts, checkOrigin(origins, c.Handler(secureHeaders(mux)))), nil
+	return checkHost(o.Listen, checkOrigin(origins, c.Handler(secureHeaders(mux)))), nil
 }
 
-func checkHost(allowed []string, next http.Handler) http.Handler {
+func checkHost(host string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !slices.Contains(allowed, r.Host) {
+		if r.Host != host {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}

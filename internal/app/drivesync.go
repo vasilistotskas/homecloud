@@ -95,7 +95,7 @@ func (a *Agent) syncDrive(ctx context.Context) (any, bool) {
 	if err != nil {
 		return fail(DriveOutcomeError, err)
 	}
-	client, err := icloud.New(a.icloudEndpoints, session, a.now)
+	client, err := icloud.New(a.icloudEndpoints, session, a.cfg.ICloud.RequestTimeout.Std(), a.now)
 	if err != nil {
 		return fail(DriveOutcomeError, err)
 	}

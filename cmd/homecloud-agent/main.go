@@ -65,7 +65,7 @@ func run() (err error) {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logs := openLogs(cfg.Storage.Root)
+	logs := openLogs(cfg.Storage.Root, cfg.Logs)
 	defer func() { err = errors.Join(err, logs.Close()) }()
 	log := slog.New(slog.NewJSONHandler(logs.agent, nil))
 	log.Info("homecloud-agent starting", "version", version, "config", cfgPath)
@@ -136,7 +136,7 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 	if err != nil {
 		return err
 	}
-	authn := auth.New(token, time.Now)
+	authn := auth.New(token, cfg.Web.SessionTTL.Std(), time.Now)
 	signer, err := media.NewSigner(time.Now)
 	if err != nil {
 		return err

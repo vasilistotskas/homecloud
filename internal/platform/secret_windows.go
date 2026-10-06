@@ -3,7 +3,6 @@ package platform
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,7 +33,7 @@ func ownerOnlySDDL() (string, error) {
 
 // WriteSecretFile atomically replaces path with data. The file is created with
 // an owner-only DACL, so it is never readable by others, even briefly.
-func WriteSecretFile(path string, data []byte) (err error) {
+func WriteSecretFile(path string, data []byte) error {
 	sddl, err := ownerOnlySDDL()
 	if err != nil {
 		return err
@@ -59,24 +58,5 @@ func WriteSecretFile(path string, data []byte) (err error) {
 	if err != nil {
 		return fmt.Errorf("create %q: %w", tmp, err)
 	}
-	f := os.NewFile(uintptr(h), tmp)
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, os.Remove(tmp))
-		}
-	}()
-	if _, err = f.Write(data); err != nil {
-		return errors.Join(fmt.Errorf("write %q: %w", tmp, err), f.Close())
-	}
-	if err = f.Sync(); err != nil {
-		return errors.Join(fmt.Errorf("sync %q: %w", tmp, err), f.Close())
-	}
-	if err = f.Close(); err != nil {
-		return fmt.Errorf("close %q: %w", tmp, err)
-	}
-	// Renaming within a volume keeps the file's own security descriptor.
-	if err = os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("replace %q: %w", path, err)
-	}
-	return nil
+	return commit(os.NewFile(uintptr(h), tmp), path, data)
 }

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 )
@@ -39,11 +38,9 @@ type Ntfy struct {
 	client        *http.Client
 }
 
-const requestTimeout = 30 * time.Second
-
 // New returns a notifier for cfg.
 func New(cfg config.Notify) *Ntfy {
-	return &Ntfy{server: cfg.Server, topic: cfg.Topic, client: &http.Client{Timeout: requestTimeout}}
+	return &Ntfy{server: cfg.Server, topic: cfg.Topic, client: &http.Client{Timeout: cfg.Timeout.Std()}}
 }
 
 // publishRequest is ntfy's JSON publish body (POST to the server root).

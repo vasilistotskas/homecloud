@@ -2,9 +2,9 @@ package iphonebackup
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,12 +16,15 @@ var t0 = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
 
 const udid = "00008110-001A2B3C4D5E801E"
 
+var policy = Policy{MaxAge: 7 * 24 * time.Hour, StalledAfter: 6 * time.Hour, MaxShrinkPercent: 50}
+
 type fixture struct {
 	folder     string // defaults to the UDID
 	encrypted  *bool
 	state      string
 	completed  time.Time
 	snapshot   bool // a backup in progress
+	noInfo     bool
 	noManifest bool
 	noStatus   bool
 	files      map[string]string
@@ -52,10 +55,9 @@ func writeBackup(t *testing.T, dir string, f fixture) string {
 			t.Fatal(err)
 		}
 	}
-	put("Info.plist", map[string]any{
-		"Device Name": "Test iPhone", "Product Version": "26.1", "Unique Identifier": udid,
-		"Last Backup Date": f.completed,
-	}, plist.XMLFormat)
+	if !f.noInfo {
+		put("Info.plist", map[string]any{"Device Name": "Test iPhone", "Product Version": "26.1", "Unique Identifier": udid}, plist.XMLFormat)
+	}
 	if !f.noManifest {
 		manifest := map[string]any{"Version": "10.0"}
 		if f.encrypted != nil {
@@ -85,34 +87,46 @@ func writeBackup(t *testing.T, dir string, f fixture) string {
 	return root
 }
 
-func TestScanAndEvaluate(t *testing.T) {
-	policy := Policy{MaxAge: 7 * 24 * time.Hour, MaxShrinkPercent: 50}
+func scanOne(t *testing.T, f fixture) Backup {
+	t.Helper()
+	dir := t.TempDir()
+	writeBackup(t, dir, f)
+	current, archived, err := Scan(context.Background(), dir)
+	if err != nil || len(current) != 1 || archived != 0 {
+		t.Fatalf("Scan = %d current, %d archived, %v", len(current), archived, err)
+	}
+	return current[0]
+}
+
+func TestJudge(t *testing.T) {
+	finished := func(completed time.Time) fixture {
+		return fixture{encrypted: ptr(true), state: "finished", completed: completed}
+	}
 	tests := []struct {
-		name        string
-		f           fixture
-		lastHealthy int64
-		want        State
+		name string
+		f    fixture
+		now  time.Time
+		want State
 	}{
-		{"healthy", fixture{encrypted: ptr(true), state: "finished", completed: t0.Add(-24 * time.Hour)}, 0, StateOK},
-		{"unencrypted", fixture{encrypted: ptr(false), state: "finished", completed: t0.Add(-time.Hour)}, 0, StateUnencrypted},
-		{"stale", fixture{encrypted: ptr(true), state: "finished", completed: t0.Add(-10 * 24 * time.Hour)}, 0, StateStale},
-		{"did not finish", fixture{encrypted: ptr(true), state: "uploading", completed: t0.Add(-time.Hour)}, 0, StateIncomplete},
-		{"first backup in progress", fixture{snapshot: true, noManifest: true, noStatus: true}, 0, StateInProgress},
-		{"shrunk", fixture{encrypted: ptr(true), state: "finished", completed: t0.Add(-time.Hour)}, 1 << 30, StateShrunk},
-		{"manifest without IsEncrypted", fixture{state: "finished", completed: t0}, 0, StateInvalid},
-		{"missing status when idle", fixture{encrypted: ptr(true), noStatus: true}, 0, StateInvalid},
-		{"folder not named by UDID", fixture{folder: "something-else", encrypted: ptr(true), state: "finished", completed: t0}, 0, StateInvalid},
+		{"healthy", finished(t0.Add(-24 * time.Hour)), t0, StateOK},
+		{"unencrypted", fixture{encrypted: ptr(false), state: "finished", completed: t0.Add(-time.Hour)}, t0, StateUnencrypted},
+		{"stale", finished(t0.Add(-10 * 24 * time.Hour)), t0, StateStale},
+		{"did not finish", fixture{encrypted: ptr(true), state: "uploading", completed: t0.Add(-time.Hour)}, t0, StateIncomplete},
+		{"future date", finished(t0.Add(48 * time.Hour)), t0, StateInvalid},
+		{"manifest without IsEncrypted", fixture{state: "finished", completed: t0}, t0, StateInvalid},
+		{"missing status when idle", fixture{encrypted: ptr(true), noStatus: true}, t0, StateInvalid},
+		{"folder not named by UDID", fixture{folder: "something-else", encrypted: ptr(true), state: "finished", completed: t0}, t0, StateInvalid},
+		// A first backup writes its plists as it goes: none of that is a problem.
+		{"first backup in progress", fixture{snapshot: true, noInfo: true, noManifest: true, noStatus: true}, time.Now(), StateInProgress},
+		// A stale device whose new backup runs is not stale meanwhile.
+		{"stale while backing up", fixture{snapshot: true, encrypted: ptr(true), state: "finished", completed: t0.Add(-30 * 24 * time.Hour)}, time.Now(), StateInProgress},
+		// A backup that stopped writing long ago never finished.
+		{"stalled backup", fixture{snapshot: true, noManifest: true, noStatus: true}, time.Now().Add(7 * time.Hour), StateIncomplete},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dir := t.TempDir()
 			tt.f.files = map[string]string{"ab/ab12": "photo", "cd/cd34": "message"}
-			writeBackup(t, dir, tt.f)
-			current, archived, err := Scan(context.Background(), dir)
-			if err != nil || len(current) != 1 || len(archived) != 0 {
-				t.Fatalf("Scan = %d current, %d archived, %v", len(current), len(archived), err)
-			}
-			v := Evaluate(current[0], tt.lastHealthy, policy, t0)
+			v, _ := Judge(scanOne(t, tt.f), 0, Record{}, policy, tt.now)
 			if v.State != tt.want || (v.State != StateOK && len(v.Reasons) == 0) {
 				t.Fatalf("verdict = %+v, want %s with reasons", v, tt.want)
 			}
@@ -120,36 +134,62 @@ func TestScanAndEvaluate(t *testing.T) {
 	}
 }
 
-func TestScanCountsFilesAndReadsDeviceFacts(t *testing.T) {
-	dir := t.TempDir()
-	writeBackup(t, dir, fixture{
-		encrypted: ptr(true), state: "finished", completed: t0,
-		files: map[string]string{"ab/ab12": "12345", "cd/cd34": "678"},
-	})
-	current, _, err := Scan(context.Background(), dir)
-	if err != nil || len(current) != 1 {
-		t.Fatalf("Scan = %+v, %v", current, err)
+func TestJudgeConfirmsAShrinkBeforeAcceptingIt(t *testing.T) {
+	backup := func(bytes int64, completed time.Time) Backup {
+		return Backup{UDID: udid, Encrypted: true, SnapshotState: "finished", CompletedAt: completed, Bytes: bytes}
 	}
-	b := current[0]
-	// The three plists plus two backed-up files.
-	if b.UDID != udid || b.DeviceName != "Test iPhone" || b.ProductVersion != "26.1" || b.Files != 5 || !b.CompletedAt.Equal(t0) {
-		t.Fatalf("backup = %+v", b)
+	var rec Record
+	steps := []struct {
+		b    Backup
+		want State
+		base int64
+	}{
+		{backup(1000, t0), StateOK, 1000},
+		{backup(400, t0.Add(time.Hour)), StateShrunk, 1000},  // much smaller: suspicious
+		{backup(400, t0.Add(time.Hour)), StateShrunk, 1000},  // the same backup again: still suspicious
+		{backup(420, t0.Add(2*time.Hour)), StateOK, 420},     // a later one of that size: the new normal
+		{backup(900, t0.Add(3*time.Hour)), StateOK, 900},     // growing is normal
+		{backup(100, t0.Add(4*time.Hour)), StateShrunk, 900}, // a new suspicious drop
+		{backup(890, t0.Add(5*time.Hour)), StateOK, 890},     // back to normal: the drop is forgotten
+	}
+	for i, s := range steps {
+		var v Verdict
+		v, rec = Judge(s.b, 0, rec, policy, t0.Add(6*time.Hour))
+		if v.State != s.want || rec.Baseline != s.base {
+			t.Fatalf("step %d: verdict %s (%v), baseline %d; want %s, %d", i, v.State, v.Reasons, rec.Baseline, s.want, s.base)
+		}
 	}
 }
 
-func TestScanSeparatesArchivedBackups(t *testing.T) {
+func TestJudgeCountsUnreadableFiles(t *testing.T) {
+	b := Backup{UDID: udid, Encrypted: true, SnapshotState: "finished", CompletedAt: t0, Bytes: 1}
+	if v, _ := Judge(b, 1, Record{}, policy, t0); v.State != StateUnreadable {
+		t.Fatalf("verdict = %+v", v)
+	}
+}
+
+func TestScanCountsArchivedCopiesWithoutReadingThem(t *testing.T) {
 	dir := t.TempDir()
-	writeBackup(t, dir, fixture{encrypted: ptr(true), state: "finished", completed: t0})
-	writeBackup(t, dir, fixture{folder: udid + "-20260901-101500", encrypted: ptr(true), state: "finished", completed: t0.AddDate(0, -1, 0)})
-	current, archived, err := Scan(context.Background(), dir)
-	if err != nil || len(current) != 1 || len(archived) != 1 || !strings.HasSuffix(archived[0].Dir, "-20260901-101500") {
-		t.Fatalf("Scan = %+v, %+v, %v", current, archived, err)
+	writeBackup(t, dir, fixture{encrypted: ptr(true), state: "finished", completed: t0, files: map[string]string{"ab/ab12": "12345"}})
+	// An archived copy with a broken plist is counted, never judged.
+	archived := writeBackup(t, dir, fixture{folder: udid + "-20260901-101500", encrypted: ptr(true), state: "finished", completed: t0})
+	if err := os.WriteFile(filepath.Join(archived, "Info.plist"), []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	current, n, err := Scan(context.Background(), dir)
+	if err != nil || len(current) != 1 || n != 1 {
+		t.Fatalf("Scan = %+v, %d archived, %v", current, n, err)
+	}
+	b := current[0]
+	// The three plists plus one backed-up file.
+	if b.UDID != udid || b.DeviceName != "Test iPhone" || b.ProductVersion != "26.1" || b.Files != 4 || !b.CompletedAt.Equal(t0) {
+		t.Fatalf("backup = %+v", b)
 	}
 }
 
 func TestScanMissingDirectoryMeansNoBackups(t *testing.T) {
 	current, archived, err := Scan(context.Background(), filepath.Join(t.TempDir(), "MobileSync", "Backup"))
-	if err != nil || current != nil || archived != nil {
+	if err != nil || current != nil || archived != 0 {
 		t.Fatalf("Scan of a missing dir = %v, %v, %v", current, archived, err)
 	}
 }
@@ -164,16 +204,17 @@ func TestScanReportsCorruptPlist(t *testing.T) {
 	if err != nil || len(current) != 1 || current[0].Err == nil {
 		t.Fatalf("corrupt Status.plist: %+v, %v", current, err)
 	}
-	if v := Evaluate(current[0], 0, Policy{MaxAge: time.Hour}, t0); v.State != StateInvalid {
-		t.Fatalf("verdict = %+v, want invalid", v)
-	}
 }
 
-func TestEvaluateOrdersReasonsBySeverity(t *testing.T) {
-	b := Backup{UDID: udid, Encrypted: false, SnapshotState: "finished", CompletedAt: t0.Add(-30 * 24 * time.Hour), Unreadable: []string{"x"}}
-	v := Evaluate(b, 0, Policy{MaxAge: 7 * 24 * time.Hour, MaxShrinkPercent: 50}, t0)
-	if v.State != StateUnreadable || len(v.Reasons) != 3 || !slices.ContainsFunc(v.Reasons, func(r string) bool { return strings.Contains(r, "not encrypted") }) {
-		t.Fatalf("verdict = %+v", v)
+func TestReadAll(t *testing.T) {
+	dir := writeBackup(t, t.TempDir(), fixture{files: map[string]string{"ab/ab12": strings.Repeat("x", 3*readBuffer)}})
+	if unreadable, err := ReadAll(context.Background(), dir); err != nil || len(unreadable) != 0 {
+		t.Fatalf("ReadAll = %v, %v", unreadable, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ReadAll(ctx, dir); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled ReadAll: %v", err)
 	}
 }
 
