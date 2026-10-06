@@ -25,7 +25,7 @@ import { Page } from "../components/Page";
 import { stateLabel, tierLabel } from "../components/labels";
 import { runRow } from "../components/runs";
 import { formatWhen, toDate } from "../format";
-import { AgentService, DriveHealthState, EventKind, type Event } from "../gen/homecloud/agent/v1/agent_pb";
+import { AgentService, DriveHealthState, EventKind, RunKind, type Event } from "../gen/homecloud/agent/v1/agent_pb";
 
 const driveStateLabel: Record<DriveHealthState, string> = {
   [DriveHealthState.UNSPECIFIED]: "Unknown",
@@ -96,7 +96,7 @@ function Runs() {
   const styles = useStyles();
   const q = useInfiniteQuery(
     AgentService.method.listRuns,
-    { pageSize, pageToken: "" },
+    { kind: RunKind.CYCLE, pageSize, pageToken: "" },
     { pageParamKey: "pageToken", getNextPageParam: nextPage },
   );
   if (q.isPending) {

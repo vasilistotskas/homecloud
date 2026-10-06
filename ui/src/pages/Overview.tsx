@@ -37,6 +37,7 @@ import {
   HeartPulseRegular,
   KeyRegular,
   PlugDisconnectedRegular,
+  ShieldCheckmarkRegular,
   ShieldErrorRegular,
 } from "@fluentui/react-icons";
 import { Link as RouterLink, useNavigate } from "@tanstack/react-router";
@@ -53,7 +54,10 @@ import {
   AppleAccountState,
   DriveHealthState,
   Phase,
+  RunKind,
+  RunResult,
   type DriveHealth,
+  type Run,
   type Overview,
   type Settings,
 } from "../gen/homecloud/agent/v1/agent_pb";
@@ -185,6 +189,7 @@ export function OverviewPage() {
         <AccountCard overview={overview} />
         <ScheduleCard overview={overview} settings={settings.data?.settings} />
         <DriveCard drive={overview.drive} />
+        <IntegrityCard overview={overview} settings={settings.data?.settings} />
       </div>
       <RecentSyncs lastCycleId={overview.lastCycle?.id} />
     </Page>
@@ -247,6 +252,8 @@ const phaseText: Record<Phase, string> = {
   [Phase.INGESTING]: "Recording what was downloaded…",
   [Phase.VERIFYING]: "Checking files…",
   [Phase.PREPARING_PREVIEWS]: "Preparing previews for the library…",
+  [Phase.CHECKING_ARCHIVE]: "Re-checking archived files against their checksums…",
+  [Phase.BACKING_UP_LEDGER]: "Backing up the archive's records…",
 };
 
 function PhaseBanner({ overview }: { overview: Overview }) {
@@ -522,7 +529,7 @@ function ScheduleCard({ overview, settings }: { overview: Overview; settings: Se
 
 function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
   const styles = useStyles();
-  const runs = useQuery(AgentService.method.listRuns, { pageSize: 5 });
+  const runs = useQuery(AgentService.method.listRuns, { kind: RunKind.CYCLE, pageSize: 5 });
   const { refetch } = runs;
   useEffect(() => {
     void refetch();
@@ -630,6 +637,88 @@ function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
       <Caption1 className={styles.muted}>
         The archive drive holds your only copy. If it reports a problem you&apos;re alerted at once.
         {checked !== undefined && ` Checked ${formatWhen(checked)}.`}
+      </Caption1>
+    </Card>
+  );
+}
+
+function scrubBadge(run: Run | undefined): { label: string; color: "success" | "warning" | "danger" | "informative" } {
+  const mismatched = run?.scrub?.mismatched ?? 0n;
+  switch (run?.result) {
+    case undefined:
+    case RunResult.UNSPECIFIED:
+    case RunResult.RUNNING:
+      return { label: "Not checked yet", color: "informative" };
+    case RunResult.OK:
+      return { label: "All files match", color: "success" };
+    case RunResult.FAILED:
+      return mismatched > 0n
+        ? { label: `${formatCount(mismatched)} changed`, color: "danger" }
+        : { label: "Incomplete", color: "warning" };
+  }
+}
+
+function IntegrityCard({ overview, settings }: { overview: Overview; settings: Settings | undefined }) {
+  const styles = useStyles();
+  const scrub = overview.lastScrub;
+  const backup = overview.lastLedgerBackup;
+  const badge = scrubBadge(scrub);
+  const scrubbed = toDate(scrub?.finishedAt);
+  const backedUp = toDate(backup?.finishedAt);
+
+  const facts: [string, string][] = [];
+  if (scrubbed !== undefined && scrub?.scrub !== undefined) {
+    const r = scrub.scrub;
+    facts.push([
+      "Last check",
+      r.error === ""
+        ? `${formatWhen(scrubbed)} · ${formatCount(r.checked)} of ${formatCount(r.eligible)} files`
+        : `${formatWhen(scrubbed)} · couldn't run`,
+    ]);
+  }
+  if (settings !== undefined) {
+    const next =
+      scrubbed === undefined ? undefined : new Date(scrubbed.getTime() + Number(settings.scrubIntervalSeconds) * 1000);
+    facts.push(["Next check", next === undefined ? "After the next sync" : formatRelative(next)]);
+    // Each run re-reads the files confirmed longest ago, so the whole archive
+    // is covered once every ceil(1 / fraction) runs. The agent rejects a
+    // fraction outside (0, 1]; anything else here is not a schedule.
+    if (settings.scrubFraction > 0 && settings.scrubFraction <= 1) {
+      const runs = BigInt(Math.ceil(1 / settings.scrubFraction));
+      facts.push(["Whole archive", `re-read ${formatInterval(settings.scrubIntervalSeconds * runs)}`]);
+    }
+  }
+  facts.push([
+    "Records backup",
+    backedUp === undefined || backup?.ledgerBackup === undefined
+      ? "Not yet"
+      : backup.result === RunResult.OK
+        ? `${formatWhen(backedUp)} · ${formatBytes(backup.ledgerBackup.sizeBytes)}`
+        : `${formatWhen(backedUp)} · failed`,
+  ]);
+
+  return (
+    <Card>
+      <CardHeader
+        image={<ShieldCheckmarkRegular fontSize={20} />}
+        header={<Subtitle2 as="h2">Integrity</Subtitle2>}
+        action={
+          <Badge appearance="tint" color={badge.color}>
+            {badge.label}
+          </Badge>
+        }
+      />
+      <div className={styles.facts}>
+        {facts.map(([k, v]) => (
+          <Fragment key={k}>
+            <Text className={styles.muted}>{k}</Text>
+            <Text>{v}</Text>
+          </Fragment>
+        ))}
+      </div>
+      <Caption1 className={styles.muted}>
+        Archived files are re-read and compared with the checksum recorded at download; a file that changed is
+        quarantined and you&apos;re alerted. The archive&apos;s records are copied to another drive.
       </Caption1>
     </Card>
   );

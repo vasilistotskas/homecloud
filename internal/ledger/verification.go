@@ -85,6 +85,25 @@ func (t Tier) passStatement() (string, error) {
 	}
 }
 
+// failStatement returns the complete UPDATE that records a failure for the tier.
+// It also clears the tier's pass: a file that no longer matches is not
+// verified, and releasing the quarantine must run the tier again.
+func (t Tier) failStatement() (string, error) {
+	switch t {
+	case TierContent:
+		return `UPDATE resources SET failure = ?, verified_content_at = NULL
+			WHERE library = ? AND asset_id = ? AND version = ?`, nil
+	case TierStructure:
+		return `UPDATE resources SET failure = ?, verified_structure_at = NULL
+			WHERE library = ? AND asset_id = ? AND version = ?`, nil
+	case TierProbe:
+		return `UPDATE resources SET failure = ?, verified_probe_at = NULL
+			WHERE library = ? AND asset_id = ? AND version = ?`, nil
+	default:
+		return "", fmt.Errorf("unknown tier %q", t)
+	}
+}
+
 // RecordPass marks tier as passed for k and promotes the asset to verified
 // once every rendition satisfies its required tiers.
 func (db *DB) RecordPass(ctx context.Context, k Key, tier Tier, now time.Time) (err error) {
@@ -137,7 +156,8 @@ func (db *DB) RecordPass(ctx context.Context, k Key, tier Tier, now time.Time) (
 
 // RecordMismatch records a verification mismatch for k and quarantines its asset.
 func (db *DB) RecordMismatch(ctx context.Context, k Key, tier Tier, reason string, now time.Time) (err error) {
-	if _, err = tier.passStatement(); err != nil {
+	stmt, err := tier.failStatement()
+	if err != nil {
 		return err
 	}
 	ts := formatTime(now)
@@ -152,8 +172,7 @@ func (db *DB) RecordMismatch(ctx context.Context, k Key, tier Tier, reason strin
 	}()
 
 	failure := Failure{Tier: tier, Reason: reason}.String()
-	res, err := tx.ExecContext(ctx, `UPDATE resources SET failure = ? WHERE library = ? AND asset_id = ? AND version = ?`,
-		failure, k.Library, k.AssetID, k.Version)
+	res, err := tx.ExecContext(ctx, stmt, failure, k.Library, k.AssetID, k.Version)
 	if err != nil {
 		return fmt.Errorf("record mismatch for %v: %w", k, err)
 	}

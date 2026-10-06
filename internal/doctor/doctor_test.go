@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 func TestErr(t *testing.T) {
@@ -29,5 +32,23 @@ func TestCheckDir(t *testing.T) {
 	}
 	if r := checkDir("d", filepath.Join(dir, "missing")); r.OK() {
 		t.Error("checkDir(missing) should fail")
+	}
+}
+
+func TestCheckBackupVolume(t *testing.T) {
+	dir := t.TempDir()
+	here, err := platform.VolumeID(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Backup: config.Backup{Dir: filepath.Join(dir, "not", "yet", "created")}}
+
+	cfg.Storage.VolumeID = here
+	if r := checkBackupVolume(cfg); r.OK() {
+		t.Error("backups on the archive volume accepted")
+	}
+	cfg.Storage.VolumeID = "another-volume"
+	if r := checkBackupVolume(cfg); !r.OK() {
+		t.Errorf("backups off the archive volume rejected: %v", r.Err)
 	}
 }

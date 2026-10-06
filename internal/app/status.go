@@ -17,6 +17,9 @@ const (
 	PhaseIngesting
 	PhaseVerifying
 	PhasePreparingPreviews
+	// PhaseCheckingArchive re-hashes a share of archived files (scrub).
+	PhaseCheckingArchive
+	PhaseBackingUpLedger
 )
 
 // Status is the agent's live, in-memory state. Everything durable lives in

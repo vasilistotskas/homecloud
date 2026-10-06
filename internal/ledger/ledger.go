@@ -68,8 +68,12 @@ func (db *DB) Close() error {
 }
 
 // IntegrityCheck runs PRAGMA integrity_check and returns an error unless it reports "ok".
-func (db *DB) IntegrityCheck(ctx context.Context) (err error) {
-	rows, err := db.r.QueryContext(ctx, "PRAGMA integrity_check")
+func (db *DB) IntegrityCheck(ctx context.Context) error {
+	return integrityCheck(ctx, db.r)
+}
+
+func integrityCheck(ctx context.Context, conn *sql.DB) (err error) {
+	rows, err := conn.QueryContext(ctx, "PRAGMA integrity_check")
 	if err != nil {
 		return fmt.Errorf("integrity_check: %w", err)
 	}

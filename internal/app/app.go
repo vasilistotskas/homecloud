@@ -85,39 +85,24 @@ func Verify(ctx context.Context, cfg *config.Config, db *ledger.DB, log *slog.Lo
 	var (
 		mu    sync.Mutex
 		stats VerifyStats
-		wg    sync.WaitGroup
-		work  = make(chan ledger.PendingResource)
 	)
 	record := func(f func(*VerifyStats)) { mu.Lock(); f(&stats); mu.Unlock() }
-
-	for range verifyWorkers {
-		wg.Go(func() {
-			for p := range work {
-				outcome := verifyOne(ctx, cfg, db, p, now)
-				record(func(s *VerifyStats) {
-					s.Checked++
-					switch {
-					case outcome == nil:
-						s.Passed++
-					case errors.Is(outcome, verify.ErrMismatch):
-						s.Mismatched++
-						log.Warn("verification mismatch; asset quarantined", "asset", p.AssetID, "version", p.Version, "err", outcome)
-					default:
-						s.Errored++
-						log.Error("verification error; will retry", "asset", p.AssetID, "version", p.Version, "err", outcome)
-					}
-				})
+	forEach(ctx, pending, verifyWorkers, func(p ledger.PendingResource) {
+		outcome := verifyOne(ctx, cfg, db, p, now)
+		record(func(s *VerifyStats) {
+			s.Checked++
+			switch {
+			case outcome == nil:
+				s.Passed++
+			case errors.Is(outcome, verify.ErrMismatch):
+				s.Mismatched++
+				log.Warn("verification mismatch; asset quarantined", "asset", p.AssetID, "version", p.Version, "err", outcome)
+			default:
+				s.Errored++
+				log.Error("verification error; will retry", "asset", p.AssetID, "version", p.Version, "err", outcome)
 			}
 		})
-	}
-	for _, p := range pending {
-		if ctx.Err() != nil {
-			break
-		}
-		work <- p
-	}
-	close(work)
-	wg.Wait()
+	})
 	if err := ctx.Err(); err != nil {
 		return stats, fmt.Errorf("verify: %w", err)
 	}

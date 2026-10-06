@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/kei"
@@ -30,6 +33,7 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		checkDir("archive root", cfg.Storage.Root),
 		checkVolume(cfg.Storage),
 		checkSpace(cfg.Storage),
+		checkBackupVolume(cfg),
 		checkKeiConfig(cfg),
 		checkPin(ctx, "kei version", kei.Pin(cfg.Kei).Check),
 		checkPin(ctx, "ffprobe version", verify.FFprobePin(cfg.FFmpeg).Check),
@@ -87,4 +91,33 @@ func checkKeiConfig(cfg *config.Config) Result {
 		return Result{Name: "kei config", Err: err}
 	}
 	return Result{Name: "kei config", Detail: cfg.Kei.Config}
+}
+
+// checkBackupVolume requires ledger snapshots to live off the archive volume;
+// a copy on the archive drive would be lost together with it. The directory
+// itself is created by the first backup, so its nearest existing ancestor
+// decides the volume.
+func checkBackupVolume(cfg *config.Config) Result {
+	const name = "ledger backups"
+	dir := cfg.Backup.Dir
+	for {
+		if _, err := os.Stat(dir); err == nil {
+			break
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return Result{Name: name, Err: err}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return Result{Name: name, Err: fmt.Errorf("no part of %s exists", cfg.Backup.Dir)}
+		}
+		dir = parent
+	}
+	got, err := platform.VolumeID(dir)
+	if err != nil {
+		return Result{Name: name, Err: err}
+	}
+	if strings.EqualFold(got, cfg.Storage.VolumeID) {
+		return Result{Name: name, Err: fmt.Errorf("backup.dir %s is on the archive volume; it must be on another drive", cfg.Backup.Dir)}
+	}
+	return Result{Name: name, Detail: cfg.Backup.Dir}
 }

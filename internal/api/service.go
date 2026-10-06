@@ -44,7 +44,7 @@ type Ledger interface {
 	StateCounts(ctx context.Context) (map[ledger.AssetState]int, error)
 	ArchiveTotals(ctx context.Context) (files, bytes int64, err error)
 	LastFinishedRun(ctx context.Context, kind string) (ledger.Run, error)
-	Runs(ctx context.Context, beforeID int64, limit int) ([]ledger.Run, error)
+	Runs(ctx context.Context, kind string, beforeID int64, limit int) ([]ledger.Run, error)
 	Events(ctx context.Context, kinds []string, beforeID int64, limit int) ([]ledger.Event, error)
 	Quarantined(ctx context.Context) ([]ledger.QuarantinedRendition, error)
 	Asset(ctx context.Context, library, assetID string) (ledger.AssetDetail, error)
@@ -171,18 +171,35 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv1.Overvie
 	if ov.Drive, err = driveToProto(st.Drive); err != nil {
 		return nil, internal(err)
 	}
-	last, err := s.db.LastFinishedRun(ctx, app.CycleRunKind)
+	if ov.LastCycle, err = s.lastRun(ctx, app.CycleRunKind); err != nil {
+		return nil, err
+	}
+	if ov.LastScrub, err = s.lastRun(ctx, app.ScrubRunKind); err != nil {
+		return nil, err
+	}
+	if ov.LastLedgerBackup, err = s.lastRun(ctx, app.LedgerBackupRunKind); err != nil {
+		return nil, err
+	}
+	if ov.LastCycle != nil {
+		ov.AppleAccount.State = appleState(ov.LastCycle.GetCycle().GetDownload())
+	}
+	return ov, nil
+}
+
+// lastRun returns the most recent finished run of kind, or nil before the first.
+func (s *Service) lastRun(ctx context.Context, kind string) (*agentv1.Run, error) {
+	last, err := s.db.LastFinishedRun(ctx, kind)
 	switch {
 	case errors.Is(err, ledger.ErrNotFound):
-		return ov, nil
+		return nil, nil
 	case err != nil:
 		return nil, internal(err)
 	}
-	if ov.LastCycle, err = runToProto(last); err != nil {
+	run, err := runToProto(last)
+	if err != nil {
 		return nil, internal(err)
 	}
-	ov.AppleAccount.State = appleState(ov.LastCycle.GetCycle().GetDownload())
-	return ov, nil
+	return run, nil
 }
 
 // ListRuns implements AgentService.
@@ -191,7 +208,11 @@ func (s *Service) ListRuns(ctx context.Context, req *connect.Request[agentv1.Lis
 	if err != nil {
 		return nil, err
 	}
-	runs, err := s.db.Runs(ctx, before, size)
+	kind, ok := runKinds[req.Msg.GetKind()]
+	if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown run kind %v", req.Msg.GetKind()))
+	}
+	runs, err := s.db.Runs(ctx, kind, before, size)
 	if err != nil {
 		return nil, internal(err)
 	}
@@ -320,22 +341,25 @@ func (s *Service) SendTestNotification(ctx context.Context, _ *connect.Request[a
 func (s *Service) GetSettings(context.Context, *connect.Request[agentv1.GetSettingsRequest]) (*connect.Response[agentv1.GetSettingsResponse], error) {
 	c := s.cfg
 	return connect.NewResponse(&agentv1.GetSettingsResponse{Settings: &agentv1.Settings{
-		ConfigPath:           s.configPath,
-		StorageRoot:          c.Storage.Root,
-		StorageVolumeId:      c.Storage.VolumeID,
-		MinFreePercent:       c.Storage.MinFreePercent,
-		Downloader:           &agentv1.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
-		DownloaderConfig:     c.Kei.Config,
-		VideoProbe:           &agentv1.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
-		Thumbnailer:          &agentv1.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
-		Listen:               c.Web.Listen,
-		NotifyServer:         c.Notify.Server,
-		NotifyTopic:          c.Notify.Topic,
-		SyncIntervalSeconds:  int64(c.Schedule.SyncInterval.Std() / time.Second),
-		ScrubIntervalSeconds: int64(c.Schedule.ScrubInterval.Std() / time.Second),
-		ScrubFraction:        c.Schedule.ScrubFraction,
-		AppleId:              c.ICloud.AppleID,
-		IncludeHidden:        *c.ICloud.IncludeHidden,
+		ConfigPath:            s.configPath,
+		StorageRoot:           c.Storage.Root,
+		StorageVolumeId:       c.Storage.VolumeID,
+		MinFreePercent:        c.Storage.MinFreePercent,
+		Downloader:            &agentv1.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
+		DownloaderConfig:      c.Kei.Config,
+		VideoProbe:            &agentv1.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
+		Thumbnailer:           &agentv1.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
+		Listen:                c.Web.Listen,
+		NotifyServer:          c.Notify.Server,
+		NotifyTopic:           c.Notify.Topic,
+		SyncIntervalSeconds:   int64(c.Schedule.SyncInterval.Std() / time.Second),
+		ScrubIntervalSeconds:  int64(c.Schedule.ScrubInterval.Std() / time.Second),
+		ScrubFraction:         c.Schedule.ScrubFraction,
+		BackupDir:             c.Backup.Dir,
+		BackupIntervalSeconds: int64(c.Backup.Interval.Std() / time.Second),
+		BackupKeep:            int32(c.Backup.Keep), //nolint:gosec // validated small positive count
+		AppleId:               c.ICloud.AppleID,
+		IncludeHidden:         *c.ICloud.IncludeHidden,
 	}}), nil
 }
 

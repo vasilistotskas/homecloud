@@ -47,7 +47,7 @@ Packages:
 | `internal/config` | Strict TOML load + validation |
 | `internal/ledger` | SQLite (WAL), embedded migrations (`PRAGMA user_version`), queries, `integrity_check` |
 | `internal/kei` | kei process wrapper: version pin, sync, manifest parsing, exit-code mapping |
-| `internal/verify` | Verification tiers (`RequiredTiers`, content, box structure, ffprobe). *(planned: scrub scheduling)* |
+| `internal/verify` | Verification tiers (`RequiredTiers`, content, box structure, ffprobe). |
 | `internal/doctor` | Read-only environment checks behind `homecloud doctor` |
 | `internal/tool` | Version checks of pinned external executables |
 | `internal/platform` | Every OS-specific behaviour (see §8a) |
@@ -84,7 +84,9 @@ State machine (implemented): `discovered → downloaded → verified`; any state
 2. **Structure (`.mov`/`.mp4`/`.m4v` video only, per `verify.RequiredTiers`):** MP4/QuickTime top-level box walk — contiguous chain ending exactly at EOF, containing `moov` and `mdat`; `ftyp` first only for ISO-BMFF extensions (see §10) — catches truncation.
 3. **Probe (video):** `ffprobe` reports streams and a positive duration consistent across container and streams.
 
-Scrub *(planned; the `schedule.scrub_interval` / `schedule.scrub_fraction` keys and `resources.last_scrub_at` exist, no scrub job runs yet)*: re-hash a rolling ~5 % of the archive weekly (full cycle ≈ 5 months). A scrub failure quarantines the asset and halts deletion.
+Scrub (implemented): after a cycle, when `schedule.scrub_interval` has passed since the last scrub run, the agent re-hashes `schedule.scrub_fraction` of verified renditions (rounded up, at least one), those whose content was confirmed longest ago first (`resources.last_scrub_at`, which every content pass also sets). With 5 % weekly the whole archive is re-read every 20 weeks. A changed **or missing** file is a mismatch: the content tier's pass is cleared, the asset is quarantined (so P3 never deletes it from iCloud) and an urgent alert is sent. Missing files only count when the configured archive volume is mounted; otherwise the run fails without touching anything. Unreadable files are retried first next run. Each scrub is a `scrub` run with a `ScrubReport`.
+
+Ledger backup (implemented): every `backup.interval` the agent writes `homecloud-<UTC time>.db` to `backup.dir` with `VACUUM INTO` (one consistent view of the live ledger), runs `PRAGMA integrity_check` on the copy, and only then renames it into place; the newest `backup.keep` snapshots are kept and nothing else in the directory is touched. Doctor requires `backup.dir` to be on a different volume than `storage.root`. A failure sends an alert. Each backup is a `ledger_backup` run. Restoring is copying a snapshot over `<root>/homecloud.db` while the agent is stopped.
 
 ## 7. Deletion *(planned, P3; nothing below is implemented)*
 

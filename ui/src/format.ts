@@ -56,18 +56,31 @@ export function formatDuration(ms: number): string {
 
 const relative = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
-/** "in 42 minutes", "5 minutes ago". */
+/** "in 42 minutes", "5 hours ago", "in 6 days". */
 export function formatRelative(d: Date, now: Date = new Date()): string {
   const minutes = Math.round((d.getTime() - now.getTime()) / 60_000);
   if (Math.abs(minutes) < 60) {
     return relative.format(minutes, "minute");
   }
-  return relative.format(Math.round(minutes / 60), "hour");
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 48) {
+    return relative.format(hours, "hour");
+  }
+  return relative.format(Math.round(hours / 24), "day");
 }
 
-/** "every hour", "every 30 minutes", "every 2 hours". */
+/** "every hour", "every 30 minutes", "every 2 hours", "every day", "every 20 weeks". */
 export function formatInterval(seconds: bigint): string {
   const s = Number(seconds);
+  const day = 86_400;
+  if (s % (7 * day) === 0) {
+    const w = s / (7 * day);
+    return w === 1 ? "every week" : `every ${w} weeks`;
+  }
+  if (s % day === 0) {
+    const d = s / day;
+    return d === 1 ? "every day" : `every ${d} days`;
+  }
   if (s % 3600 === 0) {
     const h = s / 3600;
     return h === 1 ? "every hour" : `every ${h} hours`;

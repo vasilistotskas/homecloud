@@ -129,15 +129,22 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 	})
 	n := &recordingNotifier{}
 	cfg := &config.Config{
-		Storage:  config.Storage{Root: filepath.Dir(manifest)},
-		ICloud:   config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
-		Kei:      config.Kei{Binary: exe, Config: "unused.toml"},
-		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
+		Storage: config.Storage{Root: filepath.Dir(manifest)},
+		ICloud:  config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
+		Kei:     config.Kei{Binary: exe, Config: "unused.toml"},
+		Schedule: config.Schedule{
+			SyncInterval:  config.Duration(time.Hour),
+			ScrubInterval: config.Duration(168 * time.Hour),
+			ScrubFraction: 1,
+		},
+		Backup: config.Backup{Dir: filepath.Join(t.TempDir(), "ledger-backups"), Interval: config.Duration(24 * time.Hour), Keep: 2},
 	}
 	// No ffmpeg in tests: previews fail and are logged, as they would without one.
 	renderer := thumbs.New(config.FFmpeg{FFmpeg: filepath.Join(t.TempDir(), "no-ffmpeg"), FFprobe: filepath.Join(t.TempDir(), "no-ffprobe")}, ThumbnailDir(cfg))
 	agent := NewAgent(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), n, io.Discard, renderer,
 		func() time.Time { return *clock })
+	// Tests have no configured volume; the archive counts as present.
+	agent.checkArchive = func() error { return nil }
 	// Tests judge a healthy drive unless they say otherwise.
 	agent.readDrive = func(context.Context) (platform.DriveHealth, error) {
 		return platform.DriveHealth{Protocol: "NVMe"}, nil

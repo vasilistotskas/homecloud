@@ -164,6 +164,19 @@ export function SettingsPage() {
           detail={`ffprobe ${s.videoProbe?.version ?? ""} · ${s.videoProbe?.binary ?? ""}`}
           mono
         />
+        <Row
+          label="Re-check archived files"
+          detail={`${Math.round(s.scrubFraction * 100)}% of files per run, those checked longest ago first (schedule.scrub_interval, schedule.scrub_fraction)`}
+        >
+          <Text>{formatInterval(s.scrubIntervalSeconds)}</Text>
+        </Row>
+        <Row
+          label="Records backup"
+          detail={`${s.backupDir} · newest ${s.backupKeep} kept (backup.dir must be on another drive)`}
+          mono
+        >
+          <Text>{formatInterval(s.backupIntervalSeconds)}</Text>
+        </Row>
       </Group>
 
       <Group title="Notifications">

@@ -94,6 +94,10 @@ message Overview {
   Run last_cycle = 6;
   // The latest health check of the archive drive; absent before the first one.
   DriveHealth drive = 7;
+  // The most recent finished scrub; absent before the first one.
+  Run last_scrub = 8;
+  // The most recent finished ledger backup; absent before the first one.
+  Run last_ledger_backup = 9;
 }
 
 // DriveHealth is what the archive drive reports about itself (SMART) and the
@@ -184,6 +188,10 @@ enum Phase {
   PHASE_VERIFYING = 4;
   // Rendering thumbnails of new files for the library browser.
   PHASE_PREPARING_PREVIEWS = 5;
+  // Re-hashing a share of archived files against their download checksums.
+  PHASE_CHECKING_ARCHIVE = 6;
+  // Writing a checked snapshot of the ledger to the backup directory.
+  PHASE_BACKING_UP_LEDGER = 7;
 }
 
 // Run is one recorded job execution.
@@ -196,6 +204,46 @@ message Run {
   RunResult result = 5;
   // Present for kind "cycle" once finished.
   CycleReport cycle = 6;
+  // Present for kind "scrub" once finished.
+  ScrubReport scrub = 7;
+  // Present for kind "ledger_backup" once finished.
+  LedgerBackupReport ledger_backup = 8;
+}
+
+// RunKind selects one kind of recorded job.
+enum RunKind {
+  RUN_KIND_UNSPECIFIED = 0;
+  // A sync cycle: download, ingest, verify (Run.kind "cycle").
+  RUN_KIND_CYCLE = 1;
+  // A re-check of archived files against their checksums (Run.kind "scrub").
+  RUN_KIND_SCRUB = 2;
+  // A snapshot of the ledger (Run.kind "ledger_backup").
+  RUN_KIND_LEDGER_BACKUP = 3;
+}
+
+// ScrubReport is what one re-check of archived files found.
+message ScrubReport {
+  // Verified files in the archive; each run checks a share of them.
+  int64 eligible = 1;
+  int64 checked = 2;
+  int64 passed = 3;
+  // Files that changed or vanished; their assets are quarantined.
+  int64 mismatched = 4;
+  // Files that could not be read this time; they are checked first next run.
+  int64 errored = 5;
+  // Set when the run could not check files at all.
+  string error = 6;
+}
+
+// LedgerBackupReport is one snapshot of the ledger.
+message LedgerBackupReport {
+  // The snapshot file; empty when the backup failed.
+  string path = 1;
+  int64 size_bytes = 2;
+  // Older snapshots removed beyond the configured number to keep.
+  int64 pruned = 3;
+  // Set when the backup failed.
+  string error = 4;
 }
 
 enum RunResult {
@@ -238,6 +286,8 @@ message ListRunsRequest {
   int32 page_size = 1;
   // From a previous response's next_page_token; empty for the first page.
   string page_token = 2;
+  // Required: the kind of runs to list.
+  RunKind kind = 3;
 }
 
 message ListRunsResponse {
@@ -500,6 +550,10 @@ message Settings {
   bool include_hidden = 15;
   // The ffmpeg binary that renders thumbnails and previews.
   ToolPin thumbnailer = 16;
+  // Where ledger snapshots are written, how often, and how many are kept.
+  string backup_dir = 17;
+  int64 backup_interval_seconds = 18;
+  int32 backup_keep = 19;
 }
 
 // ToolPin is an external tool and the exact version homecloud requires.

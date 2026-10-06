@@ -45,6 +45,8 @@ type Agent struct {
 	now    func() time.Time
 	// readDrive reads the archive drive's SMART data.
 	readDrive func(context.Context) (platform.DriveHealth, error)
+	// checkArchive confirms the archive volume is the configured one.
+	checkArchive func() error
 	// renderer makes the library browser's thumbnails.
 	renderer *thumbs.Renderer
 
@@ -64,8 +66,9 @@ func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, k
 		readDrive: func(ctx context.Context) (platform.DriveHealth, error) {
 			return platform.DriveHealthOf(ctx, cfg.Storage.Root)
 		},
-		hub:     NewHub(),
-		trigger: make(chan struct{}, 1),
+		checkArchive: func() error { return platform.CheckVolume(cfg.Storage.Root, cfg.Storage.VolumeID) },
+		hub:          NewHub(),
+		trigger:      make(chan struct{}, 1),
 	}
 }
 
@@ -86,8 +89,9 @@ func (a *Agent) RequestCycle() bool {
 	}
 }
 
-// Run executes a cycle immediately, then again schedule.sync_interval after
-// each cycle ends or as soon as one is requested, until ctx ends.
+// Run executes a cycle immediately, followed by any maintenance that is due
+// (scrub, ledger backup), then again schedule.sync_interval later or as soon
+// as one is requested, until ctx ends.
 func (a *Agent) Run(ctx context.Context) error {
 	interval := a.cfg.Schedule.SyncInterval.Std()
 	for {
@@ -96,6 +100,12 @@ func (a *Agent) Run(ctx context.Context) error {
 				return fmt.Errorf("agent stopped: %w", ctx.Err())
 			}
 			a.log.Error("cycle failed", "err", err)
+		}
+		if err := a.maintain(ctx); err != nil {
+			if ctx.Err() != nil {
+				return fmt.Errorf("agent stopped: %w", ctx.Err())
+			}
+			a.log.Error("maintenance failed", "err", err)
 		}
 		next := a.now().Add(interval)
 		a.hub.update(func(s *Status) { s.NextCycleAt = next })

@@ -17,7 +17,7 @@ func TestRunsLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runs, err := db.Runs(ctx, 0, 5)
+	runs, err := db.Runs(ctx, "cycle", 0, 5)
 	if err != nil || len(runs) != 1 || runs[0].FinishedAt != nil || runs[0].OK != nil {
 		t.Fatalf("unfinished run = %+v, %v", runs, err)
 	}
@@ -44,11 +44,14 @@ func TestRunsPaging(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	first, err := db.Runs(ctx, 0, 2)
+	if _, err := db.StartRun(ctx, "scrub", t0); err != nil { // id 6, another kind
+		t.Fatal(err)
+	}
+	first, err := db.Runs(ctx, "cycle", 0, 2)
 	if err != nil || len(first) != 2 || first[0].ID != 5 || first[1].ID != 4 {
 		t.Fatalf("first page = %+v, %v", first, err)
 	}
-	rest, err := db.Runs(ctx, first[1].ID, 10)
+	rest, err := db.Runs(ctx, "cycle", first[1].ID, 10)
 	if err != nil || len(rest) != 3 || rest[0].ID != 3 || rest[2].ID != 1 {
 		t.Fatalf("second page = %+v, %v", rest, err)
 	}

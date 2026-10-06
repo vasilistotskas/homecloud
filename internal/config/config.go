@@ -31,6 +31,7 @@ type Config struct {
 	Web      Web      `toml:"web"`
 	Notify   Notify   `toml:"notify"`
 	Schedule Schedule `toml:"schedule"`
+	Backup   Backup   `toml:"backup"`
 }
 
 // Storage describes the archive volume.
@@ -87,6 +88,16 @@ type Schedule struct {
 	ScrubInterval Duration `toml:"scrub_interval"`
 	// ScrubFraction is the share of the archive re-hashed per scrub run.
 	ScrubFraction float64 `toml:"scrub_fraction"`
+}
+
+// Backup configures snapshots of the ledger. They belong on a different
+// volume than storage.root, so losing the archive drive does not also lose the
+// record of what was archived and verified.
+type Backup struct {
+	Dir      string   `toml:"dir"`
+	Interval Duration `toml:"interval"`
+	// Keep is how many of the newest snapshots are kept.
+	Keep int `toml:"keep"`
 }
 
 // Duration is a time.Duration decoded from a Go duration string such as "1h30m".
@@ -191,6 +202,16 @@ func (c *Config) Validate() error {
 	}
 	if c.Schedule.ScrubFraction <= 0 || c.Schedule.ScrubFraction > 1 {
 		add("schedule.scrub_fraction must be in (0, 1], got %v", c.Schedule.ScrubFraction)
+	}
+
+	if !filepath.IsAbs(c.Backup.Dir) {
+		add("backup.dir must be an absolute path, got %q", c.Backup.Dir)
+	}
+	if c.Backup.Interval.Std() < time.Hour {
+		add("backup.interval must be at least 1h, got %s", c.Backup.Interval.Std())
+	}
+	if c.Backup.Keep < 1 {
+		add("backup.keep must be at least 1, got %d", c.Backup.Keep)
 	}
 
 	return errors.Join(errs...)

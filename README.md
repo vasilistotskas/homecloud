@@ -53,8 +53,8 @@ pnpm --dir desktop tauri build --bundles nsis   # per-user installer, no admin r
 ```
 
 Configuration lives at `%APPDATA%\homecloud\config.toml` (override with `--config` or
-`HOMECLOUD_CONFIG`); its schema is `internal/config`. kei's own configuration is referenced by
-`kei.config`.
+`HOMECLOUD_CONFIG`); its schema is `internal/config`. The agent generates kei's configuration
+from it into `kei.config`; don't edit that file by hand.
 
 ## Operating
 
@@ -69,6 +69,11 @@ Configuration lives at `%APPDATA%\homecloud\config.toml` (override with `--confi
 
 When kei's Apple session expires the agent sends an ntfy alert; re-authenticate with
 `kei login --config <kei config>` and approve the code on a trusted device.
+
+Weekly, a share of archived files is re-hashed against its download checksum (the `[schedule]`
+scrub keys); daily, a checked snapshot of the ledger goes to `backup.dir`, which must be on another
+drive. To restore the ledger, stop the agent and copy the newest `homecloud-*.db` snapshot over
+`<storage.root>\homecloud.db`.
 
 Logs: `<storage.root>\logs\homecloud-agent.log` and `kei.log`; failures before the config is
 loaded go to `%LOCALAPPDATA%\homecloud\agent-startup.log`.

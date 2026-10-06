@@ -50,11 +50,11 @@ func (db *DB) FinishRun(ctx context.Context, id int64, ok bool, detail any, now 
 	return nil
 }
 
-// Runs returns up to limit runs older than beforeID (all runs when beforeID is
-// 0), newest first.
-func (db *DB) Runs(ctx context.Context, beforeID int64, limit int) ([]Run, error) {
+// Runs returns up to limit runs of kind older than beforeID (from the newest
+// when beforeID is 0), newest first.
+func (db *DB) Runs(ctx context.Context, kind string, beforeID int64, limit int) ([]Run, error) {
 	return db.queryRuns(ctx, `SELECT id, kind, started_at, finished_at, ok, detail FROM runs
-		WHERE ? = 0 OR id < ? ORDER BY id DESC LIMIT ?`, beforeID, beforeID, limit)
+		WHERE kind = ? AND (? = 0 OR id < ?) ORDER BY id DESC LIMIT ?`, kind, beforeID, beforeID, limit)
 }
 
 // LastFinishedRun returns the most recent finished run of kind, or ErrNotFound.

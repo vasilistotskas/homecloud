@@ -384,23 +384,47 @@ func TestRunsPagingAndSync(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	first, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv1.ListRunsRequest{PageSize: 2}))
+	first, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv1.ListRunsRequest{Kind: agentv1.RunKind_RUN_KIND_CYCLE, PageSize: 2}))
 	if err != nil || len(first.Msg.GetRuns()) != 2 || first.Msg.GetNextPageToken() == "" {
 		t.Fatalf("first page = %v, %v", first, err)
 	}
 	if first.Msg.GetRuns()[0].GetCycle().GetDownload() != agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED {
 		t.Fatalf("run = %v", first.Msg.GetRuns()[0])
 	}
-	rest, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv1.ListRunsRequest{PageSize: 2, PageToken: first.Msg.GetNextPageToken()}))
+	rest, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv1.ListRunsRequest{Kind: agentv1.RunKind_RUN_KIND_CYCLE, PageSize: 2, PageToken: first.Msg.GetNextPageToken()}))
 	if err != nil || len(rest.Msg.GetRuns()) != 1 || rest.Msg.GetNextPageToken() != "" {
 		t.Fatalf("second page = %v, %v", rest, err)
 	}
-	if _, tokErr := e.client.ListRuns(ctx, connect.NewRequest(&agentv1.ListRunsRequest{PageToken: "!!"})); code(tokErr) != connect.CodeInvalidArgument {
+	if _, tokErr := e.client.ListRuns(ctx, connect.NewRequest(&agentv1.ListRunsRequest{Kind: agentv1.RunKind_RUN_KIND_CYCLE, PageToken: "!!"})); code(tokErr) != connect.CodeInvalidArgument {
 		t.Fatalf("bad token = %v", tokErr)
+	}
+	if _, kindErr := e.client.ListRuns(ctx, connect.NewRequest(&agentv1.ListRunsRequest{})); code(kindErr) != connect.CodeInvalidArgument {
+		t.Fatalf("runs without a kind = %v", kindErr)
+	}
+	scrubID, err := e.db.StartRun(ctx, app.ScrubRunKind, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.db.FinishRun(ctx, scrubID, false, app.ScrubReport{Eligible: 40, Checked: 2, Passed: 1, Mismatched: 1}, t0); err != nil {
+		t.Fatal(err)
+	}
+	backupID, err := e.db.StartRun(ctx, app.LedgerBackupRunKind, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = e.db.FinishRun(ctx, backupID, true, app.LedgerBackupReport{File: "b.db", SizeBytes: 9}, t0); err != nil {
+		t.Fatal(err)
+	}
+	scrubs, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv1.ListRunsRequest{Kind: agentv1.RunKind_RUN_KIND_SCRUB}))
+	if err != nil || len(scrubs.Msg.GetRuns()) != 1 || scrubs.Msg.GetRuns()[0].GetScrub().GetMismatched() != 1 {
+		t.Fatalf("scrub runs = %v, %v", scrubs, err)
 	}
 	ov, err := e.client.GetOverview(ctx, connect.NewRequest(&agentv1.GetOverviewRequest{}))
 	if err != nil || ov.Msg.GetOverview().GetAppleAccount().GetState() != agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_SIGN_IN_REQUIRED {
 		t.Fatalf("apple state = %v, %v", ov, err)
+	}
+	if o := ov.Msg.GetOverview(); o.GetLastScrub().GetScrub().GetEligible() != 40 || o.GetLastLedgerBackup().GetLedgerBackup().GetSizeBytes() != 9 {
+		t.Fatalf("overview maintenance = %v", o)
 	}
 	sync, err := e.client.StartSync(ctx, connect.NewRequest(&agentv1.StartSyncRequest{}))
 	if err != nil || !sync.Msg.GetStarted() {

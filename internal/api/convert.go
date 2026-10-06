@@ -78,6 +78,10 @@ func phase(p app.Phase) agentv1.Phase {
 		return agentv1.Phase_PHASE_VERIFYING
 	case app.PhasePreparingPreviews:
 		return agentv1.Phase_PHASE_PREPARING_PREVIEWS
+	case app.PhaseCheckingArchive:
+		return agentv1.Phase_PHASE_CHECKING_ARCHIVE
+	case app.PhaseBackingUpLedger:
+		return agentv1.Phase_PHASE_BACKING_UP_LEDGER
 	default:
 		return agentv1.Phase_PHASE_UNSPECIFIED
 	}
@@ -106,18 +110,71 @@ func runToProto(r ledger.Run) (*agentv1.Run, error) {
 	default:
 		out.Result = agentv1.RunResult_RUN_RESULT_FAILED
 	}
-	if r.Kind != app.CycleRunKind || r.FinishedAt == nil {
+	if r.FinishedAt == nil {
 		return out, nil
 	}
-	rep, err := app.ParseCycleReport(r.Detail)
+	var err error
+	switch r.Kind {
+	case app.CycleRunKind:
+		out.Cycle, err = cycleToProto(r.Detail)
+	case app.ScrubRunKind:
+		out.Scrub, err = scrubToProto(r.Detail)
+	case app.LedgerBackupRunKind:
+		out.LedgerBackup, err = ledgerBackupToProto(r.Detail)
+	default:
+		err = fmt.Errorf("unknown run kind %q", r.Kind)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("run %d: %w", r.ID, err)
 	}
+	return out, nil
+}
+
+// runKinds maps API run kinds to the ledger's run kind names.
+var runKinds = map[agentv1.RunKind]string{
+	agentv1.RunKind_RUN_KIND_CYCLE:         app.CycleRunKind,
+	agentv1.RunKind_RUN_KIND_SCRUB:         app.ScrubRunKind,
+	agentv1.RunKind_RUN_KIND_LEDGER_BACKUP: app.LedgerBackupRunKind,
+}
+
+func scrubToProto(detail string) (*agentv1.ScrubReport, error) {
+	rep, err := app.ParseScrubReport(detail)
+	if err != nil {
+		return nil, err
+	}
+	return &agentv1.ScrubReport{
+		Eligible:   int64(rep.Eligible),
+		Checked:    int64(rep.Checked),
+		Passed:     int64(rep.Passed),
+		Mismatched: int64(rep.Mismatched),
+		Errored:    int64(rep.Errored),
+		Error:      rep.Error,
+	}, nil
+}
+
+func ledgerBackupToProto(detail string) (*agentv1.LedgerBackupReport, error) {
+	rep, err := app.ParseLedgerBackupReport(detail)
+	if err != nil {
+		return nil, err
+	}
+	return &agentv1.LedgerBackupReport{
+		Path:      rep.File,
+		SizeBytes: rep.SizeBytes,
+		Pruned:    int64(rep.Pruned),
+		Error:     rep.Error,
+	}, nil
+}
+
+func cycleToProto(detail string) (*agentv1.CycleReport, error) {
+	rep, err := app.ParseCycleReport(detail)
+	if err != nil {
+		return nil, err
+	}
 	dl, ok := downloadOutcomes[rep.KeiOutcome]
 	if !ok {
-		return nil, fmt.Errorf("run %d: unknown download outcome %q", r.ID, rep.KeiOutcome)
+		return nil, fmt.Errorf("unknown download outcome %q", rep.KeiOutcome)
 	}
-	out.Cycle = &agentv1.CycleReport{
+	return &agentv1.CycleReport{
 		Download:          dl,
 		Assets:            int64(rep.Ingested.Assets),
 		Renditions:        int64(rep.Ingested.Renditions),
@@ -129,8 +186,7 @@ func runToProto(r ledger.Run) (*agentv1.Run, error) {
 		Mismatched:        int64(rep.Verified.Mismatched),
 		Errored:           int64(rep.Verified.Errored),
 		Error:             rep.Error,
-	}
-	return out, nil
+	}, nil
 }
 
 func appleState(d agentv1.DownloadOutcome) agentv1.AppleAccountState {

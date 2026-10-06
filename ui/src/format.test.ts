@@ -24,6 +24,9 @@ describe("formatInterval", () => {
     expect(formatInterval(3600n)).toBe("every hour");
     expect(formatInterval(7200n)).toBe("every 2 hours");
     expect(formatInterval(1800n)).toBe("every 30 minutes");
+    expect(formatInterval(86_400n)).toBe("every day");
+    expect(formatInterval(604_800n)).toBe("every week");
+    expect(formatInterval(20n * 604_800n)).toBe("every 20 weeks");
   });
 });
 

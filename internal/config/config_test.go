@@ -16,12 +16,13 @@ var (
 	testKeiConfig  = filepath.Join(testRoot, "kei", "config.toml")
 	testFFprobeBin = filepath.Join(testTools, "ffmpeg", "ffprobe")
 	testFFmpegBin  = filepath.Join(testTools, "ffmpeg", "ffmpeg")
+	testBackupDir  = filepath.Join(testTools, "ledger-backups")
 )
 
 // validTOML is a complete valid configuration.
 var validTOML = strings.NewReplacer(
 	"@ROOT@", testRoot, "@VOLUME_ID@", testVolumeID,
-	"@KEI_BINARY@", testKeiBinary, "@KEI_CONFIG@", testKeiConfig, "@FFPROBE@", testFFprobeBin, "@FFMPEG@", testFFmpegBin,
+	"@KEI_BINARY@", testKeiBinary, "@KEI_CONFIG@", testKeiConfig, "@FFPROBE@", testFFprobeBin, "@FFMPEG@", testFFmpegBin, "@BACKUP_DIR@", testBackupDir,
 ).Replace(`
 [storage]
 root = '@ROOT@'
@@ -53,6 +54,11 @@ topic = "hc_0123456789abcdefABCDEF"
 sync_interval = "1h"
 scrub_interval = "168h"
 scrub_fraction = 0.05
+
+[backup]
+dir = '@BACKUP_DIR@'
+interval = "24h"
+keep = 14
 `)
 
 func writeConfig(t *testing.T, content string) string {
@@ -81,6 +87,7 @@ func TestLoadValid(t *testing.T) {
 		Web:      Web{Listen: "127.0.0.1:8790"},
 		Notify:   Notify{Server: "https://ntfy.sh", Topic: "hc_0123456789abcdefABCDEF"},
 		Schedule: Schedule{SyncInterval: Duration(time.Hour), ScrubInterval: Duration(168 * time.Hour), ScrubFraction: 0.05},
+		Backup:   Backup{Dir: testBackupDir, Interval: Duration(24 * time.Hour), Keep: 14},
 	}
 	if diff := cmp.Diff(want, cfg); diff != "" {
 		t.Errorf("config mismatch (-want +got):\n%s", diff)
@@ -133,6 +140,9 @@ func TestValidate(t *testing.T) {
 		{"scrub too frequent", func(c *Config) { c.Schedule.ScrubInterval = Duration(time.Minute) }, "schedule.scrub_interval"},
 		{"scrub fraction zero", func(c *Config) { c.Schedule.ScrubFraction = 0 }, "schedule.scrub_fraction"},
 		{"scrub fraction above one", func(c *Config) { c.Schedule.ScrubFraction = 1.5 }, "schedule.scrub_fraction"},
+		{"relative backup dir", func(c *Config) { c.Backup.Dir = "backups" }, "backup.dir"},
+		{"backup too frequent", func(c *Config) { c.Backup.Interval = Duration(time.Minute) }, "backup.interval"},
+		{"keep no backups", func(c *Config) { c.Backup.Keep = 0 }, "backup.keep"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -152,7 +162,7 @@ func TestValidateReportsAllProblems(t *testing.T) {
 	if err == nil {
 		t.Fatal("want errors for zero config")
 	}
-	for _, key := range []string{"storage.root", "kei.binary", "web.listen", "notify.topic", "schedule.scrub_fraction"} {
+	for _, key := range []string{"storage.root", "kei.binary", "web.listen", "notify.topic", "schedule.scrub_fraction", "backup.dir"} {
 		if !strings.Contains(err.Error(), key) {
 			t.Errorf("joined error missing %q", key)
 		}

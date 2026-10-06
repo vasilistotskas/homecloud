@@ -10,6 +10,7 @@ import {
   ListRunsResponseSchema,
   OverviewSchema,
   Phase,
+  RunResult,
   SettingsSchema,
 } from "../gen/homecloud/agent/v1/agent_pb";
 import { App } from "./App";
@@ -28,7 +29,12 @@ function failingStream<T>(err: Error): AsyncIterable<T> {
   };
 }
 
-const settings = create(SettingsSchema, { syncIntervalSeconds: 3600n, storageRoot: "E:\\HomeCloud" });
+const settings = create(SettingsSchema, {
+  syncIntervalSeconds: 3600n,
+  storageRoot: "E:\\HomeCloud",
+  scrubIntervalSeconds: 604_800n,
+  scrubFraction: 0.05,
+});
 
 describe("App", () => {
   it("shows the live overview", async () => {
@@ -82,6 +88,31 @@ describe("App", () => {
     render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("Your archive drive expects to fail")).toBeInTheDocument();
     expect(screen.getByText("Failing")).toBeInTheDocument();
+  });
+
+  it("reports archived files that changed on disk", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 10n, quarantined: 2n },
+              lastScrub: {
+                result: RunResult.FAILED,
+                finishedAt: { seconds: 1_790_000_000n },
+                scrub: { eligible: 40n, checked: 2n, passed: 0n, mismatched: 2n },
+              },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("2 changed")).toBeInTheDocument();
+    expect(await screen.findByText("re-read every 20 weeks")).toBeInTheDocument();
   });
 
   it("explains when the agent cannot be reached", async () => {
