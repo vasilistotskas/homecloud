@@ -1,4 +1,5 @@
-This folder is a homecloud archive of an iCloud Photos library.
+This folder is a homecloud archive of an iCloud Photos library and of iCloud
+Drive.
 Everything here is ordinary files; no homecloud software is needed to use it.
 
 Photos/YYYY/MM/
@@ -32,6 +33,24 @@ manifest.csv
                                     a share of files is re-checked every week
     To check a file yourself, compare its SHA-256 with the manifest
     (Windows: certutil -hashfile <file> SHA256; Linux: sha256sum <file>).
+
+Drive/
+    iCloud Drive, archived by homecloud. Nothing here is ever deleted.
+    Drive/iCloud Drive/...        the iCloud Drive folder as the Files app shows it
+    Drive/App Libraries/<App> (<id>)/...
+                                  each app's own iCloud folder (Books, Pages, ...)
+    Drive/.versions/<time>/...    every copy a newer version replaced (UTC time)
+    Drive/manifest.csv            one row per archived file:
+      icloud_path                 where the file is (or was) in iCloud
+      path                        location below Drive/ (names made safe for Windows)
+      size_bytes, sha256          exact size and SHA-256 of the archived copy
+      apple_signature             Apple's own checksum, checked at download
+      package                     true for iWork documents, books and other
+                                  bundles: kept as the ZIP archive iCloud serves
+                                  for them; any unzip tool extracts the bundle
+      modified_at, archived_at    when it changed in iCloud / was archived (UTC)
+      verified_at                 when homecloud last confirmed the checksum (UTC)
+      deleted_in_icloud_at        set when the file is gone from iCloud; the copy stays
 
 homecloud.db
     homecloud's ledger (SQLite): verification history and an append-only

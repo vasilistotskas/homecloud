@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -144,11 +145,17 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 	if err != nil {
 		return err
 	}
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate the agent executable: %w", err)
+	}
 	h, err := web.Handler(web.Options{
 		Listen: cfg.Web.Listen,
 		App:    assets,
 		Service: api.New(api.Deps{
 			Config: cfg, ConfigPath: cfgPath, AgentVersion: version,
+			// The CLI is installed next to the agent.
+			CLI:    filepath.Join(filepath.Dir(self), "homecloud"+platform.ExeSuffix),
 			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Media: signer, Now: time.Now,
 		}),
 		Media: media.Handler(signer, db, renderer, log),

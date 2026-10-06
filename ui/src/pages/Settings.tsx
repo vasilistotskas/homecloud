@@ -19,6 +19,7 @@ import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { useNotify } from "../components/toast";
 import { formatInterval, formatSpan } from "../format";
+import { shellCommand } from "../shell";
 import { AgentService } from "../gen/homecloud/agent/v1/agent_pb";
 
 const useStyles = makeStyles({
@@ -190,6 +191,21 @@ export function SettingsPage() {
         >
           <Text>{formatInterval(s.backupIntervalSeconds)}</Text>
         </Row>
+      </Group>
+
+      <Group title="iCloud Drive">
+        <Row label="Archive folder" detail={`${s.driveDir} (never deleted from; replaced copies in .versions)`} mono />
+        <Row
+          label="Archive iCloud Drive"
+          detail={`${s.driveWorkers} files at a time; every file is checked against Apple's checksum (drive.sync_interval, drive.workers)`}
+        >
+          <Text>{formatInterval(s.driveSyncIntervalSeconds)}</Text>
+        </Row>
+        <Row
+          label="Sign-in"
+          detail={`homecloud's own iCloud session; renew it with: ${shellCommand(s.cli, ["icloud", "login", "--config", s.configPath])}`}
+          mono
+        />
       </Group>
 
       <Group title="iPhone backups">

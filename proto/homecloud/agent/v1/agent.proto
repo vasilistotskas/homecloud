@@ -104,6 +104,19 @@ message Overview {
   Run last_iphone_backup = 10;
   // The most recent finished iCloud Drive sync; absent before the first one.
   Run last_drive_sync = 11;
+  // The iCloud Drive archive under <storage.root>/Drive.
+  ICloudDrive icloud_drive = 12;
+}
+
+// ICloudDrive is the iCloud Drive archive and homecloud's iCloud session.
+message ICloudDrive {
+  // Archived files, including those deleted in iCloud since.
+  int64 files = 1;
+  int64 bytes = 2;
+  // Archived files no longer in iCloud; their copies are kept.
+  int64 deleted_in_icloud = 3;
+  // When the owner last signed homecloud in to iCloud; absent if never.
+  google.protobuf.Timestamp signed_in_at = 4;
 }
 
 // DriveHealth is what the archive drive reports about itself (SMART) and the
@@ -438,6 +451,7 @@ message Event {
     DriveHealthChanged drive_health_changed = 8;
     RenditionMoved rendition_moved = 9;
     IPhoneBackupChanged iphone_backup_changed = 10;
+    DriveFileEvent drive_file = 11;
   }
 }
 
@@ -450,6 +464,43 @@ enum EventKind {
   EVENT_KIND_DRIVE_HEALTH_CHANGED = 5;
   EVENT_KIND_RENDITION_MOVED = 6;
   EVENT_KIND_IPHONE_BACKUP_CHANGED = 7;
+  EVENT_KIND_DRIVE_FILE_ARCHIVED = 8;
+  EVENT_KIND_DRIVE_FILE_CHANGED = 9;
+  EVENT_KIND_DRIVE_FILE_MOVED = 10;
+  EVENT_KIND_DRIVE_FILE_DELETED = 11;
+  EVENT_KIND_DRIVE_FILE_RESTORED = 12;
+  EVENT_KIND_DRIVE_FILE_DAMAGED = 13;
+}
+
+// DriveFileEvent is something that happened to an archived iCloud Drive file.
+message DriveFileEvent {
+  DriveFileChange change = 1;
+  // The file's path in iCloud (for a move: where it is now).
+  string path = 2;
+  // For a move: where it was.
+  string from_path = 3;
+  // For a change: where the previous copy was kept, below the Drive folder.
+  string kept_as = 4;
+  // For damage: what the check found.
+  string reason = 5;
+  int64 size_bytes = 6;
+  string sha256 = 7;
+}
+
+enum DriveFileChange {
+  DRIVE_FILE_CHANGE_UNSPECIFIED = 0;
+  // Archived for the first time.
+  DRIVE_FILE_CHANGE_ARCHIVED = 1;
+  // Its bytes changed in iCloud; the previous copy was kept.
+  DRIVE_FILE_CHANGE_CHANGED = 2;
+  // Moved or renamed in iCloud; the copy moved with it.
+  DRIVE_FILE_CHANGE_MOVED = 3;
+  // Gone from iCloud; the copy is kept.
+  DRIVE_FILE_CHANGE_DELETED = 4;
+  // Back in iCloud after a deletion.
+  DRIVE_FILE_CHANGE_RESTORED = 5;
+  // The copy no longer matched its checksum; downloaded again next sync.
+  DRIVE_FILE_CHANGE_DAMAGED = 6;
 }
 
 // AssetRef identifies an asset and names it for display.
@@ -704,6 +755,14 @@ message Settings {
   int64 iphone_backup_max_age_seconds = 21;
   int64 iphone_backup_check_interval_seconds = 22;
   double iphone_backup_max_shrink_percent = 23;
+  // The iCloud Drive archive folder, how often it syncs, and how many files
+  // download at once.
+  string drive_dir = 24;
+  int64 drive_sync_interval_seconds = 25;
+  int32 drive_workers = 26;
+  // The homecloud command-line tool installed next to the agent, for commands
+  // the owner runs in a terminal (homecloud icloud login).
+  string cli = 27;
 }
 
 // ToolPin is an external tool and the exact version homecloud requires.

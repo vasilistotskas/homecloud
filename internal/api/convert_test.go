@@ -108,3 +108,18 @@ func TestDriveSyncRunToProto(t *testing.T) {
 		t.Fatal("an unknown outcome was accepted")
 	}
 }
+
+func TestDriveFileMovedEventToProto(t *testing.T) {
+	e, err := eventToProto(ledger.Event{
+		ID: 3, Library: ledger.DriveLibrary, Asset: "FILE::z::A", Kind: ledger.EventDriveFileMoved,
+		Detail: `{"from":"iCloud Drive/a.pdf","to":"iCloud Drive/Docs/b.pdf","local_path":"iCloud Drive/Docs/b.pdf"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := e.GetDriveFile()
+	if d.GetChange() != agentv1.DriveFileChange_DRIVE_FILE_CHANGE_MOVED || d.GetFromPath() != "iCloud Drive/a.pdf" ||
+		d.GetPath() != "iCloud Drive/Docs/b.pdf" || e.GetAsset().GetFilename() != "b.pdf" {
+		t.Fatalf("event = %v", e)
+	}
+}

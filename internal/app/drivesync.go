@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/drive"
 	"github.com/vasilistotskas/homecloud/internal/export"
@@ -52,6 +53,20 @@ func ParseDriveSyncReport(detail string) (DriveSyncReport, error) {
 		return DriveSyncReport{}, fmt.Errorf("decode drive sync report: %w", err)
 	}
 	return rep, nil
+}
+
+// ICloudSignedInAt is when the owner last signed homecloud in to iCloud, or
+// zero when the session was never established.
+func (a *Agent) ICloudSignedInAt() (time.Time, error) {
+	path, err := a.icloudSession()
+	if err != nil {
+		return time.Time{}, err
+	}
+	s, err := icloud.LoadSession(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return s.SignedInAt, nil
 }
 
 // syncDrive archives iCloud Drive under <storage.root>/Drive with homecloud's

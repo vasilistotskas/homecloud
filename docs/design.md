@@ -106,7 +106,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 
 - **P0** — toolchain, repo, CI, this document; spikes: (A) kei `asset_id` ↔ pyicloud identity on 20 assets (gate for P3), (B) kei auth/manifest representation of Live Photos/edits/`added_at`/exit codes, (C) console-less logon launch; `homecloud doctor`.
 - **P1** — kei full sync, ledger, verification, status UI, ntfy. One-time in-session reconciliation of the interim archive, then its removal.
-- **P2** — local encrypted iPhone backup + monitor (milestone A, implemented — §8e); homecloud's own iCloud sign-in (milestone B1, implemented — §8f); iCloud Drive archive (milestone B2, implemented — §8g); its app views (B3, planned).
+- **P2** — local encrypted iPhone backup + monitor (milestone A, implemented — §8e); homecloud's own iCloud sign-in (milestone B1, implemented — §8f); iCloud Drive archive (milestone B2, implemented — §8g) and its app views (B3, implemented: Overview card and sign-in banner, Activity "iCloud Drive" tab and events, Settings group; the API's Overview carries Drive totals and the session's sign-in time, never the session itself).
 - **P3** — staged deleter.
 
 ## 8a. Platforms, API and GUI (decided 2026-10-05)

@@ -5,13 +5,6 @@ import {
   Caption1,
   Card,
   CardHeader,
-  Dialog,
-  DialogActions,
-  DialogBody,
-  DialogContent,
-  DialogSurface,
-  DialogTitle,
-  DialogTrigger,
   Link,
   makeStyles,
   MessageBar,
@@ -33,7 +26,7 @@ import {
   ArrowSyncRegular,
   CheckmarkCircleRegular,
   ClockRegular,
-  CopyRegular,
+  CloudArchiveRegular,
   HardDriveRegular,
   HeartPulseRegular,
   KeyRegular,
@@ -47,17 +40,20 @@ import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
+import { CommandDialog } from "../components/CommandDialog";
 import { LoadError } from "../components/LoadError";
 import { iphoneStateBadge } from "../components/labels";
 import { Page } from "../components/Page";
 import { runRow } from "../components/runs";
 import { useNotify } from "../components/toast";
+import { shellCommand } from "../shell";
 import { formatBytes, formatCount, formatInterval, formatRelative, formatWhen, toDate } from "../format";
 import {
   AgentService,
   AppleAccountState,
   DriveHealthState,
   DownloadOutcome,
+  DriveSyncOutcome,
   IPhoneBackupState,
   Phase,
   RunKind,
@@ -123,16 +119,6 @@ const useStyles = makeStyles({
     textAlign: "center",
     padding: `${tokens.spacingVerticalXXXL} ${tokens.spacingHorizontalXXL}`,
     gap: tokens.spacingVerticalL,
-  },
-  command: {
-    display: "flex",
-    alignItems: "center",
-    gap: tokens.spacingHorizontalS,
-    padding: tokens.spacingHorizontalS,
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground3,
-    fontFamily: tokens.fontFamilyMonospace,
-    wordBreak: "break-all",
   },
   tableBox: { overflowX: "auto" },
   nowrap: { whiteSpace: "nowrap" },
@@ -207,6 +193,7 @@ export function OverviewPage() {
         <DriveCard drive={overview.drive} />
         <IntegrityCard overview={overview} settings={settings.data?.settings} />
         <IPhoneBackupCard run={overview.lastIphoneBackup} />
+        <ICloudDriveCard overview={overview} settings={settings.data?.settings} />
       </div>
       <RecentSyncs lastCycleId={overview.lastCycle?.id} />
     </Page>
@@ -331,6 +318,7 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
   const scrub = overview.lastScrub;
   const backup = overview.lastLedgerBackup;
   const iphone = iphoneBackupSummary(overview.lastIphoneBackup);
+  const driveSync = overview.lastDriveSync?.driveSync;
   const minFree = overview.storage?.minFreePercent ?? 0;
 
   if (drive === DriveHealthState.FAILING || drive === DriveHealthState.WARNING) {
@@ -349,6 +337,13 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
     body =
       "New photos aren't being downloaded until you sign in again. Everything already archived is safe, and nothing is deleted from iCloud meanwhile.";
     action = <SignInDialog settings={settings} />;
+  } else if (driveSync?.outcome === DriveSyncOutcome.SIGN_IN_REQUIRED) {
+    tone = "warning";
+    icon = <KeyRegular />;
+    title = "iCloud Drive sign-in needed";
+    body =
+      "homecloud's own iCloud session expired, so new and changed iCloud Drive files aren't archived until you sign in again. Everything already archived is kept.";
+    action = <DriveSignInDialog settings={settings} />;
   } else if (quarantined > 0n) {
     tone = "danger";
     icon = <ShieldErrorRegular />;
@@ -381,6 +376,17 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
     icon = <ShieldCheckmarkRegular />;
     title = "The records backup failed";
     body = `${backup.ledgerBackup?.error ?? ""}. It is retried every sync.`;
+  } else if (
+    driveSync !== undefined &&
+    (driveSync.outcome === DriveSyncOutcome.PARTIAL || driveSync.outcome === DriveSyncOutcome.ERROR)
+  ) {
+    tone = "warning";
+    icon = <CloudArchiveRegular />;
+    title =
+      driveSync.outcome === DriveSyncOutcome.ERROR
+        ? "The iCloud Drive sync couldn't run"
+        : `${formatCount(driveSync.failed)} iCloud Drive ${driveSync.failed === 1n ? "item" : "items"} couldn't be archived`;
+    body = `${driveSync.error !== "" ? driveSync.error : (driveSync.failures[0] ?? "")}. It is retried at the next iCloud Drive sync.`;
   } else if (iphone.tone === "warning" || iphone.tone === "danger") {
     tone = "warning";
     icon = <PhoneRegular />;
@@ -415,58 +421,34 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
 }
 
 function SignInDialog({ settings }: { settings: Settings | undefined }) {
-  const styles = useStyles();
-  const notify = useNotify();
-  const command =
-    settings === undefined
-      ? undefined
-      : `"${settings.downloader?.binary ?? ""}" login --config "${settings.downloaderConfig}"`;
   return (
-    <Dialog>
-      <DialogTrigger disableButtonEnhancement>
-        <Button appearance="primary">Sign in…</Button>
-      </DialogTrigger>
-      <DialogSurface>
-        <DialogBody>
-          <DialogTitle>Sign in to iCloud again</DialogTitle>
-          <DialogContent>
-            <Text block>
-              Run this in a terminal on this computer. Your password and the code from your iPhone go straight to Apple;
-              homecloud never sees them.
-            </Text>
-            {command === undefined ? (
-              <Spinner size="tiny" />
-            ) : (
-              <div className={styles.command}>
-                <span style={{ flex: 1 }}>{command}</span>
-                <Button
-                  icon={<CopyRegular />}
-                  aria-label="Copy command"
-                  onClick={() => {
-                    navigator.clipboard.writeText(command).then(
-                      () => {
-                        notify("success", "Command copied");
-                      },
-                      () => {
-                        notify("error", "Couldn't copy the command");
-                      },
-                    );
-                  }}
-                />
-              </div>
-            )}
-            <Text block className={styles.muted}>
-              Downloads resume at the next sync.
-            </Text>
-          </DialogContent>
-          <DialogActions>
-            <DialogTrigger disableButtonEnhancement>
-              <Button>Close</Button>
-            </DialogTrigger>
-          </DialogActions>
-        </DialogBody>
-      </DialogSurface>
-    </Dialog>
+    <CommandDialog
+      trigger="Sign in…"
+      title="Sign in to iCloud again"
+      intro="Run this in a terminal on this computer. Your password and the code from your iPhone go straight to Apple; homecloud never sees them."
+      command={
+        settings === undefined
+          ? undefined
+          : shellCommand(settings.downloader?.binary ?? "", ["login", "--config", settings.downloaderConfig])
+      }
+      after="Downloads resume at the next sync."
+    />
+  );
+}
+
+function DriveSignInDialog({ settings }: { settings: Settings | undefined }) {
+  return (
+    <CommandDialog
+      trigger="Sign in…"
+      title="Sign homecloud in to iCloud Drive"
+      intro="Run this in a terminal on this computer and type your Apple Account password, then the code from your iPhone. Your account uses Advanced Data Protection if it asks you to approve access on a device. The password is used once and never stored."
+      command={
+        settings === undefined
+          ? undefined
+          : shellCommand(settings.cli, ["icloud", "login", "--config", settings.configPath])
+      }
+      after="iCloud Drive is archived again at the next sync; everything already archived stays."
+    />
   );
 }
 
@@ -809,6 +791,82 @@ function IPhoneBackupCard({ run }: { run: Run | undefined }) {
         Apple&apos;s Devices app makes the backups; homecloud only reads them and alerts when one is old, unencrypted,
         unfinished or damaged.
         {checked !== undefined && ` Checked ${formatWhen(checked)}.`}
+      </Caption1>
+    </Card>
+  );
+}
+
+const driveOutcomeBadge: Record<
+  DriveSyncOutcome,
+  { label: string; color: "success" | "warning" | "danger" | "informative" }
+> = {
+  [DriveSyncOutcome.UNSPECIFIED]: { label: "Not synced yet", color: "informative" },
+  [DriveSyncOutcome.OK]: { label: "Up to date", color: "success" },
+  [DriveSyncOutcome.PARTIAL]: { label: "Some items failed", color: "warning" },
+  [DriveSyncOutcome.SIGN_IN_REQUIRED]: { label: "Sign-in needed", color: "warning" },
+  [DriveSyncOutcome.SKIPPED_LOW_SPACE]: { label: "Drive almost full", color: "warning" },
+  [DriveSyncOutcome.ARCHIVE_UNAVAILABLE]: { label: "Archive drive missing", color: "danger" },
+  [DriveSyncOutcome.ERROR]: { label: "Couldn't sync", color: "danger" },
+};
+
+function ICloudDriveCard({ overview, settings }: { overview: Overview; settings: Settings | undefined }) {
+  const styles = useStyles();
+  const run = overview.lastDriveSync;
+  const rep = run?.driveSync;
+  const totals = overview.icloudDrive;
+  const badge = driveOutcomeBadge[rep?.outcome ?? DriveSyncOutcome.UNSPECIFIED];
+  const synced = toDate(run?.finishedAt);
+  const signedIn = toDate(totals?.signedInAt);
+
+  const facts: [string, string][] = [
+    ["Archived", `${formatCount(totals?.files ?? 0n)} files · ${formatBytes(totals?.bytes ?? 0n)}`],
+  ];
+  if ((totals?.deletedInIcloud ?? 0n) > 0n) {
+    facts.push(["Deleted in iCloud", `${formatCount(totals?.deletedInIcloud ?? 0n)} (copies kept)`]);
+  }
+  if (synced !== undefined && rep !== undefined) {
+    const changes = [
+      rep.archived > 0n && `${formatCount(rep.archived)} new`,
+      rep.changed > 0n && `${formatCount(rep.changed)} changed`,
+      rep.moved > 0n && `${formatCount(rep.moved)} moved`,
+      rep.deleted > 0n && `${formatCount(rep.deleted)} deleted`,
+      rep.repaired > 0n && `${formatCount(rep.repaired)} repaired`,
+    ].filter((c): c is string => typeof c === "string");
+    facts.push(["Last sync", `${formatWhen(synced)} · ${changes.length === 0 ? "no changes" : changes.join(", ")}`]);
+  }
+  if (settings !== undefined) {
+    const next =
+      synced === undefined ? undefined : new Date(synced.getTime() + Number(settings.driveSyncIntervalSeconds) * 1000);
+    facts.push(["Next sync", next === undefined ? "After the next sync cycle" : formatRelative(next)]);
+  }
+  facts.push(["Signed in", signedIn === undefined ? "Never — run homecloud icloud login" : formatWhen(signedIn)]);
+
+  return (
+    <Card>
+      <CardHeader
+        image={<CloudArchiveRegular fontSize={20} />}
+        header={<Subtitle2 as="h2">iCloud Drive</Subtitle2>}
+        action={
+          <Badge appearance="tint" color={badge.color}>
+            {badge.label}
+          </Badge>
+        }
+      />
+      <div className={styles.facts}>
+        {facts.map(([k, v]) => (
+          <Fragment key={k}>
+            <Text className={styles.muted}>{k}</Text>
+            <Text>{v}</Text>
+          </Fragment>
+        ))}
+      </div>
+      {rep?.outcome === DriveSyncOutcome.SIGN_IN_REQUIRED && <DriveSignInDialog settings={settings} />}
+      <Caption1 className={styles.muted}>
+        Every file is checked against Apple&apos;s own checksum. Files are never deleted from the archive: replaced
+        versions are kept, and files deleted in iCloud stay.
+        {rep !== undefined &&
+          rep.unlistedApps > 0n &&
+          ` ${formatCount(rep.unlistedApps)} apps keep no files in iCloud Drive.`}
       </Caption1>
     </Card>
   );

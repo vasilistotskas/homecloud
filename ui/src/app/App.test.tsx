@@ -1,12 +1,14 @@
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import {
   AgentService,
   AppleAccountState,
   DriveHealthState,
+  DriveSyncOutcome,
   IPhoneBackupState,
   ListRunsResponseSchema,
   OverviewSchema,
@@ -175,6 +177,56 @@ describe("App", () => {
     render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("No iPhone backup on this computer yet")).toBeInTheDocument();
     expect(screen.getByText("No backup yet")).toBeInTheDocument();
+  });
+
+  it("asks to sign homecloud in to iCloud Drive again with a command that runs", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 10n },
+              icloudDrive: {
+                files: 23n,
+                bytes: 46_068_308n,
+                deletedInIcloud: 1n,
+                signedInAt: { seconds: 1_790_000_000n },
+              },
+              lastDriveSync: {
+                result: RunResult.FAILED,
+                finishedAt: { seconds: 1_790_000_100n },
+                driveSync: { outcome: DriveSyncOutcome.SIGN_IN_REQUIRED, error: "iCloud sign-in required" },
+              },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({
+          settings: create(SettingsSchema, {
+            ...settings,
+            cli: String.raw`C:\Program Files\homecloud\homecloud.exe`,
+            configPath: String.raw`C:\cfg\config.toml`,
+            driveSyncIntervalSeconds: 21_600n,
+          }),
+        }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("iCloud Drive sign-in needed")).toBeInTheDocument();
+    expect(screen.getByText("23 files · 43.9 MiB")).toBeInTheDocument();
+    expect(screen.getByText("1 (copies kept)")).toBeInTheDocument();
+    // The banner and the iCloud Drive card both offer it.
+    const [signIn] = screen.getAllByRole("button", { name: "Sign in…" });
+    if (signIn === undefined) {
+      throw new Error("no sign-in button");
+    }
+    await userEvent.setup().click(signIn);
+    const command = await screen.findByText(/icloud login --config/);
+    const prefix = navigator.userAgent.includes("Windows") ? "& " : "";
+    expect(command).toHaveTextContent(
+      `${prefix}"${String.raw`C:\Program Files\homecloud\homecloud.exe`}" icloud login --config ${String.raw`C:\cfg\config.toml`}`,
+    );
   });
 
   it("says the archive drive is missing when the agent reports it", async () => {

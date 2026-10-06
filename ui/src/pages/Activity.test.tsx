@@ -8,6 +8,10 @@ import { App } from "../app/App";
 import type { Platform } from "../app/platformContext";
 import {
   AgentService,
+  DriveFileChange,
+  DriveSyncOutcome,
+  EventKind,
+  ListEventsResponseSchema,
   IPhoneBackupState,
   ListRunsResponseSchema,
   OverviewSchema,
@@ -120,5 +124,81 @@ describe("Activity", () => {
     await userEvent.setup().click(await screen.findByRole("tab", { name: "iPhone backups" }));
     expect(await screen.findByText("Out of date")).toBeInTheDocument();
     expect(screen.getByText("Needs attention")).toBeInTheDocument();
+  });
+
+  it("lists iCloud Drive syncs and their failures", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, {}) };
+          await never();
+        },
+        getSettings: () => ({ settings: create(SettingsSchema, {}) }),
+        listRuns: (req) =>
+          create(ListRunsResponseSchema, {
+            runs:
+              req.kind === RunKind.DRIVE_SYNC
+                ? [
+                    {
+                      id: 11n,
+                      kind: "drive_sync",
+                      result: RunResult.FAILED,
+                      startedAt: { seconds: 1_790_000_000n },
+                      finishedAt: { seconds: 1_790_000_040n },
+                      driveSync: {
+                        outcome: DriveSyncOutcome.PARTIAL,
+                        listed: 23n,
+                        archived: 22n,
+                        failed: 1n,
+                        failures: ["iCloud Drive/x.pdf: downloaded bytes do not match the signature"],
+                      },
+                    },
+                  ]
+                : [],
+          }),
+      });
+    });
+    window.location.hash = "#/activity";
+    render(<App transport={transport} platform={browser} />);
+    await userEvent.setup().click(await screen.findByRole("tab", { name: "iCloud Drive" }));
+    expect(await screen.findByText(/x.pdf: downloaded bytes do not match/)).toBeInTheDocument();
+    expect(screen.getByText("Needs attention")).toBeInTheDocument();
+  });
+
+  it("describes iCloud Drive events", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, {}) };
+          await never();
+        },
+        getSettings: () => ({ settings: create(SettingsSchema, {}) }),
+        listRuns: () => create(ListRunsResponseSchema),
+        listEvents: (req) =>
+          create(ListEventsResponseSchema, {
+            events: req.kinds.includes(EventKind.DRIVE_FILE_MOVED)
+              ? [
+                  {
+                    id: 5n,
+                    at: { seconds: 1_790_000_000n },
+                    asset: { library: "icloud_drive", assetId: "FILE::z::A", filename: "b.pdf" },
+                    detail: {
+                      case: "driveFile",
+                      value: {
+                        change: DriveFileChange.MOVED,
+                        path: "iCloud Drive/Docs/b.pdf",
+                        fromPath: "iCloud Drive/a.pdf",
+                      },
+                    },
+                  },
+                ]
+              : [],
+          }),
+      });
+    });
+    window.location.hash = "#/activity";
+    render(<App transport={transport} platform={browser} />);
+    await userEvent.setup().click(await screen.findByRole("tab", { name: "Events" }));
+    expect(await screen.findByText("iCloud Drive/a.pdf → iCloud Drive/Docs/b.pdf")).toBeInTheDocument();
   });
 });

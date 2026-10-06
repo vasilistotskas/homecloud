@@ -7,8 +7,8 @@ Personal, private service that makes a local drive the verified home of my iClou
 - Status: **P1 done, M1–M4 live, P2 in progress**: iCloud Photos archive with verification,
   weekly integrity re-checks, daily ledger backups, drive health, library browser, local API, web
   and desktop apps, a monitor of the local iPhone backups, homecloud's own iCloud sign-in and the
-  iCloud Drive archive (`Drive/`, never deletes; its app views come next). No deletion capability
-  exists yet (P3).
+  iCloud Drive archive (`Drive/`, never deletes) with its own Overview card, Activity tab and
+  events. No deletion capability exists yet (P3).
 
 ## How it works
 

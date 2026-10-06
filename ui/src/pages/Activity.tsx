@@ -28,7 +28,9 @@ import { runRow } from "../components/runs";
 import { formatBytes, formatCount, formatDuration, formatWhen, toDate } from "../format";
 import {
   AgentService,
+  DriveFileChange,
   DriveHealthState,
+  DriveSyncOutcome,
   EventKind,
   RunKind,
   RunResult,
@@ -66,6 +68,7 @@ const tabs = {
   integrity: "Integrity checks",
   backups: "Records backups",
   iphone: "iPhone backups",
+  drive: "iCloud Drive",
   events: "Events",
 } as const;
 type ActivityTab = keyof typeof tabs;
@@ -96,6 +99,7 @@ export function ActivityPage() {
       {tab === "integrity" && <ScrubRuns />}
       {tab === "backups" && <BackupRuns />}
       {tab === "iphone" && <IPhoneBackupRuns />}
+      {tab === "drive" && <DriveSyncRuns />}
       {tab === "events" && <Events />}
     </Page>
   );
@@ -376,6 +380,83 @@ function IPhoneBackupRuns() {
   );
 }
 
+const driveOutcomeLabel: Record<DriveSyncOutcome, string> = {
+  [DriveSyncOutcome.UNSPECIFIED]: "",
+  [DriveSyncOutcome.OK]: "",
+  [DriveSyncOutcome.PARTIAL]: "Some items failed; retried next sync.",
+  [DriveSyncOutcome.SIGN_IN_REQUIRED]: "iCloud sign-in needed (homecloud icloud login).",
+  [DriveSyncOutcome.SKIPPED_LOW_SPACE]: "Skipped: the archive drive is almost full.",
+  [DriveSyncOutcome.ARCHIVE_UNAVAILABLE]: "Skipped: the archive drive isn't available.",
+  [DriveSyncOutcome.ERROR]: "",
+};
+
+function DriveSyncRuns() {
+  const styles = useStyles();
+  const q = useInfiniteQuery(
+    AgentService.method.listRuns,
+    { kind: RunKind.DRIVE_SYNC, pageSize, pageToken: "" },
+    { pageParamKey: "pageToken", getNextPageParam: nextPage },
+  );
+  if (q.isPending) {
+    return <Spinner label="Loading iCloud Drive syncs…" />;
+  }
+  if (q.isError) {
+    return <LoadError what="iCloud Drive syncs" error={q.error} onRetry={() => void q.refetch()} />;
+  }
+  const runs = q.data.pages.flatMap((p) => p.runs);
+  const count = (n: bigint | undefined) => (n === undefined ? "—" : formatCount(n));
+  return (
+    <>
+      <Card className={styles.tableBox}>
+        <Table size="small" aria-label="iCloud Drive syncs" className={styles.table}>
+          <TableHeader>
+            <TableRow>
+              <TableHeaderCell>Started</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Listed</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>New</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Changed</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Moved</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Deleted in iCloud</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Downloaded</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
+              <TableHeaderCell>Result</TableHeaderCell>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {runs.map((run) => {
+              const r = run.driveSync;
+              const note = r === undefined ? "" : r.error !== "" ? r.error : driveOutcomeLabel[r.outcome];
+              return (
+                <TableRow key={run.id.toString()}>
+                  <TableCell className={styles.nowrap}>{started(run)}</TableCell>
+                  <TableCell className={styles.num}>{count(r?.listed)}</TableCell>
+                  <TableCell className={styles.num}>{count(r?.archived)}</TableCell>
+                  <TableCell className={styles.num}>{count(r?.changed)}</TableCell>
+                  <TableCell className={styles.num}>{count(r?.moved)}</TableCell>
+                  <TableCell className={styles.num}>{count(r?.deleted)}</TableCell>
+                  <TableCell className={styles.num}>{r === undefined ? "—" : formatBytes(r.downloadedBytes)}</TableCell>
+                  <TableCell className={styles.num}>{took(run)}</TableCell>
+                  <TableCell className={styles.detail}>
+                    <RunBadge run={run} ok="Up to date" failed="Needs attention" />
+                    {note !== "" && <Text className={styles.muted}> {note}</Text>}
+                    {r?.failures.map((f) => (
+                      <Text key={f} block className={styles.muted}>
+                        {f}
+                      </Text>
+                    ))}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {runs.length === 0 && <Text className={styles.muted}>iCloud Drive hasn&apos;t been synced yet.</Text>}
+      </Card>
+      <MoreButton q={q} />
+    </>
+  );
+}
+
 function RunBadge({ run, ok, failed }: { run: Run; ok: string; failed: string }) {
   switch (run.result) {
     case RunResult.RUNNING:
@@ -401,6 +482,51 @@ function RunBadge({ run, ok, failed }: { run: Run; ok: string; failed: string })
   }
 }
 
+const driveEventKinds = [
+  EventKind.DRIVE_FILE_ARCHIVED,
+  EventKind.DRIVE_FILE_CHANGED,
+  EventKind.DRIVE_FILE_MOVED,
+  EventKind.DRIVE_FILE_DELETED,
+  EventKind.DRIVE_FILE_RESTORED,
+  EventKind.DRIVE_FILE_DAMAGED,
+];
+
+const driveChangeLabel: Record<DriveFileChange, { kind: string; color: "danger" | "success" | "informative" }> = {
+  [DriveFileChange.UNSPECIFIED]: { kind: "iCloud Drive", color: "informative" },
+  [DriveFileChange.ARCHIVED]: { kind: "Archived", color: "success" },
+  [DriveFileChange.CHANGED]: { kind: "Changed in iCloud", color: "informative" },
+  [DriveFileChange.MOVED]: { kind: "Moved", color: "informative" },
+  [DriveFileChange.DELETED]: { kind: "Deleted in iCloud", color: "informative" },
+  [DriveFileChange.RESTORED]: { kind: "Back in iCloud", color: "success" },
+  [DriveFileChange.DAMAGED]: { kind: "Damaged copy", color: "danger" },
+};
+
+function driveFileText(d: {
+  change: DriveFileChange;
+  path: string;
+  fromPath: string;
+  keptAs: string;
+  reason: string;
+  sizeBytes: bigint;
+}): string {
+  switch (d.change) {
+    case DriveFileChange.ARCHIVED:
+      return `${d.path} (${formatBytes(d.sizeBytes)})`;
+    case DriveFileChange.CHANGED:
+      return d.keptAs === "" ? d.path : `${d.path}; the previous copy is kept at Drive/${d.keptAs}`;
+    case DriveFileChange.MOVED:
+      return `${d.fromPath} → ${d.path}`;
+    case DriveFileChange.DELETED:
+      return `${d.path}; the archived copy is kept`;
+    case DriveFileChange.RESTORED:
+      return d.path;
+    case DriveFileChange.DAMAGED:
+      return `${d.path}: ${d.reason}. It is downloaded again at the next sync.`;
+    case DriveFileChange.UNSPECIFIED:
+      return d.path;
+  }
+}
+
 const filters = {
   all: {
     label: "All events",
@@ -411,6 +537,7 @@ const filters = {
       EventKind.QUARANTINE_RELEASED,
       EventKind.DRIVE_HEALTH_CHANGED,
       EventKind.IPHONE_BACKUP_CHANGED,
+      ...driveEventKinds,
     ],
   },
   quarantined: { label: "Quarantined", kinds: [EventKind.QUARANTINED] },
@@ -419,6 +546,7 @@ const filters = {
   moved: { label: "Moved", kinds: [EventKind.RENDITION_MOVED] },
   drive: { label: "Drive health", kinds: [EventKind.DRIVE_HEALTH_CHANGED] },
   iphone: { label: "iPhone backups", kinds: [EventKind.IPHONE_BACKUP_CHANGED] },
+  icloudDrive: { label: "iCloud Drive", kinds: driveEventKinds },
   states: { label: "State changes", kinds: [EventKind.STATE_CHANGED] },
 } as const;
 type Filter = keyof typeof filters;
@@ -474,6 +602,10 @@ function describe(e: Event): { kind: string; color: "danger" | "success" | "info
         color: tone === "success" ? "success" : tone === "informative" ? "informative" : "danger",
         text: [`${c.deviceName}: ${iphoneStateBadge[c.to].label}`, ...c.reasons].join(": "),
       };
+    }
+    case "driveFile": {
+      const label = driveChangeLabel[e.detail.value.change];
+      return { kind: label.kind, color: label.color, text: driveFileText(e.detail.value) };
     }
     case undefined:
       return { kind: "Event", color: "informative", text: "" };

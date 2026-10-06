@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path"
 	"strconv"
 	"time"
 
@@ -299,6 +300,22 @@ var eventKindNames = map[agentv1.EventKind]string{
 	agentv1.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:  ledger.EventDriveHealthChanged,
 	agentv1.EventKind_EVENT_KIND_RENDITION_MOVED:       ledger.EventRenditionMoved,
 	agentv1.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED: ledger.EventIPhoneBackupChanged,
+	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED:   ledger.EventDriveFileArchived,
+	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_CHANGED:    ledger.EventDriveFileChanged,
+	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_MOVED:      ledger.EventDriveFileMoved,
+	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_DELETED:    ledger.EventDriveFileDeleted,
+	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_RESTORED:   ledger.EventDriveFileRestored,
+	agentv1.EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED:    ledger.EventDriveFileDamaged,
+}
+
+// driveFileChanges maps the ledger's iCloud Drive event kinds to the API's.
+var driveFileChanges = map[string]agentv1.DriveFileChange{
+	ledger.EventDriveFileArchived: agentv1.DriveFileChange_DRIVE_FILE_CHANGE_ARCHIVED,
+	ledger.EventDriveFileChanged:  agentv1.DriveFileChange_DRIVE_FILE_CHANGE_CHANGED,
+	ledger.EventDriveFileMoved:    agentv1.DriveFileChange_DRIVE_FILE_CHANGE_MOVED,
+	ledger.EventDriveFileDeleted:  agentv1.DriveFileChange_DRIVE_FILE_CHANGE_DELETED,
+	ledger.EventDriveFileRestored: agentv1.DriveFileChange_DRIVE_FILE_CHANGE_RESTORED,
+	ledger.EventDriveFileDamaged:  agentv1.DriveFileChange_DRIVE_FILE_CHANGE_DAMAGED,
 }
 
 var assetStates = map[ledger.AssetState]agentv1.AssetState{
@@ -415,6 +432,29 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 				c.To, err = iphoneBackupState(d.To)
 			}
 			out.Detail = &agentv1.Event_IphoneBackupChanged{IphoneBackupChanged: c}
+		}
+	case ledger.EventDriveFileArchived, ledger.EventDriveFileChanged, ledger.EventDriveFileMoved,
+		ledger.EventDriveFileDeleted, ledger.EventDriveFileRestored, ledger.EventDriveFileDamaged:
+		var d struct {
+			Path   string `json:"path"`
+			From   string `json:"from"`
+			To     string `json:"to"`
+			KeptAs string `json:"kept_as"`
+			Reason string `json:"reason"`
+			Size   int64  `json:"size"`
+			SHA256 string `json:"sha256"`
+		}
+		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
+			ev := &agentv1.DriveFileEvent{
+				Change: driveFileChanges[e.Kind], Path: d.Path, KeptAs: d.KeptAs, Reason: d.Reason,
+				SizeBytes: d.Size, Sha256: d.SHA256,
+			}
+			if e.Kind == ledger.EventDriveFileMoved {
+				ev.Path, ev.FromPath = d.To, d.From
+			}
+			out.Detail = &agentv1.Event_DriveFile{DriveFile: ev}
+			// A Drive event names a file, not a Photos asset.
+			out.Asset = &agentv1.AssetRef{Library: e.Library, AssetId: e.Asset, Filename: path.Base(ev.Path)}
 		}
 	default:
 		err = fmt.Errorf("unknown event kind %q", e.Kind)

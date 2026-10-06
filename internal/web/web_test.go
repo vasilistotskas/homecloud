@@ -37,11 +37,15 @@ type fakeAgent struct {
 	started bool
 	// archive is what CheckArchive reports.
 	archive error
+	// signedIn is when homecloud was signed in to iCloud.
+	signedIn time.Time
 }
 
 func (f *fakeAgent) Hub() *app.Hub       { return f.hub }
 func (f *fakeAgent) RequestCycle() bool  { return f.started }
 func (f *fakeAgent) CheckArchive() error { return f.archive }
+
+func (f *fakeAgent) ICloudSignedInAt() (time.Time, error) { return f.signedIn, nil }
 
 type nopNotifier struct{}
 
@@ -521,5 +525,42 @@ func TestOverviewReportsMissingArchiveDrive(t *testing.T) {
 	_, err := e.client.GetOverview(context.Background(), connect.NewRequest(&agentv1.GetOverviewRequest{}))
 	if code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("GetOverview on a replaced archive volume = %v, want failed_precondition", err)
+	}
+}
+
+func TestOverviewAndEventsOfICloudDrive(t *testing.T) {
+	signedIn := time.Date(2026, 10, 6, 11, 30, 0, 0, time.UTC)
+	e := setup(t, func(a *fakeAgent) { a.signedIn = signedIn })
+	ctx := context.Background()
+	f := ledger.DriveFile{
+		DriveWSID: "FILE::com.apple.CloudDocs::A", ICloudPath: "iCloud Drive/Docs/tax.pdf",
+		LocalPath: "iCloud Drive/Docs/tax.pdf", Etag: "e1", Size: 10, SHA256: strings.Repeat("a", 64),
+	}
+	if err := e.db.RecordDriveFile(ctx, f, "", signedIn); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.db.MarkDriveFilesDeleted(ctx, []string{f.DriveWSID}, signedIn.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	ov, err := e.client.GetOverview(ctx, connect.NewRequest(&agentv1.GetOverviewRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := ov.Msg.GetOverview().GetIcloudDrive()
+	if d.GetFiles() != 1 || d.GetBytes() != 10 || d.GetDeletedInIcloud() != 1 || !d.GetSignedInAt().AsTime().Equal(signedIn) {
+		t.Fatalf("icloud drive = %v", d)
+	}
+
+	events, err := e.client.ListEvents(ctx, connect.NewRequest(&agentv1.ListEventsRequest{
+		Kinds: []agentv1.EventKind{agentv1.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED, agentv1.EventKind_EVENT_KIND_DRIVE_FILE_DELETED},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := events.Msg.GetEvents()
+	if len(got) != 2 || got[0].GetDriveFile().GetChange() != agentv1.DriveFileChange_DRIVE_FILE_CHANGE_DELETED ||
+		got[1].GetDriveFile().GetSizeBytes() != 10 || got[0].GetAsset().GetFilename() != "tax.pdf" {
+		t.Fatalf("events = %v", got)
 	}
 }

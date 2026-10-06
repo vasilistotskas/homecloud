@@ -21,6 +21,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/drive"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/media"
@@ -43,6 +44,7 @@ const (
 type Ledger interface {
 	StateCounts(ctx context.Context) (map[ledger.AssetState]int, error)
 	ArchiveTotals(ctx context.Context) (files, bytes int64, err error)
+	DriveTotals(ctx context.Context) (files, bytes, deleted int64, err error)
 	LastFinishedRun(ctx context.Context, kind string) (ledger.Run, error)
 	Runs(ctx context.Context, kind string, beforeID int64, limit int) ([]ledger.Run, error)
 	Events(ctx context.Context, kinds []string, beforeID int64, limit int) ([]ledger.Event, error)
@@ -58,12 +60,16 @@ type Agent interface {
 	RequestCycle() bool
 	// CheckArchive reports whether the configured archive volume is mounted.
 	CheckArchive() error
+	// ICloudSignedInAt is when the owner last signed homecloud in to iCloud
+	// (zero if never).
+	ICloudSignedInAt() (time.Time, error)
 }
 
 // Service implements AgentService.
 type Service struct {
 	cfg          *config.Config
 	configPath   string
+	cli          string
 	agentVersion string
 	db           Ledger
 	agent        Agent
@@ -78,8 +84,10 @@ var _ agentv1connect.AgentServiceHandler = (*Service)(nil)
 
 // Deps are the Service's collaborators.
 type Deps struct {
-	Config       *config.Config
-	ConfigPath   string
+	Config     *config.Config
+	ConfigPath string
+	// CLI is the homecloud command-line tool, for commands the owner runs.
+	CLI          string
 	AgentVersion string
 	Ledger       Ledger
 	Agent        Agent
@@ -92,7 +100,7 @@ type Deps struct {
 // New returns a Service.
 func New(d Deps) *Service {
 	return &Service{
-		cfg: d.Config, configPath: d.ConfigPath, agentVersion: d.AgentVersion,
+		cfg: d.Config, configPath: d.ConfigPath, cli: d.CLI, agentVersion: d.AgentVersion,
 		db: d.Ledger, agent: d.Agent, notify: d.Notifier, auth: d.Auth, media: d.Media, now: d.Now,
 		hiddenDir: kei.HiddenPath(d.Config.Storage.Root) + string(filepath.Separator),
 	}
@@ -151,6 +159,23 @@ func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv1.
 	}
 }
 
+// icloudDrive reports the iCloud Drive archive's totals and session.
+func (s *Service) icloudDrive(ctx context.Context) (*agentv1.ICloudDrive, error) {
+	files, bytes, deleted, err := s.db.DriveTotals(ctx)
+	if err != nil {
+		return nil, internal(err)
+	}
+	signedIn, err := s.agent.ICloudSignedInAt()
+	if err != nil {
+		return nil, internal(err)
+	}
+	out := &agentv1.ICloudDrive{Files: files, Bytes: bytes, DeletedInIcloud: deleted}
+	if !signedIn.IsZero() {
+		out.SignedInAt = timestamppb.New(signedIn)
+	}
+	return out, nil
+}
+
 func (s *Service) overview(ctx context.Context, st app.Status) (*agentv1.Overview, error) {
 	// The ledger lives on the archive volume, so without it there is no
 	// overview; say so precisely instead of failing as an internal error.
@@ -203,6 +228,9 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv1.Overvie
 		return nil, err
 	}
 	if ov.LastDriveSync, err = s.lastRun(ctx, app.DriveSyncRunKind); err != nil {
+		return nil, err
+	}
+	if ov.IcloudDrive, err = s.icloudDrive(ctx); err != nil {
 		return nil, err
 	}
 	if ov.LastCycle != nil {
@@ -400,6 +428,10 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv1.GetSetti
 		IphoneBackupMaxAgeSeconds:        int64(c.IPhoneBackup.MaxAge.Std() / time.Second),
 		IphoneBackupCheckIntervalSeconds: int64(c.IPhoneBackup.CheckInterval.Std() / time.Second),
 		IphoneBackupMaxShrinkPercent:     c.IPhoneBackup.MaxShrinkPercent,
+		DriveDir:                         filepath.Join(c.Storage.Root, drive.Dir),
+		DriveSyncIntervalSeconds:         int64(c.Drive.SyncInterval.Std() / time.Second),
+		DriveWorkers:                     int32(c.Drive.Workers), //nolint:gosec // validated 1..16
+		Cli:                              s.cli,
 		AppleId:                          c.ICloud.AppleID,
 		IncludeHidden:                    *c.ICloud.IncludeHidden,
 	}}), nil
