@@ -17,7 +17,8 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/icloud"
 )
 
-// maxCodeAttempts bounds how often a mistyped verification code may be retried.
+// maxCodeAttempts bounds the codes entered and the codes asked for again (by
+// text or on the devices) in one sign-in; Apple locks out repeated attempts.
 const maxCodeAttempts = 3
 
 func icloudCommands() []*cli.Command {
@@ -72,12 +73,9 @@ func runICloudLogin(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	saved, err := icloud.LoadSession(path)
-	if err != nil {
-		return err
-	}
-	// The saved session keeps its trust token, so a code may not be needed.
-	c, err := icloud.New(icloud.AppleEndpoints, saved, time.Now)
+	// A fresh session that keeps only the trust token of the same Apple
+	// Account, so a code may not be needed.
+	c, err := icloud.New(icloud.AppleEndpoints, icloud.LoginSession(path, cfg.ICloud.AppleID), time.Now)
 	if err != nil {
 		return err
 	}
@@ -86,6 +84,7 @@ func runICloudLogin(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 	password, err := term.ReadPassword(stdinFD())
+	defer clear(password)
 	if err != nil {
 		return fmt.Errorf("read password: %w", err)
 	}
@@ -93,13 +92,16 @@ func runICloudLogin(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	l, needsCode, err := c.StartLogin(ctx, cfg.ICloud.AppleID, string(password))
+	l, needsCode, err := c.StartLogin(ctx, icloud.LoginRequest{
+		AppleID: cfg.ICloud.AppleID, Password: password,
+		AwaitingApproval: func() {
+			_ = printf(cmd, "Your account uses Advanced Data Protection: approve iCloud Drive access on one of your Apple devices (waiting up to %s)…\n", icloud.ApprovalWait) //nolint:errcheck // a status line
+		},
+	})
 	if err != nil {
 		return err
 	}
-	l.AwaitingApproval = func() {
-		_ = printf(cmd, "Your account uses Advanced Data Protection: approve iCloud Drive access on one of your Apple devices (waiting up to 5 minutes)…\n") //nolint:errcheck // a status line
-	}
+	defer l.Close()
 	if needsCode {
 		if err := enterCode(ctx, cmd, l); err != nil {
 			return err
@@ -111,8 +113,9 @@ func runICloudLogin(ctx context.Context, cmd *cli.Command) error {
 	return printf(cmd, "Signed in. The session is saved for homecloud (owner only); your password was not stored.\n")
 }
 
-// enterCode reads the verification code, offering text messages instead of
-// the trusted devices.
+// enterCode reads the verification code. "sms N" asks for it by text instead
+// and "device" on the trusted devices again; both count, like wrong codes,
+// against maxCodeAttempts.
 func enterCode(ctx context.Context, cmd *cli.Command, l *icloud.Login) error {
 	if err := printf(cmd, "A verification code was sent to your trusted Apple devices.\n"); err != nil {
 		return err
@@ -123,8 +126,9 @@ func enterCode(ctx context.Context, cmd *cli.Command, l *icloud.Login) error {
 		}
 	}
 	in := bufio.NewScanner(cmd.Root().Reader)
-	var phone *icloud.Phone
-	for attempt := 0; attempt < maxCodeAttempts; {
+	var phone *icloud.Phone // nil: the code comes from the trusted devices
+	codes, requests := 0, 0
+	for codes < maxCodeAttempts {
 		if err := printf(cmd, "Code: "); err != nil {
 			return err
 		}
@@ -135,20 +139,17 @@ func enterCode(ctx context.Context, cmd *cli.Command, l *icloud.Login) error {
 			return errors.New("no verification code entered")
 		}
 		line := strings.TrimSpace(in.Text())
-		if n, ok := strings.CutPrefix(line, "sms "); ok {
-			i, err := strconv.Atoi(n)
-			if err != nil || i < 1 || i > len(l.Phones) {
-				if err := printf(cmd, "No such number.\n"); err != nil {
-					return err
-				}
-				continue
+		n, isText := strings.CutPrefix(line, "sms ")
+		if isText || line == "device" {
+			if requests++; requests > maxCodeAttempts {
+				return errors.New("too many code requests; run icloud login again later")
 			}
-			phone = &l.Phones[i-1]
-			if err := l.SendText(ctx, *phone); err != nil {
+			next, err := requestCode(ctx, cmd, l, isText, n)
+			if err != nil {
 				return err
 			}
-			if err := printf(cmd, "A code was texted to %s.\n", phone.Number); err != nil {
-				return err
+			if next != nil || !isText {
+				phone = next
 			}
 			continue
 		}
@@ -156,12 +157,33 @@ func enterCode(ctx context.Context, cmd *cli.Command, l *icloud.Login) error {
 		if !errors.Is(err, icloud.ErrCodeRejected) {
 			return err
 		}
-		attempt++
+		codes++
 		if err := printf(cmd, "That code was not accepted.\n"); err != nil {
 			return err
 		}
 	}
 	return icloud.ErrCodeRejected
+}
+
+// requestCode asks for a new code by text to phone number n ("sms n") or on
+// the trusted devices, and returns the phone the next code comes to (nil: the
+// devices, or no change when n is not a listed number).
+func requestCode(ctx context.Context, cmd *cli.Command, l *icloud.Login, isText bool, n string) (*icloud.Phone, error) {
+	if !isText {
+		if err := l.RequestDeviceCode(ctx); err != nil {
+			return nil, err
+		}
+		return nil, printf(cmd, "A new code was sent to your trusted Apple devices.\n")
+	}
+	i, err := strconv.Atoi(n)
+	if err != nil || i < 1 || i > len(l.Phones) {
+		return nil, printf(cmd, "No such number.\n")
+	}
+	phone := &l.Phones[i-1]
+	if err := l.SendText(ctx, *phone); err != nil {
+		return nil, err
+	}
+	return phone, printf(cmd, "A code was texted to %s.\n", phone.Number)
 }
 
 // openSession restores the saved session and makes sure it still works.
@@ -199,17 +221,25 @@ func runICloudStatus(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	s := c.Session()
+	// A real call: the Drive root lists only when the session and, under
+	// Advanced Data Protection, the owner's approval still work.
+	folders, driveErr := drive.Folders(ctx, c, drive.RootID)
 	if err := keepSession(c, file); err != nil {
 		return err
 	}
-	_, driveErr := c.Service(icloud.ServiceDrive)
+	s := c.Session()
 	adp := "no"
 	if c.NeedsDeviceApproval() {
 		adp = "yes"
 	}
-	return printf(cmd, "Signed in as %s since %s\niCloud Drive reachable: %t\nAdvanced Data Protection: %s\n",
-		s.AppleID, s.SignedInAt.Local().Format(time.DateTime), driveErr == nil, adp)
+	var reachable string
+	if driveErr != nil {
+		reachable = "no: " + driveErr.Error()
+	} else {
+		reachable = fmt.Sprintf("yes (%d items at the top)", len(folders[0].Items))
+	}
+	return printf(cmd, "Signed in as %s since %s\niCloud Drive reachable: %s\nAdvanced Data Protection: %s\n",
+		s.AppleID, s.SignedInAt.Local().Format(time.DateTime), reachable, adp)
 }
 
 func runDriveLs(ctx context.Context, cmd *cli.Command) error {

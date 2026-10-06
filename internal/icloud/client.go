@@ -125,8 +125,13 @@ func New(ep Endpoints, s Session, now func() time.Time) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		ep:      ep,
-		http:    &http.Client{Jar: j, Timeout: requestTimeout},
+		ep: ep,
+		// Calls carry tokens in their bodies: a redirect is never followed
+		// (it ends as an unexpected status), so they reach only Apple's endpoints.
+		http: &http.Client{
+			Jar: j, Timeout: requestTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
 		jar:     j,
 		now:     now,
 		session: s,
@@ -193,9 +198,12 @@ func (c *Client) send(ctx context.Context, method, url string, header http.Heade
 		return response{}, fmt.Errorf("%s %s: %w", method, endpointName(url), err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // fully read below
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
 		return response{}, fmt.Errorf("read %s: %w", endpointName(url), err)
+	}
+	if len(data) > maxBody {
+		return response{}, fmt.Errorf("%s: response larger than %d bytes", endpointName(url), maxBody)
 	}
 	return response{status: resp.StatusCode, header: resp.Header, body: data}, nil
 }
@@ -318,8 +326,10 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, stall time.Duration) 
 	req.Header = c.webHeaders()
 	req.Header.Del("Content-Type")
 	req.Header.Set("Accept", "*/*")
+	// Content servers may redirect a download; it carries no tokens.
 	download := *c.http
 	download.Timeout = 0
+	download.CheckRedirect = nil
 	resp, err := download.Do(req)
 	if err != nil {
 		return fail(fmt.Errorf("GET %s: %w", endpointName(rawURL), err))

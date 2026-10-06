@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
@@ -28,23 +29,45 @@ func SessionPath() (string, error) {
 // LoadSession reads the saved session; before the first sign-in it returns an
 // empty one.
 func LoadSession(path string) (Session, error) {
-	s, _, err := readSession(path)
-	return s, err
+	data, err := readRaw(path)
+	if err != nil {
+		return Session{}, err
+	}
+	return decodeSession(path, data)
 }
 
-func readSession(path string) (Session, [sha256.Size]byte, error) {
+// readRaw returns the saved session's bytes, nil before the first sign-in.
+func readRaw(path string) ([]byte, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // the per-user state file
 	if errors.Is(err, fs.ErrNotExist) {
-		return Session{}, sha256.Sum256(nil), nil
+		return nil, nil
 	}
 	if err != nil {
-		return Session{}, [sha256.Size]byte{}, fmt.Errorf("read iCloud session: %w", err)
+		return nil, fmt.Errorf("read iCloud session: %w", err)
+	}
+	return data, nil
+}
+
+func decodeSession(path string, data []byte) (Session, error) {
+	if data == nil {
+		return Session{}, nil
 	}
 	var s Session
 	if err := json.Unmarshal(data, &s); err != nil {
-		return Session{}, [sha256.Size]byte{}, fmt.Errorf("decode iCloud session %s: %w", path, err)
+		return Session{}, fmt.Errorf("decode iCloud session %s: %w", path, err)
 	}
-	return s, sha256.Sum256(data), nil
+	return s, nil
+}
+
+// LoginSession is the session a new interactive sign-in starts from: nothing
+// from the saved one but its trust token, and that only for the same Apple
+// Account. A saved session that cannot be read never blocks signing in again.
+func LoginSession(path, appleID string) Session {
+	saved, err := LoadSession(path)
+	if err != nil || !strings.EqualFold(saved.AppleID, appleID) {
+		return Session{AppleID: appleID}
+	}
+	return Session{AppleID: appleID, TrustToken: saved.TrustToken}
 }
 
 // SessionFile is a saved session held by a long-running user (the agent),
@@ -56,21 +79,31 @@ type SessionFile struct {
 
 // OpenSessionFile reads the saved session and remembers its contents.
 func OpenSessionFile(path string) (*SessionFile, Session, error) {
-	s, digest, err := readSession(path)
+	data, err := readRaw(path)
 	if err != nil {
 		return nil, Session{}, err
 	}
-	return &SessionFile{path: path, digest: digest}, s, nil
+	s, err := decodeSession(path, data)
+	if err != nil {
+		return nil, Session{}, err
+	}
+	return &SessionFile{path: path, digest: sha256.Sum256(data)}, s, nil
 }
 
 // Save writes s unless the file changed since it was read (the owner signed
-// in again meanwhile); saved reports which. The newer sign-in always wins.
+// in again meanwhile); saved reports which. The check and the write hold the
+// session lock that SaveSession takes too, so the newer sign-in always wins.
 func (f *SessionFile) Save(s Session) (saved bool, err error) {
-	_, current, err := readSession(f.path)
+	lock, err := lockSession(f.path)
 	if err != nil {
 		return false, err
 	}
-	if current != f.digest {
+	defer func() { err = errors.Join(err, lock.Unlock()) }()
+	current, err := readRaw(f.path)
+	if err != nil {
+		return false, err
+	}
+	if sha256.Sum256(current) != f.digest {
 		return false, nil
 	}
 	data, err := json.Marshal(s)
@@ -84,19 +117,34 @@ func (f *SessionFile) Save(s Session) (saved bool, err error) {
 	return true, nil
 }
 
-// SaveSession writes the session owner-only, replacing the file atomically.
-func SaveSession(path string, s Session) error {
+// SaveSession writes the session owner-only, replacing the file atomically:
+// the result of an interactive sign-in, which replaces whatever is saved.
+func SaveSession(path string, s Session) (err error) {
 	data, err := json.Marshal(s)
 	if err != nil {
 		return fmt.Errorf("encode iCloud session: %w", err)
 	}
+	lock, err := lockSession(path)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, lock.Unlock()) }()
 	return writeSession(path, data)
 }
 
-func writeSession(path string, data []byte) error {
+// lockSession takes the lock every writer of the session file holds.
+func lockSession(path string) (*platform.FileLock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("create state dir: %w", err)
+		return nil, fmt.Errorf("create state dir: %w", err)
 	}
+	lock, err := platform.LockFile(path + ".lock")
+	if err != nil {
+		return nil, fmt.Errorf("lock iCloud session: %w", err)
+	}
+	return lock, nil
+}
+
+func writeSession(path string, data []byte) error {
 	if err := platform.WriteSecretFile(path, data); err != nil {
 		return fmt.Errorf("save iCloud session: %w", err)
 	}

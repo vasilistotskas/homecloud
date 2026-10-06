@@ -16,19 +16,26 @@ import (
 	"time"
 )
 
-// Sign-in errors the owner can act on.
+// Sign-in errors the owner can act on. Apple answers a wrong password with
+// 401 and an Apple Account it will not sign in with 403 (icloud-photos-sync's
+// reading of the same endpoints).
 var (
-	// ErrBadCredentials: Apple rejected the Apple Account or password.
-	ErrBadCredentials = errors.New("sign-in rejected: wrong Apple Account or password")
+	// ErrBadCredentials: Apple rejected the password.
+	ErrBadCredentials = errors.New("sign-in rejected: wrong password for this Apple Account")
+	// ErrAccountRefused: Apple refused the Apple Account itself.
+	ErrAccountRefused = errors.New("Apple refused this Apple Account: check the address, and its state at account.apple.com") //nolint:staticcheck // starts with a proper noun
 	// ErrCodeRejected: the two-factor code was wrong or expired.
 	ErrCodeRejected = errors.New("verification code rejected")
 )
 
+// ApprovalWait is how long a sign-in waits for the owner to approve iCloud
+// Drive access on a trusted device under Advanced Data Protection.
+const ApprovalWait = 5 * time.Minute
+
 const (
-	// pcsPollInterval and pcsPollAttempts bound the wait for the owner to
-	// approve Advanced Data Protection access on a trusted device (5 minutes).
+	// pcsPollInterval is how often the approval is asked for meanwhile.
 	pcsPollInterval = 10 * time.Second
-	pcsPollAttempts = 30
+	pcsPollAttempts = int(ApprovalWait / pcsPollInterval)
 	// pcsDriveApp and pcsDriveCookie are iCloud Drive's Advanced Data
 	// Protection app name and cookie (rclone's iclouddrive backend).
 	pcsDriveApp    = "iclouddrive"
@@ -52,32 +59,59 @@ type Phone struct {
 	NonFTEU *bool  `json:"nonFTEU,omitempty"`
 }
 
-// Login is one interactive sign-in. It holds the password in memory until the
-// sign-in completes, because Apple may ask for a second password proof.
+// LoginRequest is what an interactive sign-in needs.
+type LoginRequest struct {
+	AppleID string
+	// Password is copied; the caller clears its own copy.
+	Password []byte
+	// AwaitingApproval, when set, is called once the account turns out to use
+	// Advanced Data Protection and iCloud Drive access waits (up to
+	// ApprovalWait) for the owner to approve it on a trusted device.
+	AwaitingApproval func()
+}
+
+// Login is one interactive sign-in. It holds the password until the sign-in
+// completes, because Apple may ask for a second password proof; Close clears
+// it on every other way out.
 type Login struct {
-	c        *Client
-	appleID  string
-	password string
-	frameID  string
+	c                *Client
+	appleID          string
+	password         []byte
+	awaitingApproval func()
+	frameID          string
 	// Apple's per-flow values, echoed back on every sign-in request.
 	scnt, sessionID, authAttributes string
 	// Phones is filled when a code is needed.
 	Phones []Phone
-	// AwaitingApproval, when set, is called once the account turns out to use
-	// Advanced Data Protection and iCloud Drive access waits for the owner to
-	// approve it on a trusted device.
-	AwaitingApproval func()
+}
+
+// Close clears the password the sign-in holds.
+func (l *Login) Close() {
+	clear(l.password)
+	l.password = nil
 }
 
 // StartLogin signs in with the password. It returns needsCode when Apple wants a
 // two-factor code; a code has then been pushed to the trusted devices, and
-// Phones lists the numbers that can get one by text instead.
-func (c *Client) StartLogin(ctx context.Context, appleID, password string) (l *Login, needsCode bool, err error) {
+// Phones lists the numbers that can get one by text instead. The caller closes
+// the Login.
+func (c *Client) StartLogin(ctx context.Context, req LoginRequest) (l *Login, needsCode bool, err error) {
 	frame := make([]byte, 16)
 	if _, randErr := rand.Read(frame); randErr != nil {
 		return nil, false, fmt.Errorf("frame id: %w", randErr)
 	}
-	l = &Login{c: c, appleID: appleID, password: password, frameID: fmt.Sprintf("%x", frame)}
+	appleID := req.AppleID
+	l = &Login{
+		c: c, appleID: appleID, password: append([]byte(nil), req.Password...),
+		awaitingApproval: req.AwaitingApproval, frameID: fmt.Sprintf("%x", frame),
+	}
+	// Error returns clear l, so the deferred cleanup keeps its own reference.
+	started := l
+	defer func() {
+		if err != nil {
+			started.Close()
+		}
+	}()
 	c.mu.Lock()
 	c.session.AppleID = appleID
 	trust := c.session.TrustToken
@@ -117,16 +151,26 @@ func (c *Client) StartLogin(ctx context.Context, appleID, password string) (l *L
 		if l.Phones, err = l.trustedPhones(ctx); err != nil {
 			return nil, false, err
 		}
-		// Since iOS 26.4 the code is no longer pushed by the sign-in itself.
-		if err = l.expect(ctx, http.MethodPut, "/verify/trusteddevice/securitycode", nil, http.StatusOK, http.StatusAccepted); err != nil {
-			return nil, false, fmt.Errorf("request a code on the trusted devices: %w", err)
+		if err = l.RequestDeviceCode(ctx); err != nil {
+			return nil, false, err
 		}
 		return l, true, nil
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case http.StatusUnauthorized:
 		return nil, false, ErrBadCredentials
+	case http.StatusForbidden:
+		return nil, false, ErrAccountRefused
 	default:
 		return nil, false, statusError("sign-in", r)
 	}
+}
+
+// RequestDeviceCode asks Apple to show a code on the trusted devices. Since
+// iOS 26.4 the sign-in itself no longer pushes one.
+func (l *Login) RequestDeviceCode(ctx context.Context) error {
+	if err := l.expect(ctx, http.MethodPut, "/verify/trusteddevice/securitycode", nil, http.StatusOK, http.StatusAccepted); err != nil {
+		return fmt.Errorf("request a code on the trusted devices: %w", err)
+	}
+	return nil
 }
 
 // SendText asks Apple to text a code to a trusted phone number.
@@ -207,13 +251,13 @@ func (l *Login) finish(ctx context.Context, trust bool) error {
 	if err := l.c.accountLogin(ctx); err != nil {
 		return err
 	}
-	if err := l.c.approveDrive(ctx, l.AwaitingApproval); err != nil {
+	if err := l.c.approveDrive(ctx, l.awaitingApproval); err != nil {
 		return err
 	}
 	l.c.mu.Lock()
 	l.c.session.SignedInAt = l.c.now()
 	l.c.mu.Unlock()
-	l.password = ""
+	l.Close()
 	return nil
 }
 
@@ -257,7 +301,7 @@ func (c *Client) approveDrive(ctx context.Context, awaiting func()) error {
 		case <-time.After(pcsPollInterval):
 		}
 	}
-	return errors.New("iCloud Drive access under Advanced Data Protection was not approved within 5 minutes")
+	return fmt.Errorf("iCloud Drive access under Advanced Data Protection was not approved within %s", ApprovalWait)
 }
 
 // NeedsDeviceApproval reports whether the account uses Advanced Data
@@ -298,8 +342,10 @@ func (l *Login) srpInit(ctx context.Context, path, accountName string) (*srpClie
 	}
 	switch r.status {
 	case http.StatusOK:
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case http.StatusUnauthorized:
 		return nil, srpInitResponse{}, ErrBadCredentials
+	case http.StatusForbidden:
+		return nil, srpInitResponse{}, ErrAccountRefused
 	default:
 		return nil, srpInitResponse{}, statusError(path, r)
 	}
@@ -324,7 +370,7 @@ func (l *Login) prove(srp *srpClient, init srpInitResponse, accountName string) 
 	if err != nil {
 		return "", "", fmt.Errorf("decode SRP server value: %w", err)
 	}
-	key, err := derivePassword(l.password, salt, init.Iteration, init.Protocol)
+	key, err := derivePassword(string(l.password), salt, init.Iteration, init.Protocol)
 	if err != nil {
 		return "", "", err
 	}
@@ -374,8 +420,9 @@ func (l *Login) trustedPhones(ctx context.Context) ([]Phone, error) {
 	if r.status != http.StatusOK {
 		return nil, statusError("trusted phone numbers", r)
 	}
+	// A nil list means the field is absent, as opposed to empty.
 	type phones struct {
-		TrustedPhoneNumbers []Phone `json:"trustedPhoneNumbers"`
+		TrustedPhoneNumbers *[]Phone `json:"trustedPhoneNumbers"`
 	}
 	var d struct {
 		phones
@@ -400,14 +447,15 @@ func (l *Login) trustedPhones(ctx context.Context) ([]Phone, error) {
 		return nil, fmt.Errorf("decode trusted phone numbers: %w", err)
 	}
 	switch {
-	case len(d.TrustedPhoneNumbers) > 0:
-		return d.TrustedPhoneNumbers, nil
-	case d.PhoneNumberVerification != nil:
-		return d.PhoneNumberVerification.TrustedPhoneNumbers, nil
-	case d.BridgeInitiateData != nil && d.BridgeInitiateData.PhoneNumberVerification != nil:
-		return d.BridgeInitiateData.PhoneNumberVerification.TrustedPhoneNumbers, nil
+	case d.TrustedPhoneNumbers != nil:
+		return *d.TrustedPhoneNumbers, nil
+	case d.PhoneNumberVerification != nil && d.PhoneNumberVerification.TrustedPhoneNumbers != nil:
+		return *d.PhoneNumberVerification.TrustedPhoneNumbers, nil
+	case d.BridgeInitiateData != nil && d.BridgeInitiateData.PhoneNumberVerification != nil &&
+		d.BridgeInitiateData.PhoneNumberVerification.TrustedPhoneNumbers != nil:
+		return *d.BridgeInitiateData.PhoneNumberVerification.TrustedPhoneNumbers, nil
 	default:
-		return nil, nil
+		return nil, errors.New("Apple's sign-in page lists no trusted phone numbers in any known form") //nolint:staticcheck // starts with a proper noun
 	}
 }
 

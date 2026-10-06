@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -321,11 +322,16 @@ func (f *fakeApple) drive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(f.t, w, []map[string]any{{"drivewsid": "FOLDER::com.apple.CloudDocs::root"}})
 }
 
+// login is the test account's sign-in request.
+func login(awaiting func()) LoginRequest {
+	return LoginRequest{AppleID: testAppleID, Password: []byte(testPassword), AwaitingApproval: awaiting}
+}
+
 // signIn runs the device-code sign-in end to end.
 func signIn(t *testing.T, c *Client) {
 	t.Helper()
 	ctx := context.Background()
-	l, needsCode, err := c.StartLogin(ctx, testAppleID, testPassword)
+	l, needsCode, err := c.StartLogin(ctx, login(nil))
 	if err != nil || !needsCode {
 		t.Fatalf("StartLogin = needsCode %v, %v; want a code", needsCode, err)
 	}
@@ -365,7 +371,7 @@ func TestSignInWithATrustTokenSkipsTheCode(t *testing.T) {
 	// escrow proof.
 	f.escrow.Store(true)
 	c := f.client(t, Session{TrustToken: "trust-1"})
-	_, needsCode, err := c.StartLogin(context.Background(), testAppleID, testPassword)
+	_, needsCode, err := c.StartLogin(context.Background(), login(nil))
 	if err != nil || needsCode || !f.trustedRelogin.Load() || f.escrowed.Load() != 1 || f.pushed.Load() != 1 {
 		t.Fatalf("trusted sign-in: needsCode=%v err=%v escrowed=%d pushed=%d", needsCode, err, f.escrowed.Load(), f.pushed.Load())
 	}
@@ -373,10 +379,10 @@ func TestSignInWithATrustTokenSkipsTheCode(t *testing.T) {
 
 func TestSignInRejectsAWrongPasswordOrCode(t *testing.T) {
 	f := newFakeApple(t)
-	if _, _, err := f.client(t, Session{}).StartLogin(context.Background(), testAppleID, "wrong"); !errors.Is(err, ErrBadCredentials) {
+	if _, _, err := f.client(t, Session{}).StartLogin(context.Background(), LoginRequest{AppleID: testAppleID, Password: []byte("wrong")}); !errors.Is(err, ErrBadCredentials) {
 		t.Fatalf("wrong password: %v", err)
 	}
-	l, _, err := f.client(t, Session{}).StartLogin(context.Background(), testAppleID, testPassword)
+	l, _, err := f.client(t, Session{}).StartLogin(context.Background(), login(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +395,7 @@ func TestSignInByTextReadsPhonesFromTheSignInPage(t *testing.T) {
 	f := newFakeApple(t)
 	f.phonesHTML.Store(true)
 	ctx := context.Background()
-	l, _, err := f.client(t, Session{}).StartLogin(ctx, testAppleID, testPassword)
+	l, _, err := f.client(t, Session{}).StartLogin(ctx, login(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,12 +415,11 @@ func TestAdvancedDataProtectionApproval(t *testing.T) {
 	f.pcs.Store(true)
 	c := f.client(t, Session{})
 	ctx := context.Background()
-	l, _, err := c.StartLogin(ctx, testAppleID, testPassword)
+	asked := false
+	l, _, err := c.StartLogin(ctx, login(func() { asked = true }))
 	if err != nil {
 		t.Fatal(err)
 	}
-	asked := false
-	l.AwaitingApproval = func() { asked = true }
 	if err := l.SubmitCode(ctx, testCode, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -508,5 +513,114 @@ func TestSessionFileNeverOverwritesANewerSignIn(t *testing.T) {
 	}
 	if s, err := LoadSession(path); err != nil || s.TrustToken != "new sign-in" {
 		t.Fatalf("session after the race = %+v, %v", s, err)
+	}
+}
+
+func TestSignInTellsARefusedAccountFromAWrongPassword(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.http.Transport = srv.Client().Transport
+	if _, _, err := c.StartLogin(context.Background(), login(nil)); !errors.Is(err, ErrAccountRefused) {
+		t.Fatalf("403: %v; want ErrAccountRefused", err)
+	}
+}
+
+func TestLoginSessionStartsFresh(t *testing.T) {
+	path := t.TempDir() + "/" + sessionFile
+	if err := SaveSession(path, Session{
+		AppleID: "Owner@Example.com", TrustToken: "trust", SessionToken: "old",
+		Services: map[string]Service{ServiceDrive: {URL: "https://old"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The same account, in another case, keeps only its trust token.
+	if s := LoginSession(path, "owner@example.com"); s.TrustToken != "trust" || s.SessionToken != "" || s.Services != nil || len(s.Cookies) != 0 {
+		t.Fatalf("same account: %+v", s)
+	}
+	// Another account keeps nothing.
+	if s := LoginSession(path, "other@example.com"); s.TrustToken != "" {
+		t.Fatalf("other account kept the trust token: %+v", s)
+	}
+	// An unreadable saved session never blocks signing in again.
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := LoginSession(path, "owner@example.com"); s.AppleID != "owner@example.com" || s.TrustToken != "" {
+		t.Fatalf("corrupt file: %+v", s)
+	}
+}
+
+func TestApprovalPromptOnTheTrustTokenPath(t *testing.T) {
+	f := newFakeApple(t)
+	signIn(t, f.client(t, Session{}))
+	f.escrow.Store(true)
+	f.pcs.Store(true)
+	asked := false
+	c := f.client(t, Session{TrustToken: "trust-1"})
+	if _, needsCode, err := c.StartLogin(context.Background(), login(func() { asked = true })); err != nil || needsCode {
+		t.Fatalf("trusted sign-in: needsCode=%v err=%v", needsCode, err)
+	}
+	if !asked {
+		t.Fatal("the owner was not told to approve access on a device")
+	}
+}
+
+func TestCallsNeverFollowRedirects(t *testing.T) {
+	var followed atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/elsewhere" {
+			followed.Store(true)
+			return
+		}
+		http.Redirect(w, r, "/elsewhere", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{Services: map[string]Service{ServiceDrive: {URL: srv.URL}}}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := c.Call(context.Background(), http.MethodPost, srv.URL+"/drive", map[string]string{"token": "secret"}, &out); err == nil || followed.Load() {
+		t.Fatalf("redirected call: err=%v followed=%v", err, followed.Load())
+	}
+}
+
+func TestOversizedResponseIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(bytes.Repeat([]byte(" "), maxBody+1))
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.send(context.Background(), http.MethodGet, srv.URL, c.webHeaders(), nil); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("oversized response: %v", err)
+	}
+}
+
+func TestTrustedPhonesKnowsEmptyFromUnknown(t *testing.T) {
+	for body, wantErr := range map[string]bool{
+		`{"trustedPhoneNumbers":[]}`:                                     false,
+		`{"phoneNumberVerification":{"trustedPhoneNumbers":[{"id":1}]}}`: false,
+		`{"somethingElse":true}`:                                         true,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, body) }))
+		c, err := New(Endpoints{Auth: srv.URL, Setup: srv.URL, Home: srv.URL}, Session{}, time.Now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		l := &Login{c: c}
+		_, err = l.trustedPhones(context.Background())
+		srv.Close()
+		if (err != nil) != wantErr {
+			t.Errorf("%s: err=%v, want error %v", body, err, wantErr)
+		}
 	}
 }
