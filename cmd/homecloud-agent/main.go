@@ -90,6 +90,12 @@ func run() (err error) {
 
 	notifier := notify.New(cfg.Notify)
 	renderer := thumbs.New(cfg.FFmpeg, app.ThumbnailDir(cfg))
+	// The cache is derived data: a failed prune costs disk space, not correctness.
+	if removed, pruneErr := renderer.Prune(); pruneErr != nil {
+		log.Error("prune thumbnail cache", "err", pruneErr)
+	} else if removed > 0 {
+		log.Info("thumbnail cache pruned", "superseded", removed)
+	}
 	agent := app.NewAgent(cfg, db, log, notifier, logs.kei, renderer, time.Now)
 
 	// The local API is non-critical: if it cannot serve, archiving continues.

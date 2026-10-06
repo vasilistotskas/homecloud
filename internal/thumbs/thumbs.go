@@ -9,6 +9,8 @@ package thumbs
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -41,10 +43,16 @@ const (
 	renderers = 4
 )
 
+// sizeFilters shape each size. Thumbnails fill and crop a square (small
+// sources are enlarged to fill the grid cell); previews fit the box and are
+// never enlarged, so a small image keeps its own size.
 var sizeFilters = map[Size]string{
 	Thumb:   fmt.Sprintf("scale=%[1]d:%[1]d:force_original_aspect_ratio=increase,crop=%[1]d:%[1]d", thumbEdge),
-	Preview: fmt.Sprintf("scale=%[1]d:%[1]d:force_original_aspect_ratio=decrease", previewEdge),
+	Preview: fmt.Sprintf("scale=w='min(%[1]d,iw)':h='min(%[1]d,ih)':force_original_aspect_ratio=decrease", previewEdge),
 }
+
+// specIDBytes is how much of the spec hash names a cache directory.
+const specIDBytes = 4
 
 // ParseSize validates a size name.
 func ParseSize(s string) (Size, error) {
@@ -90,14 +98,54 @@ type call struct {
 	err  error
 }
 
-// New returns a Renderer caching into dir.
+// New returns a Renderer caching into dir, which it owns: Prune deletes
+// anything in dir that is not a current rendering.
 func New(cfg config.FFmpeg, dir string) *Renderer {
 	return &Renderer{cfg: cfg, dir: dir, sem: make(chan struct{}, renderers), inflight: map[string]*call{}}
 }
 
-// CachePath is where the rendering of a file with sha256 at size is kept.
-func (r *Renderer) CachePath(sha256 string, size Size) string {
-	return filepath.Join(r.dir, string(size), sha256[:2], sha256+".webp")
+// specDir names the cache directory of size after the ffmpeg arguments that
+// shape its output (filter, codec, quality). Changing how a size is rendered
+// therefore starts a new directory instead of serving stale renderings.
+func specDir(size Size) string { return specName(size, sizeFilters[size]) }
+
+// specName fingerprints the ffmpeg arguments that render size with filter.
+func specName(size Size, filter string) string {
+	sum := sha256.Sum256([]byte(strings.Join(renderArgs(nil, "", filter, false), "\x00")))
+	return string(size) + "-" + hex.EncodeToString(sum[:specIDBytes])
+}
+
+// CachePath is where the rendering at size of the file with SHA-256 sum is kept.
+func (r *Renderer) CachePath(sum string, size Size) string {
+	return filepath.Join(r.dir, specDir(size), sum[:2], sum+".webp")
+}
+
+// Prune deletes renderings made by a superseded spec, and anything else in
+// the cache directory that is not a current size directory. It returns the
+// number of top-level entries removed.
+func (r *Renderer) Prune() (int, error) {
+	entries, err := os.ReadDir(r.dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("list thumbnail cache: %w", err)
+	}
+	current := make(map[string]bool, len(sizeFilters))
+	for size := range sizeFilters {
+		current[specDir(size)] = true
+	}
+	removed := 0
+	for _, e := range entries {
+		if current[e.Name()] {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(r.dir, e.Name())); err != nil {
+			return removed, fmt.Errorf("prune thumbnail cache: %w", err)
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 // Ensure returns the cached rendering of src at size, rendering it first if
@@ -141,8 +189,14 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 	}
 	defer func() { <-r.sem }()
 
-	grid, err := r.isTiled(ctx, src.Path)
+	preview, isRaw, err := rawPreview(src.Path)
 	if err != nil {
+		return err
+	}
+	input, tiled := fileInput(src.Path), false
+	if isRaw {
+		input = stdinJPEG
+	} else if tiled, err = r.isTiled(ctx, src.Path); err != nil {
 		return err
 	}
 	if err = os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
@@ -157,7 +211,10 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 		}
 	}()
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, r.cfg.FFmpeg, renderArgs(src.Path, tmp, sizeFilters[size], grid)...) //nolint:gosec // binary from validated config, paths from the ledger
+	cmd := exec.CommandContext(ctx, r.cfg.FFmpeg, renderArgs(input, tmp, sizeFilters[size], tiled)...) //nolint:gosec // binary from validated config, paths from the ledger
+	if isRaw {
+		cmd.Stdin = bytes.NewReader(preview)
+	}
 	cmd.Stderr = &stderr
 	if err = cmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg %s: %w: %s", src.Path, err, strings.TrimSpace(stderr.String()))
@@ -168,12 +225,20 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 	return nil
 }
 
-// renderArgs builds the ffmpeg command line. Tiled HEIF images (iPhone HEIC)
-// expose their picture as stream group 0, which the filter graph must stitch;
-// everything else is a plain video stream, of which the first frame is used.
-// ffmpeg applies EXIF and container rotation itself (autorotate).
-func renderArgs(src, dest, filter string, tiled bool) []string {
-	args := []string{"-nostdin", "-v", "error", "-y", "-i", src}
+// stdinJPEG reads one JPEG from standard input: a raw's embedded preview.
+// (-nostdin only disables interactive keyboard control.)
+var stdinJPEG = []string{"-f", "jpeg_pipe", "-i", "pipe:0"}
+
+// fileInput reads the source file itself.
+func fileInput(path string) []string { return []string{"-i", path} }
+
+// renderArgs builds the ffmpeg command line for input (fileInput or
+// stdinJPEG). Tiled HEIF images (iPhone HEIC) expose their picture as stream
+// group 0, which the filter graph must stitch; everything else is a plain
+// video stream, of which the first frame is used. ffmpeg applies EXIF and
+// container rotation itself (autorotate).
+func renderArgs(input []string, dest, filter string, tiled bool) []string {
+	args := append([]string{"-nostdin", "-v", "error", "-y"}, input...)
 	if tiled {
 		args = append(args, "-filter_complex", "[0:g:0]"+filter+"[o]", "-map", "[o]")
 	} else {
