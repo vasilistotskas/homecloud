@@ -199,6 +199,12 @@ message Activity {
   google.protobuf.Timestamp phase_started_at = 2;
   // When the next scheduled cycle starts.
   google.protobuf.Timestamp next_cycle_at = 3;
+  // When each maintenance job runs next: after the first cycle at or after
+  // it is due. All absent while a cycle runs.
+  google.protobuf.Timestamp next_scrub_at = 4;
+  google.protobuf.Timestamp next_ledger_backup_at = 5;
+  google.protobuf.Timestamp next_iphone_backup_check_at = 6;
+  google.protobuf.Timestamp next_drive_sync_at = 7;
 }
 
 enum Phase {

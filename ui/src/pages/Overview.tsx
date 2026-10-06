@@ -1,3 +1,4 @@
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import {
   Badge,
@@ -55,7 +56,6 @@ import { Page } from "../components/Page";
 import { runRow } from "../components/runs";
 import { useNotify } from "../components/toast";
 import { formatBytes, formatCount, formatInterval, formatRelative, formatWhen, toDate } from "../format";
-import { nextRunAt } from "../schedule";
 import { icloudLoginCommand, keiLoginCommand, terminalName } from "../shell";
 import {
   AgentService,
@@ -789,12 +789,10 @@ function Facts({ facts }: { facts: [string, ReactNode][] }) {
   );
 }
 
-/** When a job that runs after sync cycles runs next, for a fact line. */
-function nextRun(overview: Overview, settings: Settings, last: Run | undefined, everySeconds: bigint): string {
-  // A run that did not complete (an error) is retried at the next cycle.
-  const completed = last?.result === RunResult.OK ? toDate(last.finishedAt) : undefined;
-  const at = nextRunAt(completed, everySeconds, toDate(overview.activity?.nextCycleAt), settings.syncIntervalSeconds);
-  return at === undefined ? "After the current sync" : formatRelative(at);
+/** When a maintenance job runs next, as the agent reports it, for a fact line. */
+function nextRun(at: Timestamp | undefined): string {
+  const when = toDate(at);
+  return when === undefined ? "After the current sync" : formatRelative(when);
 }
 
 function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
@@ -887,9 +885,7 @@ function IPhoneBackupCard({ overview, settings }: { overview: Overview; settings
   const devices = rep?.devices ?? [];
   const footer: [string, string][] = [];
   if ((rep?.archived ?? 0n) > 0n) footer.push(["Archived copies", formatCount(rep?.archived ?? 0n)]);
-  if (settings !== undefined) {
-    footer.push(["Next check", nextRun(overview, settings, run, settings.iphoneBackupCheckIntervalSeconds)]);
-  }
+  footer.push(["Next check", nextRun(overview.activity?.nextIphoneBackupCheckAt)]);
   return (
     <Card>
       <CardHeader
@@ -970,9 +966,7 @@ function ICloudDriveCard({ overview, env }: { overview: Overview; env: Env }) {
       facts.push(["Last sync", `${formatWhen(synced)} · ${outcome.label}`]);
     }
   }
-  if (env.settings !== undefined) {
-    facts.push(["Next sync", nextRun(overview, env.settings, run, env.settings.driveSyncIntervalSeconds)]);
-  }
+  facts.push(["Next sync", nextRun(overview.activity?.nextDriveSyncAt)]);
   facts.push([
     "Signed in",
     sessionProblem !== ""
@@ -1053,8 +1047,8 @@ function IntegrityCard({ overview, settings }: { overview: Overview; settings: S
       ]);
     }
   }
+  facts.push(["Next check", nextRun(overview.activity?.nextScrubAt)]);
   if (settings !== undefined) {
-    facts.push(["Next check", nextRun(overview, settings, scrub, settings.scrubIntervalSeconds)]);
     // Each run re-reads the files confirmed longest ago, so the whole archive
     // is covered once every ceil(1 / fraction) runs. The agent rejects a
     // fraction outside (0, 1]; anything else here is not a schedule.

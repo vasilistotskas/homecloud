@@ -46,6 +46,7 @@ type Ledger interface {
 	ArchiveTotals(ctx context.Context) (files, bytes int64, err error)
 	DriveTotals(ctx context.Context) (files, bytes, deleted int64, err error)
 	LastFinishedRun(ctx context.Context, kind string) (ledger.Run, error)
+	LastCompletedRun(ctx context.Context, kind string) (ledger.Run, error)
 	Runs(ctx context.Context, kind string, beforeID int64, limit int) ([]ledger.Run, error)
 	Events(ctx context.Context, kinds []string, beforeID int64, limit int) ([]ledger.Event, error)
 	Quarantined(ctx context.Context) ([]ledger.QuarantinedRendition, error)
@@ -234,10 +235,33 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv1.Overvie
 	if ov.IcloudDrive, err = s.icloudDrive(ctx); err != nil {
 		return nil, err
 	}
+	every := app.MaintenanceEvery(s.cfg)
+	for kind, field := range map[string]**timestamppb.Timestamp{
+		app.ScrubRunKind:        &ov.Activity.NextScrubAt,
+		app.LedgerBackupRunKind: &ov.Activity.NextLedgerBackupAt,
+		app.IPhoneBackupRunKind: &ov.Activity.NextIphoneBackupCheckAt,
+		app.DriveSyncRunKind:    &ov.Activity.NextDriveSyncAt,
+	} {
+		if *field, err = s.nextRun(ctx, kind, every[kind], st.NextCycleAt); err != nil {
+			return nil, err
+		}
+	}
 	if ov.LastCycle != nil {
 		ov.AppleAccount.State = appleState(ov.LastCycle.GetCycle().GetDownload())
 	}
 	return ov, nil
+}
+
+// nextRun is when the maintenance job kind runs next, by the agent's own rule.
+func (s *Service) nextRun(ctx context.Context, kind string, every time.Duration, nextCycle time.Time) (*timestamppb.Timestamp, error) {
+	var completed time.Time
+	switch last, err := s.db.LastCompletedRun(ctx, kind); {
+	case err == nil:
+		completed = *last.FinishedAt // completed runs are finished
+	case !errors.Is(err, ledger.ErrNotFound):
+		return nil, internal(err)
+	}
+	return optionalTime(app.NextRunAt(completed, every, nextCycle, s.cfg.Schedule.SyncInterval.Std())), nil
 }
 
 // lastRun returns the most recent finished run of kind, or nil before the first.

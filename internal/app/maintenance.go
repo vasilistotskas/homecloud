@@ -84,14 +84,15 @@ func ParseLedgerBackupReport(detail string) (LedgerBackupReport, error) {
 }
 
 // maintain runs the iCloud Drive sync, the scrub, the ledger backup and the
-// iPhone backup check when they are due. Each is a run of its own kind, so the schedules survive agent
-// restarts.
+// iPhone backup check when they are due. Each is a run of its own kind, so
+// the schedules survive agent restarts.
 func (a *Agent) maintain(ctx context.Context) error {
+	every := MaintenanceEvery(a.cfg)
 	return errors.Join(
-		a.runIfDue(ctx, DriveSyncRunKind, a.cfg.Drive.SyncInterval.Std(), PhaseSyncingDrive, a.syncDrive),
-		a.runIfDue(ctx, ScrubRunKind, a.cfg.Schedule.ScrubInterval.Std(), PhaseCheckingArchive, a.scrub),
-		a.runIfDue(ctx, LedgerBackupRunKind, a.cfg.Backup.Interval.Std(), PhaseBackingUpLedger, a.backupLedger),
-		a.runIfDue(ctx, IPhoneBackupRunKind, a.cfg.IPhoneBackup.CheckInterval.Std(), PhaseCheckingIPhoneBackups, a.checkIPhoneBackups),
+		a.runIfDue(ctx, DriveSyncRunKind, every[DriveSyncRunKind], PhaseSyncingDrive, a.syncDrive),
+		a.runIfDue(ctx, ScrubRunKind, every[ScrubRunKind], PhaseCheckingArchive, a.scrub),
+		a.runIfDue(ctx, LedgerBackupRunKind, every[LedgerBackupRunKind], PhaseBackingUpLedger, a.backupLedger),
+		a.runIfDue(ctx, IPhoneBackupRunKind, every[IPhoneBackupRunKind], PhaseCheckingIPhoneBackups, a.checkIPhoneBackups),
 	)
 }
 
@@ -106,7 +107,7 @@ func (a *Agent) runIfDue(ctx context.Context, kind string, every time.Duration, 
 	case errors.Is(err, ledger.ErrNotFound):
 	case err != nil:
 		return err
-	case a.now().Before(last.FinishedAt.Add(every)):
+	case a.now().Before(dueAt(*last.FinishedAt, every)): // completed runs are finished
 		return nil
 	}
 	a.setPhase(p)
