@@ -404,7 +404,6 @@ function DriveSyncRuns() {
     return <LoadError what="iCloud Drive syncs" error={q.error} onRetry={() => void q.refetch()} />;
   }
   const runs = q.data.pages.flatMap((p) => p.runs);
-  const count = (n: bigint | undefined) => (n === undefined ? "—" : formatCount(n));
   return (
     <>
       <Card className={styles.tableBox}>
@@ -426,6 +425,10 @@ function DriveSyncRuns() {
             {runs.map((run) => {
               const r = run.driveSync;
               const note = r === undefined ? "" : r.error !== "" ? r.error : driveOutcomeLabel[r.outcome];
+              // Counts mean something only for a sync that listed iCloud Drive.
+              const listed =
+                r !== undefined && (r.outcome === DriveSyncOutcome.OK || r.outcome === DriveSyncOutcome.PARTIAL);
+              const count = (n: bigint | undefined) => (listed && n !== undefined ? formatCount(n) : "—");
               return (
                 <TableRow key={run.id.toString()}>
                   <TableCell className={styles.nowrap}>{started(run)}</TableCell>
@@ -434,7 +437,7 @@ function DriveSyncRuns() {
                   <TableCell className={styles.num}>{count(r?.changed)}</TableCell>
                   <TableCell className={styles.num}>{count(r?.moved)}</TableCell>
                   <TableCell className={styles.num}>{count(r?.deleted)}</TableCell>
-                  <TableCell className={styles.num}>{r === undefined ? "—" : formatBytes(r.downloadedBytes)}</TableCell>
+                  <TableCell className={styles.num}>{listed ? formatBytes(r.downloadedBytes) : "—"}</TableCell>
                   <TableCell className={styles.num}>{took(run)}</TableCell>
                   <TableCell className={styles.detail}>
                     <RunBadge run={run} ok="Up to date" failed="Needs attention" />
