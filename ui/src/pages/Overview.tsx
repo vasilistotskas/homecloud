@@ -40,25 +40,34 @@ import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
-import { CommandDialog } from "../components/CommandDialog";
+import { CommandDialog, type CommandState } from "../components/CommandDialog";
 import { LoadError } from "../components/LoadError";
-import { iphoneStateBadge } from "../components/labels";
+import {
+  driveHealthBadge,
+  driveSyncListed,
+  driveSyncOutcomeBadge,
+  iphoneSeverity,
+  iphoneStateBadge,
+  type BadgeColor,
+  type Labelled,
+} from "../components/labels";
 import { Page } from "../components/Page";
 import { runRow } from "../components/runs";
 import { useNotify } from "../components/toast";
-import { shellCommand } from "../shell";
 import { formatBytes, formatCount, formatInterval, formatRelative, formatWhen, toDate } from "../format";
+import { nextRunAt } from "../schedule";
+import { icloudLoginCommand, keiLoginCommand, terminalName } from "../shell";
 import {
   AgentService,
   AppleAccountState,
   DriveHealthState,
   DownloadOutcome,
   DriveSyncOutcome,
-  IPhoneBackupState,
   Phase,
   RunKind,
   RunResult,
   type DriveHealth,
+  type GetInfoResponse,
   type Run,
   type Overview,
   type Settings,
@@ -131,6 +140,7 @@ export function OverviewPage() {
   const styles = useStyles();
   const { overview, connection, receivedAt, reconnect, problem } = useOverview();
   const settings = useQuery(AgentService.method.getSettings, {});
+  const info = useQuery(AgentService.method.getInfo, {});
   const notify = useNotify();
   const phase = overview?.activity?.phase ?? Phase.UNSPECIFIED;
   const syncing = cyclePhases.has(phase);
@@ -181,19 +191,23 @@ export function OverviewPage() {
   if (overview === undefined) {
     return <Page title="Overview">{null}</Page>;
   }
+  const env: Env = {
+    settings: settings.data?.settings,
+    commands: commandsFrom(settings, info),
+  };
   return (
     <Page title="Overview" actions={actions}>
       <PhaseBanner overview={overview} />
-      <Hero overview={overview} settings={settings.data?.settings} />
+      <Hero overview={overview} env={env} />
       <Stats overview={overview} />
       <div className={styles.cards}>
         <StorageCard overview={overview} />
         <AccountCard overview={overview} />
-        <ScheduleCard overview={overview} settings={settings.data?.settings} />
+        <ScheduleCard overview={overview} settings={env.settings} />
         <DriveCard drive={overview.drive} />
-        <IntegrityCard overview={overview} settings={settings.data?.settings} />
-        <IPhoneBackupCard run={overview.lastIphoneBackup} />
-        <ICloudDriveCard overview={overview} settings={settings.data?.settings} />
+        <IntegrityCard overview={overview} settings={env.settings} />
+        <IPhoneBackupCard overview={overview} settings={env.settings} />
+        <ICloudDriveCard overview={overview} env={env} />
       </div>
       <RecentSyncs lastCycleId={overview.lastCycle?.id} />
     </Page>
@@ -300,154 +314,270 @@ function PhaseBanner({ overview }: { overview: Overview }) {
   );
 }
 
-function Hero({ overview, settings }: { overview: Overview; settings: Settings | undefined }) {
+/** What the cards and banner need besides the overview. */
+interface Env {
+  settings: Settings | undefined;
+  commands: { os: string; settings: Settings } | CommandState;
+}
+
+/** The parts of a query the command builder reads. */
+interface Query<T> {
+  data?: T;
+  isError: boolean;
+  error: unknown;
+  refetch: () => unknown;
+}
+
+/** The settings and OS the shown commands are built from, or why they are not available. */
+function commandsFrom(settings: Query<{ settings?: Settings }>, info: Query<GetInfoResponse>): Env["commands"] {
+  if (settings.isError || info.isError) {
+    return {
+      kind: "error",
+      error: settings.isError ? settings.error : info.error,
+      retry: () => {
+        void settings.refetch();
+        void info.refetch();
+      },
+    };
+  }
+  const s = settings.data?.settings;
+  const os = info.data?.os;
+  return s === undefined || os === undefined ? { kind: "loading" } : { os, settings: s };
+}
+
+/** A command for the dialogs, built when its inputs are there. */
+function command(env: Env, build: (os: string, s: Settings) => string): CommandState {
+  return "os" in env.commands
+    ? { kind: "ready", command: build(env.commands.os, env.commands.settings) }
+    : env.commands;
+}
+
+/** "In PowerShell" or "in a terminal", for the agent's OS. */
+function terminal(env: Env): string {
+  return "os" in env.commands ? terminalName(env.commands.os) : "a terminal";
+}
+
+/** A detail sentence: the detail, when there is one, then the rest. */
+function sentence(detail: string, rest: string): string {
+  return detail === "" ? rest : `${detail.replace(/[.\s]+$/, "")}. ${rest}`;
+}
+
+type Tone = "success" | "warning" | "danger" | "brand";
+
+/** One condition the banner can show; the most severe present wins. */
+interface Problem {
+  rank: number;
+  tone: Tone;
+  icon: ReactNode;
+  title: string;
+  body: string;
+  action?: ReactNode;
+}
+
+function Hero({ overview, env }: { overview: Overview; env: Env }) {
   const styles = useStyles();
   const a = overview.assets;
   const quarantined = a?.quarantined ?? 0n;
   const pending = (a?.discovered ?? 0n) + (a?.downloaded ?? 0n);
   const account = overview.appleAccount?.state ?? AppleAccountState.UNSPECIFIED;
-
-  let tone: "success" | "warning" | "danger" | "brand" = "success";
-  let icon: ReactNode = <CheckmarkCircleRegular />;
-  let title = "Your archive is complete and verified";
-  let body: ReactNode = `Every item in iCloud Photos is in ${overview.storage?.root ?? "the archive"} and passed its checks.`;
-  let action: ReactNode = null;
-
   const drive = overview.drive?.state ?? DriveHealthState.UNSPECIFIED;
   const cycle = overview.lastCycle?.cycle;
   const scrub = overview.lastScrub;
   const backup = overview.lastLedgerBackup;
-  const iphone = iphoneBackupSummary(overview.lastIphoneBackup);
+  const iphone = iphoneBackupSummary(overview.lastIphoneBackup, env.settings);
   const driveSync = overview.lastDriveSync?.driveSync;
   const minFree = overview.storage?.minFreePercent ?? 0;
+  const damaged = scrub?.scrub?.drive?.damaged ?? 0n;
 
+  // Danger outranks every warning; within each, the order is how much the
+  // problem threatens the archive.
+  const problems: Problem[] = [];
   if (drive === DriveHealthState.FAILING || drive === DriveHealthState.WARNING) {
-    tone = "danger";
-    icon = <HardDriveRegular />;
-    title =
-      drive === DriveHealthState.FAILING
-        ? "Your archive drive expects to fail"
-        : "Your archive drive reports a problem";
-    body = `${overview.drive?.reasons.join("; ") ?? ""}. It holds your only copy: replace it soon, and keep iCloud cleanup off until then.`;
-  } else if (account === AppleAccountState.SIGN_IN_REQUIRED || account === AppleAccountState.NEEDS_ATTENTION) {
-    tone = "warning";
-    icon = <KeyRegular />;
-    title =
-      account === AppleAccountState.SIGN_IN_REQUIRED ? "Apple sign-in needed" : "Your Apple account needs attention";
-    body =
-      "New photos aren't being downloaded until you sign in again. Everything already archived is safe, and nothing is deleted from iCloud meanwhile.";
-    action = <SignInDialog settings={settings} />;
-  } else if (driveSync?.outcome === DriveSyncOutcome.SIGN_IN_REQUIRED) {
-    tone = "warning";
-    icon = <KeyRegular />;
-    title = "iCloud Drive sign-in needed";
-    body =
-      "homecloud's own iCloud session expired, so new and changed iCloud Drive files aren't archived until you sign in again. Everything already archived is kept.";
-    action = <DriveSignInDialog settings={settings} />;
-  } else if (quarantined > 0n) {
-    tone = "danger";
-    icon = <ShieldErrorRegular />;
-    title = `${formatCount(quarantined)} ${quarantined === 1n ? "item" : "items"} failed verification`;
-    body = "They're kept aside and will never be deleted from iCloud until you've reviewed them.";
-    action = <ReviewButton />;
-  } else if (cycle?.download === DownloadOutcome.SKIPPED_LOW_SPACE) {
-    tone = "warning";
-    icon = <HardDriveRegular />;
-    title = "Your archive drive is almost full";
-    body = `New photos aren't downloaded while less than ${minFree}% of the drive is free. Everything already archived is still checked.`;
-  } else if (cycle?.download === DownloadOutcome.ERROR) {
-    tone = "warning";
-    icon = <ArrowSyncRegular />;
-    title = "The downloader couldn't run";
-    body =
-      "New photos weren't downloaded in the last sync. Activity and the agent's log say why; it is retried every sync.";
-  } else if (cycle !== undefined && cycle.errored > 0n) {
-    tone = "warning";
-    icon = <ShieldErrorRegular />;
-    title = `${formatCount(cycle.errored)} ${cycle.errored === 1n ? "file" : "files"} couldn't be checked`;
-    body = "They couldn't be read in the last sync and are checked again in the next one.";
-  } else if (scrub?.result === RunResult.FAILED && (scrub.scrub?.error ?? "") !== "") {
-    tone = "warning";
-    icon = <ShieldCheckmarkRegular />;
-    title = "The integrity check couldn't run";
-    body = `${scrub.scrub?.error ?? ""}. It is retried every sync.`;
-  } else if (backup?.result === RunResult.FAILED) {
-    tone = "warning";
-    icon = <ShieldCheckmarkRegular />;
-    title = "The records backup failed";
-    body = `${backup.ledgerBackup?.error ?? ""}. It is retried every sync.`;
-  } else if (
-    driveSync !== undefined &&
-    (driveSync.outcome === DriveSyncOutcome.PARTIAL || driveSync.outcome === DriveSyncOutcome.ERROR)
-  ) {
-    tone = "warning";
-    icon = <CloudArchiveRegular />;
-    title =
-      driveSync.outcome === DriveSyncOutcome.ERROR
-        ? "The iCloud Drive sync couldn't run"
-        : `${formatCount(driveSync.failed)} iCloud Drive ${driveSync.failed === 1n ? "item" : "items"} couldn't be archived`;
-    body = `${driveSync.error !== "" ? driveSync.error : (driveSync.failures[0] ?? "")}. It is retried at the next iCloud Drive sync.`;
-  } else if (iphone.tone === "warning" || iphone.tone === "danger") {
-    tone = "warning";
-    icon = <PhoneRegular />;
-    title = iphone.title;
-    body = iphone.detail;
-  } else if (pending > 0n) {
-    tone = "brand";
-    icon = <ClockRegular />;
-    title = `${formatCount(pending)} ${pending === 1n ? "item is" : "items are"} still being archived`;
-    body = "They are downloaded and checked during the next sync.";
+    problems.push({
+      rank: 100,
+      tone: "danger",
+      icon: <HardDriveRegular />,
+      title:
+        drive === DriveHealthState.FAILING
+          ? "Your archive drive expects to fail"
+          : "Your archive drive reports a problem",
+      body: sentence(
+        overview.drive?.reasons.join("; ") ?? "",
+        "It holds your only copy: replace it soon, and keep iCloud cleanup off until then.",
+      ),
+    });
   }
+  if (quarantined > 0n) {
+    problems.push({
+      rank: 95,
+      tone: "danger",
+      icon: <ShieldErrorRegular />,
+      title: `${formatCount(quarantined)} ${quarantined === 1n ? "item" : "items"} failed verification`,
+      body: "They're kept aside and will never be deleted from iCloud until you've reviewed them.",
+      action: <ReviewButton />,
+    });
+  }
+  if (damaged > 0n) {
+    problems.push({
+      rank: 90,
+      tone: "danger",
+      icon: <ShieldErrorRegular />,
+      title: `${formatCount(damaged)} archived iCloud Drive ${damaged === 1n ? "file" : "files"} changed on disk`,
+      body: "They are downloaded again at the next iCloud Drive sync and the damaged copies are kept aside. Check the archive drive's health.",
+    });
+  }
+  if (iphone.tone === "danger") {
+    problems.push({ rank: 85, tone: "danger", icon: <PhoneRegular />, title: iphone.title, body: iphone.detail });
+  }
+  if (account === AppleAccountState.SIGN_IN_REQUIRED || account === AppleAccountState.NEEDS_ATTENTION) {
+    problems.push({
+      rank: 70,
+      tone: "warning",
+      icon: <KeyRegular />,
+      title:
+        account === AppleAccountState.SIGN_IN_REQUIRED ? "Apple sign-in needed" : "Your Apple account needs attention",
+      body: "New photos aren't being downloaded until you sign in again. Everything already archived is safe, and nothing is deleted from iCloud meanwhile.",
+      action: <SignInDialog env={env} />,
+    });
+  }
+  if (driveSync?.outcome === DriveSyncOutcome.SIGN_IN_REQUIRED) {
+    problems.push({
+      rank: 65,
+      tone: "warning",
+      icon: <KeyRegular />,
+      title: "iCloud Drive sign-in needed",
+      body: "homecloud's own iCloud session expired, so new and changed iCloud Drive files aren't archived until you sign in again. Everything already archived is kept.",
+      action: <DriveSignInDialog env={env} />,
+    });
+  }
+  if (
+    cycle?.download === DownloadOutcome.SKIPPED_LOW_SPACE ||
+    driveSync?.outcome === DriveSyncOutcome.SKIPPED_LOW_SPACE
+  ) {
+    problems.push({
+      rank: 60,
+      tone: "warning",
+      icon: <HardDriveRegular />,
+      title: "Your archive drive is almost full",
+      body: `Nothing new is downloaded from iCloud Photos or iCloud Drive while less than ${minFree}% of the drive is free. Everything already archived is still checked.`,
+    });
+  }
+  if (cycle?.download === DownloadOutcome.ERROR) {
+    problems.push({
+      rank: 55,
+      tone: "warning",
+      icon: <ArrowSyncRegular />,
+      title: "The downloader couldn't run",
+      body: "New photos weren't downloaded in the last sync. Activity and the agent's log say why; it is retried at the next sync.",
+    });
+  }
+  if (cycle !== undefined && cycle.errored > 0n) {
+    problems.push({
+      rank: 50,
+      tone: "warning",
+      icon: <ShieldErrorRegular />,
+      title: `${formatCount(cycle.errored)} ${cycle.errored === 1n ? "file" : "files"} couldn't be checked`,
+      body: "They couldn't be read in the last sync and are checked again in the next one.",
+    });
+  }
+  if (scrub?.result === RunResult.FAILED && (scrub.scrub?.error ?? "") !== "") {
+    problems.push({
+      rank: 45,
+      tone: "warning",
+      icon: <ShieldCheckmarkRegular />,
+      title: "The integrity check couldn't run",
+      body: sentence(scrub.scrub?.error ?? "", "It is retried at the next sync."),
+    });
+  }
+  if (backup?.result === RunResult.FAILED) {
+    problems.push({
+      rank: 40,
+      tone: "warning",
+      icon: <ShieldCheckmarkRegular />,
+      title: "The records backup failed",
+      body: sentence(backup.ledgerBackup?.error ?? "", "It is retried at the next sync."),
+    });
+  }
+  if (driveSync?.outcome === DriveSyncOutcome.PARTIAL || driveSync?.outcome === DriveSyncOutcome.ERROR) {
+    problems.push({
+      rank: 35,
+      tone: "warning",
+      icon: <CloudArchiveRegular />,
+      title:
+        driveSync.outcome === DriveSyncOutcome.ERROR
+          ? "The iCloud Drive sync couldn't run"
+          : `${formatCount(driveSync.failed)} iCloud Drive ${driveSync.failed === 1n ? "item" : "items"} couldn't be archived`,
+      body: sentence(
+        driveSync.error !== "" ? driveSync.error : (driveSync.failures[0] ?? ""),
+        driveSync.outcome === DriveSyncOutcome.ERROR
+          ? "It is retried at the next sync."
+          : "They are retried at the next iCloud Drive sync.",
+      ),
+    });
+  }
+  if (iphone.tone === "warning") {
+    problems.push({ rank: 30, tone: "warning", icon: <PhoneRegular />, title: iphone.title, body: iphone.detail });
+  }
+  if (pending > 0n) {
+    problems.push({
+      rank: 10,
+      tone: "brand",
+      icon: <ClockRegular />,
+      title: `${formatCount(pending)} ${pending === 1n ? "item is" : "items are"} still being archived`,
+      body: "They are downloaded and checked during the next sync.",
+    });
+  }
+  const shown = problems.reduce<Problem>((worst, p) => (p.rank > worst.rank ? p : worst), {
+    rank: 0,
+    tone: "success",
+    icon: <CheckmarkCircleRegular />,
+    title: "Your archive is complete and verified",
+    body: `Every item in iCloud Photos is in ${overview.storage?.root ?? "the archive"} and passed its checks.`,
+  });
 
   const palette = {
     success: [tokens.colorPaletteGreenBackground1, tokens.colorPaletteGreenForeground1],
     warning: [tokens.colorPaletteYellowBackground1, tokens.colorPaletteDarkOrangeForeground1],
     danger: [tokens.colorPaletteRedBackground1, tokens.colorPaletteRedForeground1],
     brand: [tokens.colorBrandBackground2, tokens.colorBrandForeground1],
-  }[tone];
+  }[shown.tone];
 
   return (
     <Card className={styles.hero}>
       <div className={styles.heroIcon} style={{ backgroundColor: palette[0], color: palette[1] }}>
-        {icon}
+        {shown.icon}
       </div>
       <div className={styles.heroText}>
-        <Title3 as="h2">{title}</Title3>
-        <Text>{body}</Text>
+        <Title3 as="h2">{shown.title}</Title3>
+        <Text>{shown.body}</Text>
       </div>
-      {action}
+      {shown.action}
     </Card>
   );
 }
 
-function SignInDialog({ settings }: { settings: Settings | undefined }) {
+function SignInDialog({ env }: { env: Env }) {
   return (
     <CommandDialog
       trigger="Sign in…"
+      triggerLabel="Sign in to iCloud Photos"
       title="Sign in to iCloud again"
-      intro="Run this in a terminal on this computer. Your password and the code from your iPhone go straight to Apple; homecloud never sees them."
-      command={
-        settings === undefined
-          ? undefined
-          : shellCommand(settings.downloader?.binary ?? "", ["login", "--config", settings.downloaderConfig])
-      }
+      intro={`Run this in ${terminal(env)} on this computer. Your password and the code from your iPhone go straight to Apple; homecloud never sees them.`}
+      command={command(env, keiLoginCommand)}
       after="Downloads resume at the next sync."
     />
   );
 }
 
-function DriveSignInDialog({ settings }: { settings: Settings | undefined }) {
+function DriveSignInDialog({ env }: { env: Env }) {
   return (
     <CommandDialog
       trigger="Sign in…"
+      triggerLabel="Sign in to iCloud Drive"
       title="Sign homecloud in to iCloud Drive"
-      intro="Run this in a terminal on this computer and type your Apple Account password, then the code from your iPhone. Your account uses Advanced Data Protection if it asks you to approve access on a device. The password is used once and never stored."
-      command={
-        settings === undefined
-          ? undefined
-          : shellCommand(settings.cli, ["icloud", "login", "--config", settings.configPath])
-      }
-      after="iCloud Drive is archived again at the next sync; everything already archived stays."
+      intro={`Run this in ${terminal(env)} on this computer and type your Apple Account password, then the code from your iPhone. Your account uses Advanced Data Protection if it asks you to approve access on a device. The password is used once and never stored.`}
+      command={command(env, icloudLoginCommand)}
+      after="iCloud Drive is archived again at the next iCloud Drive sync; everything already archived stays."
     />
   );
 }
@@ -535,10 +665,7 @@ function StorageCard({ overview }: { overview: Overview }) {
   );
 }
 
-const accountBadge: Record<
-  AppleAccountState,
-  { label: string; color: "success" | "warning" | "danger" | "informative" }
-> = {
+const accountBadge: Record<AppleAccountState, Labelled> = {
   [AppleAccountState.UNSPECIFIED]: { label: "Unknown", color: "informative" },
   [AppleAccountState.SIGNED_IN]: { label: "Signed in", color: "success" },
   [AppleAccountState.SIGN_IN_REQUIRED]: { label: "Sign-in needed", color: "warning" },
@@ -648,18 +775,31 @@ function ReviewButton() {
   );
 }
 
-const driveBadge: Record<DriveHealthState, { label: string; color: "success" | "warning" | "danger" | "informative" }> =
-  {
-    [DriveHealthState.UNSPECIFIED]: { label: "Not checked yet", color: "informative" },
-    [DriveHealthState.OK]: { label: "Healthy", color: "success" },
-    [DriveHealthState.WARNING]: { label: "Warning", color: "warning" },
-    [DriveHealthState.FAILING]: { label: "Failing", color: "danger" },
-    [DriveHealthState.UNAVAILABLE]: { label: "Unavailable", color: "informative" },
-  };
+function Facts({ facts }: { facts: [string, ReactNode][] }) {
+  const styles = useStyles();
+  return (
+    <div className={styles.facts}>
+      {facts.map(([k, v]) => (
+        <Fragment key={k}>
+          <Text className={styles.muted}>{k}</Text>
+          <Text>{v}</Text>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** When a job that runs after sync cycles runs next, for a fact line. */
+function nextRun(overview: Overview, settings: Settings, last: Run | undefined, everySeconds: bigint): string {
+  // A run that did not complete (an error) is retried at the next cycle.
+  const completed = last?.result === RunResult.OK ? toDate(last.finishedAt) : undefined;
+  const at = nextRunAt(completed, everySeconds, toDate(overview.activity?.nextCycleAt), settings.syncIntervalSeconds);
+  return at === undefined ? "After the current sync" : formatRelative(at);
+}
 
 function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
   const styles = useStyles();
-  const badge = driveBadge[drive?.state ?? DriveHealthState.UNSPECIFIED];
+  const badge = driveHealthBadge[drive?.state ?? DriveHealthState.UNSPECIFIED];
   const checked = toDate(drive?.checkedAt);
   const facts: [string, string][] = [];
   if (drive !== undefined && drive.state !== DriveHealthState.UNAVAILABLE) {
@@ -680,16 +820,7 @@ function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
           </Badge>
         }
       />
-      {facts.length > 0 && (
-        <div className={styles.facts}>
-          {facts.map(([k, v]) => (
-            <Fragment key={k}>
-              <Text className={styles.muted}>{k}</Text>
-              <Text>{v}</Text>
-            </Fragment>
-          ))}
-        </div>
-      )}
+      {facts.length > 0 && <Facts facts={facts} />}
       {drive?.state === DriveHealthState.UNAVAILABLE && (
         <Text className={styles.muted}>Health can&apos;t be read for this drive: {drive.reasons.join("; ")}</Text>
       )}
@@ -701,92 +832,101 @@ function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
   );
 }
 
-interface IPhoneSummary {
-  tone: "success" | "warning" | "danger" | "informative";
-  badge: string;
+interface IPhoneSummary extends Labelled {
+  /** The banner's tone: none when nothing needs the owner. */
+  tone: "danger" | "warning" | "none";
   title: string;
   detail: string;
 }
 
 /** The overall verdict on the local iPhone backups, from the latest check. */
-function iphoneBackupSummary(run: Run | undefined): IPhoneSummary {
+function iphoneBackupSummary(run: Run | undefined, settings: Settings | undefined): IPhoneSummary {
   const rep = run?.iphoneBackup;
   if (run === undefined || rep === undefined) {
-    return { tone: "informative", badge: "Not checked yet", title: "", detail: "" };
+    return { tone: "none", label: "Not checked yet", color: "informative", title: "", detail: "" };
   }
-  if (rep.error !== "") {
+  if (rep.error !== "" || rep.dirErrors.length > 0) {
     return {
       tone: "warning",
-      badge: "Couldn't check",
+      label: "Couldn't check",
+      color: "warning",
       title: "The iPhone backups couldn't be checked",
-      detail: `${rep.error}. It is retried every day.`,
+      detail: sentence(
+        [rep.error, ...rep.dirErrors].filter((e) => e !== "").join("; "),
+        "It is retried at the next sync.",
+      ),
     };
   }
   if (rep.devices.length === 0) {
+    const every = settings === undefined ? "regularly" : formatInterval(settings.iphoneBackupCheckIntervalSeconds);
     return {
       tone: "warning",
-      badge: "No backup yet",
+      label: "No backup yet",
+      color: "warning",
       title: "No iPhone backup on this computer yet",
-      detail:
-        'In Apple\'s Devices app, turn on "Encrypt local backup" and back up the iPhone once; homecloud then checks it every day.',
+      detail: `In Apple's Devices app, turn on "Encrypt local backup" and back up the iPhone once; homecloud then checks it ${every}.`,
     };
   }
-  // IPhoneBackupState values are ordered from healthy to most severe.
-  const worst = rep.devices.reduce((w, d) => (d.state > w ? d.state : w), IPhoneBackupState.OK);
-  const b = iphoneStateBadge[worst];
+  const worst = rep.devices.reduce((w, d) => (iphoneSeverity[d.state] > iphoneSeverity[w.state] ? d : w));
+  const b = iphoneStateBadge[worst.state];
   const problems = rep.devices.flatMap((d) => d.reasons.map((r) => (rep.devices.length > 1 ? `${d.name}: ${r}` : r)));
   return {
-    tone: b.color,
-    badge: b.label,
+    ...b,
+    tone: b.color === "danger" ? "danger" : b.color === "warning" ? "warning" : "none",
     title: "An iPhone backup needs attention",
-    detail: `${problems.join("; ")}. Check it in Apple's Devices app.`,
+    detail: sentence(problems.join("; "), "Check it in Apple's Devices app."),
   };
 }
 
-function IPhoneBackupCard({ run }: { run: Run | undefined }) {
+function IPhoneBackupCard({ overview, settings }: { overview: Overview; settings: Settings | undefined }) {
   const styles = useStyles();
-  const summary = iphoneBackupSummary(run);
+  const run = overview.lastIphoneBackup;
+  const summary = iphoneBackupSummary(run, settings);
   const checked = toDate(run?.finishedAt);
-  const devices = run?.iphoneBackup?.devices ?? [];
+  const rep = run?.iphoneBackup;
+  const devices = rep?.devices ?? [];
+  const footer: [string, string][] = [];
+  if ((rep?.archived ?? 0n) > 0n) footer.push(["Archived copies", formatCount(rep?.archived ?? 0n)]);
+  if (settings !== undefined) {
+    footer.push(["Next check", nextRun(overview, settings, run, settings.iphoneBackupCheckIntervalSeconds)]);
+  }
   return (
     <Card>
       <CardHeader
         image={<PhoneRegular fontSize={20} />}
         header={<Subtitle2 as="h2">iPhone backups</Subtitle2>}
         action={
-          <Badge appearance="tint" color={summary.tone}>
-            {summary.badge}
+          <Badge appearance="tint" color={summary.color}>
+            {summary.label}
           </Badge>
         }
       />
       {devices.length === 0 && summary.detail !== "" && <Text>{summary.detail}</Text>}
       {devices.map((d) => {
         const done = toDate(d.completedAt);
+        const read = toDate(d.lastFullReadAt);
         const badge = iphoneStateBadge[d.state];
-        return (
-          <div key={d.udid} className={styles.facts}>
-            <Text className={styles.muted}>Device</Text>
-            <Text>
+        const facts: [string, ReactNode][] = [
+          [
+            "Device",
+            <>
               {d.name} · iOS {d.productVersion}{" "}
               <Badge appearance="tint" color={badge.color}>
                 {badge.label}
               </Badge>
-            </Text>
-            <Text className={styles.muted}>Last backup</Text>
-            <Text>{done === undefined ? "Never finished" : `${formatWhen(done)} (${formatRelative(done)})`}</Text>
-            <Text className={styles.muted}>Size</Text>
-            <Text>
-              {formatBytes(d.sizeBytes)} · {formatCount(d.files)} files · {d.encrypted ? "encrypted" : "not encrypted"}
-            </Text>
-            {d.reasons.length > 0 && (
-              <>
-                <Text className={styles.muted}>Problems</Text>
-                <Text>{d.reasons.join("; ")}</Text>
-              </>
-            )}
-          </div>
-        );
+            </>,
+          ],
+          ["Last backup", done === undefined ? "Never finished" : `${formatWhen(done)} (${formatRelative(done)})`],
+          [
+            "Size",
+            `${formatBytes(d.sizeBytes)} · ${formatCount(d.files)} files · ${d.encrypted ? "encrypted" : "not encrypted"}`,
+          ],
+          ["Every file read", read === undefined ? "Not yet" : formatWhen(read)],
+        ];
+        if (d.reasons.length > 0) facts.push(["Problems", d.reasons.join("; ")]);
+        return <Facts key={d.dir} facts={facts} />;
       })}
+      {footer.length > 0 && <Facts facts={footer} />}
       <Caption1 className={styles.muted}>
         Apple&apos;s Devices app makes the backups; homecloud only reads them and alerts when one is old, unencrypted,
         unfinished or damaged.
@@ -796,50 +936,53 @@ function IPhoneBackupCard({ run }: { run: Run | undefined }) {
   );
 }
 
-const driveOutcomeBadge: Record<
-  DriveSyncOutcome,
-  { label: string; color: "success" | "warning" | "danger" | "informative" }
-> = {
-  [DriveSyncOutcome.UNSPECIFIED]: { label: "Not synced yet", color: "informative" },
-  [DriveSyncOutcome.OK]: { label: "Up to date", color: "success" },
-  [DriveSyncOutcome.PARTIAL]: { label: "Some items failed", color: "warning" },
-  [DriveSyncOutcome.SIGN_IN_REQUIRED]: { label: "Sign-in needed", color: "warning" },
-  [DriveSyncOutcome.SKIPPED_LOW_SPACE]: { label: "Drive almost full", color: "warning" },
-  [DriveSyncOutcome.ARCHIVE_UNAVAILABLE]: { label: "Archive drive missing", color: "danger" },
-  [DriveSyncOutcome.ERROR]: { label: "Couldn't sync", color: "danger" },
-};
-
-function ICloudDriveCard({ overview, settings }: { overview: Overview; settings: Settings | undefined }) {
+function ICloudDriveCard({ overview, env }: { overview: Overview; env: Env }) {
   const styles = useStyles();
   const run = overview.lastDriveSync;
   const rep = run?.driveSync;
   const totals = overview.icloudDrive;
-  const badge = driveOutcomeBadge[rep?.outcome ?? DriveSyncOutcome.UNSPECIFIED];
+  const outcome = driveSyncOutcomeBadge[rep?.outcome ?? DriveSyncOutcome.UNSPECIFIED];
   const synced = toDate(run?.finishedAt);
   const signedIn = toDate(totals?.signedInAt);
+  const sessionProblem = totals?.sessionProblem ?? "";
 
-  const facts: [string, string][] = [
+  const facts: [string, ReactNode][] = [
     ["Archived", `${formatCount(totals?.files ?? 0n)} files · ${formatBytes(totals?.bytes ?? 0n)}`],
   ];
   if ((totals?.deletedInIcloud ?? 0n) > 0n) {
     facts.push(["Deleted in iCloud", `${formatCount(totals?.deletedInIcloud ?? 0n)} (copies kept)`]);
   }
   if (synced !== undefined && rep !== undefined) {
-    const changes = [
-      rep.archived > 0n && `${formatCount(rep.archived)} new`,
-      rep.changed > 0n && `${formatCount(rep.changed)} changed`,
-      rep.moved > 0n && `${formatCount(rep.moved)} moved`,
-      rep.deleted > 0n && `${formatCount(rep.deleted)} deleted`,
-      rep.repaired > 0n && `${formatCount(rep.repaired)} repaired`,
-    ].filter((c): c is string => typeof c === "string");
-    facts.push(["Last sync", `${formatWhen(synced)} · ${changes.length === 0 ? "no changes" : changes.join(", ")}`]);
+    if (driveSyncListed(rep)) {
+      const changes = [
+        [rep.archived, "new"],
+        [rep.changed, "changed"],
+        [rep.moved, "moved"],
+        [rep.deleted, "deleted in iCloud"],
+        [rep.restored, "back in iCloud"],
+        [rep.repaired, "repaired"],
+        [rep.failed, "failed"],
+      ]
+        .filter(([n]) => (n as bigint) > 0n)
+        .map(([n, what]) => `${formatCount(n as bigint)} ${what as string}`);
+      facts.push(["Last sync", `${formatWhen(synced)} · ${changes.length === 0 ? "no changes" : changes.join(", ")}`]);
+    } else {
+      facts.push(["Last sync", `${formatWhen(synced)} · ${outcome.label}`]);
+    }
   }
-  if (settings !== undefined) {
-    const next =
-      synced === undefined ? undefined : new Date(synced.getTime() + Number(settings.driveSyncIntervalSeconds) * 1000);
-    facts.push(["Next sync", next === undefined ? "After the next sync cycle" : formatRelative(next)]);
+  if (env.settings !== undefined) {
+    facts.push(["Next sync", nextRun(overview, env.settings, run, env.settings.driveSyncIntervalSeconds)]);
   }
-  facts.push(["Signed in", signedIn === undefined ? "Never — run homecloud icloud login" : formatWhen(signedIn)]);
+  facts.push([
+    "Signed in",
+    sessionProblem !== ""
+      ? `The saved session can't be read: ${sessionProblem}`
+      : signedIn === undefined
+        ? "Never"
+        : formatWhen(signedIn),
+  ]);
+  const needsSignIn =
+    rep?.outcome === DriveSyncOutcome.SIGN_IN_REQUIRED || signedIn === undefined || sessionProblem !== "";
 
   return (
     <Card>
@@ -847,20 +990,13 @@ function ICloudDriveCard({ overview, settings }: { overview: Overview; settings:
         image={<CloudArchiveRegular fontSize={20} />}
         header={<Subtitle2 as="h2">iCloud Drive</Subtitle2>}
         action={
-          <Badge appearance="tint" color={badge.color}>
-            {badge.label}
+          <Badge appearance="tint" color={outcome.color}>
+            {outcome.label}
           </Badge>
         }
       />
-      <div className={styles.facts}>
-        {facts.map(([k, v]) => (
-          <Fragment key={k}>
-            <Text className={styles.muted}>{k}</Text>
-            <Text>{v}</Text>
-          </Fragment>
-        ))}
-      </div>
-      {rep?.outcome === DriveSyncOutcome.SIGN_IN_REQUIRED && <DriveSignInDialog settings={settings} />}
+      <Facts facts={facts} />
+      {needsSignIn && <DriveSignInDialog env={env} />}
       <Caption1 className={styles.muted}>
         Every file is checked against Apple&apos;s own checksum. Files are never deleted from the archive: replaced
         versions are kept, and files deleted in iCloud stay.
@@ -872,8 +1008,9 @@ function ICloudDriveCard({ overview, settings }: { overview: Overview; settings:
   );
 }
 
-function scrubBadge(run: Run | undefined): { label: string; color: "success" | "warning" | "danger" | "informative" } {
+function scrubBadge(run: Run | undefined): { label: string; color: BadgeColor } {
   const mismatched = run?.scrub?.mismatched ?? 0n;
+  const damaged = run?.scrub?.drive?.damaged ?? 0n;
   switch (run?.result) {
     case undefined:
     case RunResult.UNSPECIFIED:
@@ -882,9 +1019,10 @@ function scrubBadge(run: Run | undefined): { label: string; color: "success" | "
     case RunResult.OK:
       return { label: "All files match", color: "success" };
     case RunResult.FAILED:
-      return mismatched > 0n
-        ? { label: `${formatCount(mismatched)} changed`, color: "danger" }
-        : { label: "Incomplete", color: "warning" };
+      if (mismatched + damaged > 0n) {
+        return { label: `${formatCount(mismatched + damaged)} changed`, color: "danger" };
+      }
+      return { label: "Incomplete", color: "warning" };
   }
 }
 
@@ -902,14 +1040,21 @@ function IntegrityCard({ overview, settings }: { overview: Overview; settings: S
     facts.push([
       "Last check",
       r.error === ""
-        ? `${formatWhen(scrubbed)} · ${formatCount(r.checked)} of ${formatCount(r.eligible)} files`
+        ? `${formatWhen(scrubbed)} · ${formatCount(r.checked)} of ${formatCount(r.eligible)} photo files`
         : `${formatWhen(scrubbed)} · couldn't run`,
     ]);
+    const d = r.drive;
+    if (r.error === "" && d !== undefined && d.eligible > 0n) {
+      facts.push([
+        "iCloud Drive",
+        `${formatCount(d.checked)} of ${formatCount(d.eligible)} files` +
+          (d.damaged > 0n ? ` · ${formatCount(d.damaged)} damaged` : "") +
+          (d.errored > 0n ? ` · ${formatCount(d.errored)} not checked` : ""),
+      ]);
+    }
   }
   if (settings !== undefined) {
-    const next =
-      scrubbed === undefined ? undefined : new Date(scrubbed.getTime() + Number(settings.scrubIntervalSeconds) * 1000);
-    facts.push(["Next check", next === undefined ? "After the next sync" : formatRelative(next)]);
+    facts.push(["Next check", nextRun(overview, settings, scrub, settings.scrubIntervalSeconds)]);
     // Each run re-reads the files confirmed longest ago, so the whole archive
     // is covered once every ceil(1 / fraction) runs. The agent rejects a
     // fraction outside (0, 1]; anything else here is not a schedule.
@@ -938,17 +1083,11 @@ function IntegrityCard({ overview, settings }: { overview: Overview; settings: S
           </Badge>
         }
       />
-      <div className={styles.facts}>
-        {facts.map(([k, v]) => (
-          <Fragment key={k}>
-            <Text className={styles.muted}>{k}</Text>
-            <Text>{v}</Text>
-          </Fragment>
-        ))}
-      </div>
+      <Facts facts={facts} />
       <Caption1 className={styles.muted}>
-        Archived files are re-read and compared with the checksum recorded at download; a file that changed is
-        quarantined and you&apos;re alerted. The archive&apos;s records are copied to another drive.
+        Archived files are re-read and compared with the checksum recorded at download; a photo that changed is
+        quarantined, an iCloud Drive file downloaded again, and you&apos;re alerted. The archive&apos;s records are
+        copied to another drive.
       </Caption1>
     </Card>
   );

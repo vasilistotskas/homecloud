@@ -1,7 +1,6 @@
-import { useInfiniteQuery } from "@connectrpc/connect-query";
+import { useInfiniteQuery, useQuery } from "@connectrpc/connect-query";
 import {
   Badge,
-  Button,
   Card,
   Dropdown,
   Field,
@@ -23,43 +22,32 @@ import { useState } from "react";
 
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
-import { iphoneStateBadge, stateLabel, tierLabel } from "../components/labels";
+import { MoreButton, RunBadge, RunTable } from "../components/RunTable";
+import { nextPage, useTableStyles } from "../components/tables";
+import {
+  driveFileChangeBadge,
+  driveHealthBadge,
+  driveSyncListed,
+  driveSyncOutcomeBadge,
+  iphoneStateBadge,
+  stateLabel,
+  tierLabel,
+  type BadgeColor,
+} from "../components/labels";
 import { runRow } from "../components/runs";
-import { formatBytes, formatCount, formatDuration, formatWhen, toDate } from "../format";
+import { formatBytes, formatCount, formatWhen, toDate } from "../format";
 import {
   AgentService,
   DriveFileChange,
-  DriveHealthState,
   DriveSyncOutcome,
   EventKind,
   RunKind,
-  RunResult,
+  type DriveFileEvent,
   type Event,
   type Run,
 } from "../gen/homecloud/agent/v1/agent_pb";
 
-const driveStateLabel: Record<DriveHealthState, string> = {
-  [DriveHealthState.UNSPECIFIED]: "Unknown",
-  [DriveHealthState.OK]: "Healthy",
-  [DriveHealthState.WARNING]: "Warning",
-  [DriveHealthState.FAILING]: "Failing",
-  [DriveHealthState.UNAVAILABLE]: "Health unavailable",
-};
-
-const pageSize = 25;
-
 const useStyles = makeStyles({
-  tableBox: { overflowX: "auto" },
-  num: { textAlign: "right", fontVariantNumeric: "tabular-nums" },
-  // Header cells wrap their label in a flex container (the `button` slot); align it like the values.
-  numHead: { justifyContent: "flex-end" },
-  // Fluent tables default to equal fixed-width columns; size columns to their content instead.
-  table: { tableLayout: "auto" },
-  nowrap: { whiteSpace: "nowrap" },
-  detail: { whiteSpace: "normal", minWidth: "260px" },
-  mono: { fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase200 },
-  more: { alignSelf: "flex-start" },
-  muted: { color: tokens.colorNeutralForeground3 },
   filters: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalM },
 });
 
@@ -95,7 +83,7 @@ export function ActivityPage() {
           </Tab>
         ))}
       </TabList>
-      {tab === "runs" && <Runs />}
+      {tab === "runs" && <CycleRuns />}
       {tab === "integrity" && <ScrubRuns />}
       {tab === "backups" && <BackupRuns />}
       {tab === "iphone" && <IPhoneBackupRuns />}
@@ -105,384 +93,213 @@ export function ActivityPage() {
   );
 }
 
-/** How long a finished run took. */
-function took(run: Run): string {
-  const started = toDate(run.startedAt);
-  const finished = toDate(run.finishedAt);
-  return started !== undefined && finished !== undefined ? formatDuration(finished.getTime() - started.getTime()) : "—";
-}
+const dash = "—";
 
-function started(run: Run): string {
-  const at = toDate(run.startedAt);
-  return at === undefined ? "—" : formatWhen(at);
-}
-
-function nextPage(last: { nextPageToken: string }): string | undefined {
-  return last.nextPageToken === "" ? undefined : last.nextPageToken;
-}
-
-function MoreButton({ q }: { q: { hasNextPage: boolean; isFetchingNextPage: boolean; fetchNextPage: () => unknown } }) {
-  const styles = useStyles();
-  if (!q.hasNextPage) {
-    return null;
-  }
+function CycleRuns() {
   return (
-    <Button
-      className={styles.more}
-      disabled={q.isFetchingNextPage}
-      onClick={() => {
-        void q.fetchNextPage();
-      }}
-    >
-      {q.isFetchingNextPage ? "Loading…" : "Show older"}
-    </Button>
-  );
-}
-
-function Runs() {
-  const styles = useStyles();
-  const q = useInfiniteQuery(
-    AgentService.method.listRuns,
-    { kind: RunKind.CYCLE, pageSize, pageToken: "" },
-    { pageParamKey: "pageToken", getNextPageParam: nextPage },
-  );
-  if (q.isPending) {
-    return <Spinner label="Loading syncs…" />;
-  }
-  if (q.isError) {
-    return <LoadError what="syncs" error={q.error} onRetry={() => void q.refetch()} />;
-  }
-  const rows = q.data.pages.flatMap((p) => p.runs).map(runRow);
-  return (
-    <>
-      <Card className={styles.tableBox}>
-        <Table size="small" aria-label="Syncs" className={styles.table}>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>Started</TableHeaderCell>
-              <TableHeaderCell>Download</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>In iCloud</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>New</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Changed</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Checked</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Failed</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
-              <TableHeaderCell>Result</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.id}>
-                <TableCell className={styles.nowrap}>{r.started}</TableCell>
-                <TableCell>{r.download}</TableCell>
-                <TableCell className={styles.num}>{r.inICloud}</TableCell>
-                <TableCell className={styles.num}>{r.added}</TableCell>
-                <TableCell className={styles.num}>{r.changed}</TableCell>
-                <TableCell className={styles.num}>{r.checked}</TableCell>
-                <TableCell className={styles.num}>{r.failed}</TableCell>
-                <TableCell className={styles.num}>{r.took}</TableCell>
-                <TableCell>{r.result}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {rows.length === 0 && <Text className={styles.muted}>No syncs yet.</Text>}
-      </Card>
-      <MoreButton q={q} />
-    </>
+    <RunTable
+      kind={RunKind.CYCLE}
+      noun="syncs"
+      empty="No syncs yet."
+      columns={[
+        { header: "Download", cell: (run) => runRow(run).download },
+        { header: "In iCloud", numeric: true, cell: (run) => runRow(run).inICloud },
+        { header: "New", numeric: true, cell: (run) => runRow(run).added },
+        { header: "Changed", numeric: true, cell: (run) => runRow(run).changed },
+        { header: "Checked", numeric: true, cell: (run) => runRow(run).checked },
+        { header: "Failed", numeric: true, cell: (run) => runRow(run).failed },
+      ]}
+      result={(run) => runRow(run).result}
+    />
   );
 }
 
 function ScrubRuns() {
-  const styles = useStyles();
-  const q = useInfiniteQuery(
-    AgentService.method.listRuns,
-    { kind: RunKind.SCRUB, pageSize, pageToken: "" },
-    { pageParamKey: "pageToken", getNextPageParam: nextPage },
-  );
-  if (q.isPending) {
-    return <Spinner label="Loading integrity checks…" />;
-  }
-  if (q.isError) {
-    return <LoadError what="integrity checks" error={q.error} onRetry={() => void q.refetch()} />;
-  }
-  const runs = q.data.pages.flatMap((p) => p.runs);
+  const styles = useTableStyles();
+  const of = (checked: bigint, eligible: bigint) => `${formatCount(checked)} of ${formatCount(eligible)}`;
   return (
-    <>
-      <Card className={styles.tableBox}>
-        <Table size="small" aria-label="Integrity checks" className={styles.table}>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>Started</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Re-read</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Changed</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Not checked</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
-              <TableHeaderCell>Result</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runs.map((run) => {
-              const r = run.scrub;
-              return (
-                <TableRow key={run.id.toString()}>
-                  <TableCell className={styles.nowrap}>{started(run)}</TableCell>
-                  <TableCell className={styles.num}>
-                    {r === undefined ? "—" : `${formatCount(r.checked)} of ${formatCount(r.eligible)}`}
-                  </TableCell>
-                  <TableCell className={styles.num}>{r === undefined ? "—" : formatCount(r.mismatched)}</TableCell>
-                  <TableCell className={styles.num}>{r === undefined ? "—" : formatCount(r.errored)}</TableCell>
-                  <TableCell className={styles.num}>{took(run)}</TableCell>
-                  <TableCell className={styles.detail}>
-                    <RunBadge
-                      run={run}
-                      ok="All match"
-                      failed={
-                        r?.error !== ""
-                          ? "Couldn't run"
-                          : r.mismatched > 0n
-                            ? `${formatCount(r.mismatched)} quarantined`
-                            : `${formatCount(r.errored)} not checked`
-                      }
-                    />
-                    {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        {runs.length === 0 && <Text className={styles.muted}>No integrity check has run yet.</Text>}
-      </Card>
-      <MoreButton q={q} />
-    </>
+    <RunTable
+      kind={RunKind.SCRUB}
+      noun="integrity checks"
+      empty="No integrity check has run yet."
+      columns={[
+        {
+          header: "Photos re-read",
+          numeric: true,
+          cell: (run) => (run.scrub ? of(run.scrub.checked, run.scrub.eligible) : dash),
+        },
+        { header: "Changed", numeric: true, cell: (run) => (run.scrub ? formatCount(run.scrub.mismatched) : dash) },
+        {
+          header: "iCloud Drive re-read",
+          numeric: true,
+          cell: (run) => (run.scrub?.drive ? of(run.scrub.drive.checked, run.scrub.drive.eligible) : dash),
+        },
+        {
+          header: "Damaged",
+          numeric: true,
+          cell: (run) => (run.scrub?.drive ? formatCount(run.scrub.drive.damaged) : dash),
+        },
+        {
+          header: "Not checked",
+          numeric: true,
+          cell: (run) => (run.scrub ? formatCount(run.scrub.errored + (run.scrub.drive?.errored ?? 0n)) : dash),
+        },
+      ]}
+      result={(run) => {
+        const r = run.scrub;
+        const problems: string[] = [];
+        if (r !== undefined && r.mismatched > 0n) problems.push(`${formatCount(r.mismatched)} quarantined`);
+        if (r?.drive !== undefined && r.drive.damaged > 0n)
+          problems.push(`${formatCount(r.drive.damaged)} Drive files damaged`);
+        const notChecked = r === undefined ? 0n : r.errored + (r.drive?.errored ?? 0n);
+        if (notChecked > 0n) problems.push(`${formatCount(notChecked)} not checked`);
+        return (
+          <>
+            <RunBadge
+              run={run}
+              ok="All match"
+              failed={
+                r !== undefined && r.error !== ""
+                  ? "Couldn't run"
+                  : problems.length === 0
+                    ? "Failed"
+                    : problems.join(", ")
+              }
+            />
+            {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
+          </>
+        );
+      }}
+    />
   );
 }
 
 function BackupRuns() {
-  const styles = useStyles();
-  const q = useInfiniteQuery(
-    AgentService.method.listRuns,
-    { kind: RunKind.LEDGER_BACKUP, pageSize, pageToken: "" },
-    { pageParamKey: "pageToken", getNextPageParam: nextPage },
-  );
-  if (q.isPending) {
-    return <Spinner label="Loading records backups…" />;
-  }
-  if (q.isError) {
-    return <LoadError what="records backups" error={q.error} onRetry={() => void q.refetch()} />;
-  }
-  const runs = q.data.pages.flatMap((p) => p.runs);
+  const styles = useTableStyles();
+  const saved = (run: Run) => run.ledgerBackup?.error === "";
   return (
-    <>
-      <Card className={styles.tableBox}>
-        <Table size="small" aria-label="Records backups" className={styles.table}>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>Started</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Size</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Older copies removed</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
-              <TableHeaderCell>Result</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runs.map((run) => {
-              const r = run.ledgerBackup;
-              const ok = run.result === RunResult.OK;
-              return (
-                <TableRow key={run.id.toString()}>
-                  <TableCell className={styles.nowrap}>{started(run)}</TableCell>
-                  <TableCell className={styles.num}>
-                    {r === undefined || !ok ? "—" : formatBytes(r.sizeBytes)}
-                  </TableCell>
-                  <TableCell className={styles.num}>{r === undefined || !ok ? "—" : formatCount(r.pruned)}</TableCell>
-                  <TableCell className={styles.num}>{took(run)}</TableCell>
-                  <TableCell className={styles.detail}>
-                    <RunBadge run={run} ok="Saved" failed="Failed" />
-                    {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        {runs.length === 0 && <Text className={styles.muted}>No records backup has been made yet.</Text>}
-      </Card>
-      <MoreButton q={q} />
-    </>
+    <RunTable
+      kind={RunKind.LEDGER_BACKUP}
+      noun="records backups"
+      empty="No records backup has been made yet."
+      columns={[
+        {
+          header: "Size",
+          numeric: true,
+          cell: (run) => (saved(run) ? formatBytes(run.ledgerBackup?.sizeBytes ?? 0n) : dash),
+        },
+        {
+          header: "Older copies removed",
+          numeric: true,
+          cell: (run) => (saved(run) ? formatCount(run.ledgerBackup?.pruned ?? 0n) : dash),
+        },
+      ]}
+      result={(run) => (
+        <>
+          <RunBadge run={run} ok="Saved" failed="Failed" />
+          {run.ledgerBackup !== undefined && run.ledgerBackup.error !== "" && (
+            <Text className={styles.muted}> {run.ledgerBackup.error}</Text>
+          )}
+        </>
+      )}
+    />
   );
 }
 
 function IPhoneBackupRuns() {
-  const styles = useStyles();
-  const q = useInfiniteQuery(
-    AgentService.method.listRuns,
-    { kind: RunKind.IPHONE_BACKUP, pageSize, pageToken: "" },
-    { pageParamKey: "pageToken", getNextPageParam: nextPage },
-  );
-  if (q.isPending) {
-    return <Spinner label="Loading iPhone backup checks…" />;
-  }
-  if (q.isError) {
-    return <LoadError what="iPhone backup checks" error={q.error} onRetry={() => void q.refetch()} />;
-  }
-  const runs = q.data.pages.flatMap((p) => p.runs);
+  const styles = useTableStyles();
   return (
-    <>
-      <Card className={styles.tableBox}>
-        <Table size="small" aria-label="iPhone backup checks" className={styles.table}>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>Checked</TableHeaderCell>
-              <TableHeaderCell>Devices</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
-              <TableHeaderCell>Result</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runs.map((run) => {
-              const r = run.iphoneBackup;
-              return (
-                <TableRow key={run.id.toString()}>
-                  <TableCell className={styles.nowrap}>{started(run)}</TableCell>
-                  <TableCell className={styles.detail}>
-                    {r === undefined
-                      ? "—"
-                      : r.devices.length === 0
-                        ? r.error === ""
-                          ? "No backup found"
-                          : "—"
-                        : r.devices.map((d) => (
-                            <div key={d.udid}>
-                              {d.name}{" "}
-                              <Badge appearance="tint" color={iphoneStateBadge[d.state].color}>
-                                {iphoneStateBadge[d.state].label}
-                              </Badge>
-                              {d.reasons.length > 0 && <Text className={styles.muted}> {d.reasons.join("; ")}</Text>}
-                            </div>
-                          ))}
-                  </TableCell>
-                  <TableCell className={styles.num}>{took(run)}</TableCell>
-                  <TableCell className={styles.detail}>
-                    <RunBadge run={run} ok="Healthy" failed="Needs attention" />
-                    {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        {runs.length === 0 && <Text className={styles.muted}>The iPhone backups haven&apos;t been checked yet.</Text>}
-      </Card>
-      <MoreButton q={q} />
-    </>
+    <RunTable
+      kind={RunKind.IPHONE_BACKUP}
+      noun="iPhone backup checks"
+      empty="The iPhone backups haven't been checked yet."
+      columns={[
+        {
+          header: "Backups",
+          cell: (run) => {
+            const r = run.iphoneBackup;
+            if (r === undefined) return dash;
+            if (r.devices.length === 0) return r.error === "" && r.dirErrors.length === 0 ? "No backup found" : dash;
+            return r.devices.map((d) => (
+              <div key={d.dir}>
+                {d.name}{" "}
+                <Badge appearance="tint" color={iphoneStateBadge[d.state].color}>
+                  {iphoneStateBadge[d.state].label}
+                </Badge>
+                {d.reasons.length > 0 && <Text className={styles.muted}> {d.reasons.join("; ")}</Text>}
+              </div>
+            ));
+          },
+        },
+        {
+          header: "Archived copies",
+          numeric: true,
+          cell: (run) => (run.iphoneBackup ? formatCount(run.iphoneBackup.archived) : dash),
+        },
+      ]}
+      result={(run) => {
+        const r = run.iphoneBackup;
+        return (
+          <>
+            <RunBadge run={run} ok="Checked" failed="Needs attention" />
+            {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
+            {r?.dirErrors.map((e) => (
+              <Text key={e} block className={styles.muted}>
+                {e}
+              </Text>
+            ))}
+          </>
+        );
+      }}
+    />
   );
 }
-
-const driveOutcomeLabel: Record<DriveSyncOutcome, string> = {
-  [DriveSyncOutcome.UNSPECIFIED]: "",
-  [DriveSyncOutcome.OK]: "",
-  [DriveSyncOutcome.PARTIAL]: "Some items failed; retried next sync.",
-  [DriveSyncOutcome.SIGN_IN_REQUIRED]: "iCloud sign-in needed (homecloud icloud login).",
-  [DriveSyncOutcome.SKIPPED_LOW_SPACE]: "Skipped: the archive drive is almost full.",
-  [DriveSyncOutcome.ARCHIVE_UNAVAILABLE]: "Skipped: the archive drive isn't available.",
-  [DriveSyncOutcome.ERROR]: "",
-};
 
 function DriveSyncRuns() {
-  const styles = useStyles();
-  const q = useInfiniteQuery(
-    AgentService.method.listRuns,
-    { kind: RunKind.DRIVE_SYNC, pageSize, pageToken: "" },
-    { pageParamKey: "pageToken", getNextPageParam: nextPage },
-  );
-  if (q.isPending) {
-    return <Spinner label="Loading iCloud Drive syncs…" />;
-  }
-  if (q.isError) {
-    return <LoadError what="iCloud Drive syncs" error={q.error} onRetry={() => void q.refetch()} />;
-  }
-  const runs = q.data.pages.flatMap((p) => p.runs);
+  const styles = useTableStyles();
+  // Counts mean something only for a sync that got as far as listing.
+  const count = (run: Run, n: (r: NonNullable<Run["driveSync"]>) => bigint) =>
+    run.driveSync !== undefined && driveSyncListed(run.driveSync) ? formatCount(n(run.driveSync)) : dash;
   return (
-    <>
-      <Card className={styles.tableBox}>
-        <Table size="small" aria-label="iCloud Drive syncs" className={styles.table}>
-          <TableHeader>
-            <TableRow>
-              <TableHeaderCell>Started</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Listed</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>New</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Changed</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Moved</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Deleted in iCloud</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Downloaded</TableHeaderCell>
-              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
-              <TableHeaderCell>Result</TableHeaderCell>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runs.map((run) => {
-              const r = run.driveSync;
-              const note = r === undefined ? "" : r.error !== "" ? r.error : driveOutcomeLabel[r.outcome];
-              // Counts mean something only for a sync that listed iCloud Drive.
-              const listed =
-                r !== undefined && (r.outcome === DriveSyncOutcome.OK || r.outcome === DriveSyncOutcome.PARTIAL);
-              const count = (n: bigint | undefined) => (listed && n !== undefined ? formatCount(n) : "—");
-              return (
-                <TableRow key={run.id.toString()}>
-                  <TableCell className={styles.nowrap}>{started(run)}</TableCell>
-                  <TableCell className={styles.num}>{count(r?.listed)}</TableCell>
-                  <TableCell className={styles.num}>{count(r?.archived)}</TableCell>
-                  <TableCell className={styles.num}>{count(r?.changed)}</TableCell>
-                  <TableCell className={styles.num}>{count(r?.moved)}</TableCell>
-                  <TableCell className={styles.num}>{count(r?.deleted)}</TableCell>
-                  <TableCell className={styles.num}>{listed ? formatBytes(r.downloadedBytes) : "—"}</TableCell>
-                  <TableCell className={styles.num}>{took(run)}</TableCell>
-                  <TableCell className={styles.detail}>
-                    <RunBadge run={run} ok="Up to date" failed="Needs attention" />
-                    {note !== "" && <Text className={styles.muted}> {note}</Text>}
-                    {r?.failures.map((f) => (
-                      <Text key={f} block className={styles.muted}>
-                        {f}
-                      </Text>
-                    ))}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        {runs.length === 0 && <Text className={styles.muted}>iCloud Drive hasn&apos;t been synced yet.</Text>}
-      </Card>
-      <MoreButton q={q} />
-    </>
+    <RunTable
+      kind={RunKind.DRIVE_SYNC}
+      noun="iCloud Drive syncs"
+      empty="iCloud Drive hasn't been synced yet."
+      columns={[
+        { header: "Listed", numeric: true, cell: (run) => count(run, (r) => r.listed) },
+        { header: "New", numeric: true, cell: (run) => count(run, (r) => r.archived) },
+        { header: "Changed", numeric: true, cell: (run) => count(run, (r) => r.changed) },
+        { header: "Moved", numeric: true, cell: (run) => count(run, (r) => r.moved) },
+        { header: "Deleted in iCloud", numeric: true, cell: (run) => count(run, (r) => r.deleted) },
+        { header: "Back in iCloud", numeric: true, cell: (run) => count(run, (r) => r.restored) },
+        { header: "Repaired", numeric: true, cell: (run) => count(run, (r) => r.repaired) },
+        { header: "Failed", numeric: true, cell: (run) => count(run, (r) => r.failed) },
+        {
+          header: "Downloaded",
+          numeric: true,
+          cell: (run) =>
+            run.driveSync !== undefined && driveSyncListed(run.driveSync)
+              ? formatBytes(run.driveSync.downloadedBytes)
+              : dash,
+        },
+      ]}
+      result={(run) => {
+        const r = run.driveSync;
+        const outcome = r?.outcome ?? DriveSyncOutcome.UNSPECIFIED;
+        return (
+          <>
+            <RunBadge run={run} ok="Up to date" failed={driveSyncOutcomeBadge[outcome].label} />
+            {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
+            {r?.failures.map((f) => (
+              <Text key={f} block className={styles.muted}>
+                {f}
+              </Text>
+            ))}
+          </>
+        );
+      }}
+    />
   );
-}
-
-function RunBadge({ run, ok, failed }: { run: Run; ok: string; failed: string }) {
-  switch (run.result) {
-    case RunResult.RUNNING:
-      return (
-        <Badge appearance="tint" color="brand">
-          Running
-        </Badge>
-      );
-    case RunResult.OK:
-      return (
-        <Badge appearance="tint" color="success">
-          {ok}
-        </Badge>
-      );
-    case RunResult.FAILED:
-      return (
-        <Badge appearance="tint" color="danger">
-          {failed}
-        </Badge>
-      );
-    case RunResult.UNSPECIFIED:
-      return null;
-  }
 }
 
 const driveEventKinds = [
@@ -492,41 +309,30 @@ const driveEventKinds = [
   EventKind.DRIVE_FILE_DELETED,
   EventKind.DRIVE_FILE_RESTORED,
   EventKind.DRIVE_FILE_DAMAGED,
+  EventKind.DRIVE_FILE_REPAIRED,
 ];
 
-const driveChangeLabel: Record<DriveFileChange, { kind: string; color: "danger" | "success" | "informative" }> = {
-  [DriveFileChange.UNSPECIFIED]: { kind: "iCloud Drive", color: "informative" },
-  [DriveFileChange.ARCHIVED]: { kind: "Archived", color: "success" },
-  [DriveFileChange.CHANGED]: { kind: "Changed in iCloud", color: "informative" },
-  [DriveFileChange.MOVED]: { kind: "Moved", color: "informative" },
-  [DriveFileChange.DELETED]: { kind: "Deleted in iCloud", color: "informative" },
-  [DriveFileChange.RESTORED]: { kind: "Back in iCloud", color: "success" },
-  [DriveFileChange.DAMAGED]: { kind: "Damaged copy", color: "danger" },
-};
-
-function driveFileText(d: {
-  change: DriveFileChange;
-  path: string;
-  fromPath: string;
-  keptAs: string;
-  reason: string;
-  sizeBytes: bigint;
-}): string {
+/** A Drive file event as text; kept copies are named within the archive's Drive folder. */
+function driveFileText(d: DriveFileEvent, driveDir: string | undefined): string {
+  const kept =
+    d.keptAs === ""
+      ? ""
+      : `; the previous copy is kept at ${driveDir === undefined ? d.keptAs : `${driveDir}/${d.keptAs}`}`;
   switch (d.change) {
     case DriveFileChange.ARCHIVED:
       return `${d.path} (${formatBytes(d.sizeBytes)})`;
     case DriveFileChange.CHANGED:
-      return d.keptAs === "" ? d.path : `${d.path}; the previous copy is kept at Drive/${d.keptAs}`;
+    case DriveFileChange.REPAIRED:
+      return d.path + kept;
     case DriveFileChange.MOVED:
       return `${d.fromPath} → ${d.path}`;
     case DriveFileChange.DELETED:
       return `${d.path}; the archived copy is kept`;
     case DriveFileChange.RESTORED:
-      return d.path;
-    case DriveFileChange.DAMAGED:
-      return `${d.path}: ${d.reason}. It is downloaded again at the next sync.`;
     case DriveFileChange.UNSPECIFIED:
       return d.path;
+    case DriveFileChange.DAMAGED:
+      return `${d.path}: ${d.reason}. It is downloaded again at the next iCloud Drive sync.`;
   }
 }
 
@@ -558,7 +364,7 @@ function isFilter(v: string | undefined): v is Filter {
   return v !== undefined && Object.hasOwn(filters, v);
 }
 
-function describe(e: Event): { kind: string; color: "danger" | "success" | "informative"; text: string } {
+function describe(e: Event, driveDir: string | undefined): { kind: string; color: BadgeColor; text: string } {
   switch (e.detail.case) {
     case "renditionChanged":
       return {
@@ -586,29 +392,18 @@ function describe(e: Event): { kind: string; color: "danger" | "success" | "info
         color: "informative",
         text: `The downloader now keeps the ${e.detail.value.version} version at ${e.detail.value.to} (was ${e.detail.value.from}). It is checked again there.`,
       };
-    case "driveHealthChanged":
-      return {
-        kind: "Drive health",
-        color:
-          e.detail.value.to === DriveHealthState.OK
-            ? "success"
-            : e.detail.value.to === DriveHealthState.UNAVAILABLE
-              ? "informative"
-              : "danger",
-        text: [driveStateLabel[e.detail.value.to], ...e.detail.value.reasons].join(": "),
-      };
+    case "driveHealthChanged": {
+      const b = driveHealthBadge[e.detail.value.to];
+      return { kind: "Drive health", color: b.color, text: [b.label, ...e.detail.value.reasons].join(": ") };
+    }
     case "iphoneBackupChanged": {
       const c = e.detail.value;
-      const tone = iphoneStateBadge[c.to].color;
-      return {
-        kind: "iPhone backup",
-        color: tone === "success" ? "success" : tone === "informative" ? "informative" : "danger",
-        text: [`${c.deviceName}: ${iphoneStateBadge[c.to].label}`, ...c.reasons].join(": "),
-      };
+      const b = iphoneStateBadge[c.to];
+      return { kind: "iPhone backup", color: b.color, text: [`${c.deviceName}: ${b.label}`, ...c.reasons].join(": ") };
     }
     case "driveFile": {
-      const label = driveChangeLabel[e.detail.value.change];
-      return { kind: label.kind, color: label.color, text: driveFileText(e.detail.value) };
+      const b = driveFileChangeBadge[e.detail.value.change];
+      return { kind: b.label, color: b.color, text: driveFileText(e.detail.value, driveDir) };
     }
     case undefined:
       return { kind: "Event", color: "informative", text: "" };
@@ -617,13 +412,16 @@ function describe(e: Event): { kind: string; color: "danger" | "success" | "info
 
 function Events() {
   const styles = useStyles();
+  const table = useTableStyles();
   const [filter, setFilter] = useState<Filter>("all");
+  const settings = useQuery(AgentService.method.getSettings, {});
   const q = useInfiniteQuery(
     AgentService.method.listEvents,
-    { kinds: [...filters[filter].kinds], pageSize, pageToken: "" },
+    { kinds: [...filters[filter].kinds], pageToken: "" },
     { pageParamKey: "pageToken", getNextPageParam: nextPage },
   );
   const events = q.data?.pages.flatMap((p) => p.events) ?? [];
+  const driveDir = settings.data?.settings?.driveDir;
   return (
     <>
       <div className={styles.filters}>
@@ -650,8 +448,8 @@ function Events() {
       ) : q.isError ? (
         <LoadError what="events" error={q.error} onRetry={() => void q.refetch()} />
       ) : (
-        <Card className={styles.tableBox}>
-          <Table size="small" aria-label="Events" className={styles.table}>
+        <Card className={table.tableBox}>
+          <Table size="small" aria-label="Events" className={table.table}>
             <TableHeader>
               <TableRow>
                 <TableHeaderCell>When</TableHeaderCell>
@@ -662,28 +460,28 @@ function Events() {
             </TableHeader>
             <TableBody>
               {events.map((e) => {
-                const d = describe(e);
+                const d = describe(e, driveDir);
                 const at = toDate(e.at);
                 return (
                   <TableRow key={e.id.toString()}>
-                    <TableCell className={styles.nowrap}>{at === undefined ? "—" : formatWhen(at)}</TableCell>
+                    <TableCell className={table.nowrap}>{at === undefined ? dash : formatWhen(at)}</TableCell>
                     <TableCell>
                       <Badge appearance="tint" color={d.color}>
                         {d.kind}
                       </Badge>
                     </TableCell>
-                    <TableCell className={styles.mono}>{e.asset?.filename ?? ""}</TableCell>
-                    <TableCell className={styles.detail}>{d.text}</TableCell>
+                    <TableCell className={table.mono}>{e.asset?.filename ?? ""}</TableCell>
+                    <TableCell className={table.detail}>{d.text}</TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
-          {events.length === 0 && <Text className={styles.muted}>Nothing recorded yet.</Text>}
+          {events.length === 0 && <Text className={table.muted}>Nothing recorded yet.</Text>}
         </Card>
       )}
       <MoreButton q={q} />
-      <Text size={200} className={styles.muted}>
+      <Text size={200} className={table.muted}>
         The event log is append-only: entries can&apos;t be edited or removed, including by homecloud itself.
       </Text>
     </>

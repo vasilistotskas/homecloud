@@ -1,30 +1,30 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { shellCommand } from "./shell";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
 describe("shellCommand", () => {
-  it("uses PowerShell's call operator on Windows", () => {
-    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" });
+  it("single-quotes every word for PowerShell and runs the program through the call operator", () => {
     expect(
-      shellCommand(String.raw`C:\Program Files\homecloud\homecloud.exe`, [
+      shellCommand("windows", String.raw`C:\Program Files\homecloud\homecloud.exe`, [
         "icloud",
         "login",
         "--config",
-        String.raw`C:\Users\me\AppData\Roaming\homecloud\config.toml`,
+        String.raw`C:\Users\O'Brien\AppData\Roaming\homecloud\config.toml`,
       ]),
     ).toBe(
-      String.raw`& "C:\Program Files\homecloud\homecloud.exe" icloud login --config C:\Users\me\AppData\Roaming\homecloud\config.toml`,
+      String.raw`& 'C:\Program Files\homecloud\homecloud.exe' 'icloud' 'login' '--config' 'C:\Users\O''Brien\AppData\Roaming\homecloud\config.toml'`,
     );
   });
 
-  it("quotes paths with spaces elsewhere", () => {
-    vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 (X11; Linux x86_64)" });
-    expect(shellCommand("/usr/local/bin/homecloud", ["icloud", "login", "--config", "/home/me/my config.toml"])).toBe(
-      `"/usr/local/bin/homecloud" icloud login --config "/home/me/my config.toml"`,
+  it("keeps PowerShell's special characters literal", () => {
+    expect(shellCommand("windows", String.raw`C:\a\b.exe`, ["$env:HOME `n ; & (x)"])).toBe(
+      String.raw`& 'C:\a\b.exe' '$env:HOME ` + "`n ; & (x)'",
+    );
+  });
+
+  it("single-quotes every word for POSIX shells", () => {
+    expect(shellCommand("linux", "/usr/local/bin/homecloud", ["--config", "/home/me/it's $HOME `x`.toml"])).toBe(
+      String.raw`'/usr/local/bin/homecloud' '--config' '/home/me/it'\''s $HOME ` + "`x`.toml'",
     );
   });
 });

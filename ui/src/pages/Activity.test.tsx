@@ -162,7 +162,7 @@ describe("Activity", () => {
     render(<App transport={transport} platform={browser} />);
     await userEvent.setup().click(await screen.findByRole("tab", { name: "iCloud Drive" }));
     expect(await screen.findByText(/x.pdf: downloaded bytes do not match/)).toBeInTheDocument();
-    expect(screen.getByText("Needs attention")).toBeInTheDocument();
+    expect(screen.getByText("Some items failed")).toBeInTheDocument();
   });
 
   it("describes iCloud Drive events", async () => {
@@ -172,7 +172,7 @@ describe("Activity", () => {
           yield { overview: create(OverviewSchema, {}) };
           await never();
         },
-        getSettings: () => ({ settings: create(SettingsSchema, {}) }),
+        getSettings: () => ({ settings: create(SettingsSchema, { driveDir: "E:/HomeCloud/Drive" }) }),
         listRuns: () => create(ListRunsResponseSchema),
         listEvents: (req) =>
           create(ListEventsResponseSchema, {
@@ -191,6 +191,19 @@ describe("Activity", () => {
                       },
                     },
                   },
+                  {
+                    id: 6n,
+                    at: { seconds: 1_790_000_100n },
+                    asset: { library: "icloud_drive", assetId: "FILE::z::C", filename: "c.pdf" },
+                    detail: {
+                      case: "driveFile",
+                      value: {
+                        change: DriveFileChange.REPAIRED,
+                        path: "iCloud Drive/c.pdf",
+                        keptAs: ".versions/20261006T120000Z/iCloud Drive/c.pdf",
+                      },
+                    },
+                  },
                 ]
               : [],
           }),
@@ -200,5 +213,11 @@ describe("Activity", () => {
     render(<App transport={transport} platform={browser} />);
     await userEvent.setup().click(await screen.findByRole("tab", { name: "Events" }));
     expect(await screen.findByText("iCloud Drive/a.pdf → iCloud Drive/Docs/b.pdf")).toBeInTheDocument();
+    expect(screen.getByText("Repaired")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "iCloud Drive/c.pdf; the previous copy is kept at E:/HomeCloud/Drive/.versions/20261006T120000Z/iCloud Drive/c.pdf",
+      ),
+    ).toBeInTheDocument();
   });
 });

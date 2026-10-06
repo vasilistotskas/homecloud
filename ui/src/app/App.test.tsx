@@ -209,6 +209,7 @@ describe("App", () => {
             driveSyncIntervalSeconds: 21_600n,
           }),
         }),
+        getInfo: () => ({ agentVersion: "test", apiVersion: "v1", os: "windows" }),
         listRuns: () => create(ListRunsResponseSchema),
       });
     });
@@ -217,16 +218,40 @@ describe("App", () => {
     expect(screen.getByText("23 files · 43.9 MiB")).toBeInTheDocument();
     expect(screen.getByText("1 (copies kept)")).toBeInTheDocument();
     // The banner and the iCloud Drive card both offer it.
-    const [signIn] = screen.getAllByRole("button", { name: "Sign in…" });
+    const [signIn] = screen.getAllByRole("button", { name: "Sign in to iCloud Drive" });
     if (signIn === undefined) {
       throw new Error("no sign-in button");
     }
     await userEvent.setup().click(signIn);
-    const command = await screen.findByText(/icloud login --config/);
-    const prefix = navigator.userAgent.includes("Windows") ? "& " : "";
+    const command = await screen.findByText(/'icloud' 'login' '--config'/);
     expect(command).toHaveTextContent(
-      `${prefix}"${String.raw`C:\Program Files\homecloud\homecloud.exe`}" icloud login --config ${String.raw`C:\cfg\config.toml`}`,
+      String.raw`& 'C:\Program Files\homecloud\homecloud.exe' 'icloud' 'login' '--config' 'C:\cfg\config.toml'`,
     );
+  });
+
+  it("shows the most severe problem when several are present", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 10n, quarantined: 2n },
+              appleAccount: { state: AppleAccountState.SIGN_IN_REQUIRED },
+              lastDriveSync: {
+                result: RunResult.FAILED,
+                driveSync: { outcome: DriveSyncOutcome.SIGN_IN_REQUIRED },
+              },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("2 items failed verification")).toBeInTheDocument();
+    expect(screen.queryByText("Apple sign-in needed")).not.toBeInTheDocument();
   });
 
   it("says the archive drive is missing when the agent reports it", async () => {

@@ -1,4 +1,21 @@
-import { AssetState, IPhoneBackupState, MediaType, Tier } from "../gen/homecloud/agent/v1/agent_pb";
+import {
+  AssetState,
+  DriveFileChange,
+  DriveHealthState,
+  DriveSyncOutcome,
+  IPhoneBackupState,
+  MediaType,
+  Tier,
+} from "../gen/homecloud/agent/v1/agent_pb";
+
+/** The badge colours the app uses. */
+export type BadgeColor = "brand" | "success" | "warning" | "danger" | "informative";
+
+/** A short label and its badge colour. */
+export interface Labelled {
+  label: string;
+  color: BadgeColor;
+}
 
 export const tierLabel: Record<Tier, string> = {
   [Tier.UNSPECIFIED]: "Unknown",
@@ -7,10 +24,7 @@ export const tierLabel: Record<Tier, string> = {
   [Tier.PROBE]: "Playability",
 };
 
-export const iphoneStateBadge: Record<
-  IPhoneBackupState,
-  { label: string; color: "success" | "warning" | "danger" | "informative" }
-> = {
+export const iphoneStateBadge: Record<IPhoneBackupState, Labelled> = {
   [IPhoneBackupState.UNSPECIFIED]: { label: "Unknown", color: "informative" },
   [IPhoneBackupState.OK]: { label: "Healthy", color: "success" },
   [IPhoneBackupState.IN_PROGRESS]: { label: "Backing up", color: "informative" },
@@ -20,6 +34,53 @@ export const iphoneStateBadge: Record<
   [IPhoneBackupState.UNENCRYPTED]: { label: "Not encrypted", color: "danger" },
   [IPhoneBackupState.UNREADABLE]: { label: "Unreadable files", color: "danger" },
   [IPhoneBackupState.INVALID]: { label: "Not a backup", color: "danger" },
+};
+
+/** How serious an iPhone backup state is: higher is worse. */
+export const iphoneSeverity: Record<IPhoneBackupState, number> = {
+  [IPhoneBackupState.UNSPECIFIED]: 0,
+  [IPhoneBackupState.OK]: 0,
+  [IPhoneBackupState.IN_PROGRESS]: 1,
+  [IPhoneBackupState.SHRUNK]: 2,
+  [IPhoneBackupState.STALE]: 3,
+  [IPhoneBackupState.INCOMPLETE]: 4,
+  [IPhoneBackupState.UNENCRYPTED]: 5,
+  [IPhoneBackupState.UNREADABLE]: 6,
+  [IPhoneBackupState.INVALID]: 7,
+};
+
+export const driveHealthBadge: Record<DriveHealthState, Labelled> = {
+  [DriveHealthState.UNSPECIFIED]: { label: "Not checked yet", color: "informative" },
+  [DriveHealthState.OK]: { label: "Healthy", color: "success" },
+  [DriveHealthState.WARNING]: { label: "Warning", color: "warning" },
+  [DriveHealthState.FAILING]: { label: "Failing", color: "danger" },
+  [DriveHealthState.UNAVAILABLE]: { label: "Health unavailable", color: "informative" },
+};
+
+export const driveSyncOutcomeBadge: Record<DriveSyncOutcome, Labelled> = {
+  [DriveSyncOutcome.UNSPECIFIED]: { label: "Not synced yet", color: "informative" },
+  [DriveSyncOutcome.OK]: { label: "Up to date", color: "success" },
+  [DriveSyncOutcome.PARTIAL]: { label: "Some items failed", color: "warning" },
+  [DriveSyncOutcome.SIGN_IN_REQUIRED]: { label: "Sign-in needed", color: "warning" },
+  [DriveSyncOutcome.SKIPPED_LOW_SPACE]: { label: "Skipped: drive almost full", color: "warning" },
+  [DriveSyncOutcome.ARCHIVE_UNAVAILABLE]: { label: "Skipped: archive drive missing", color: "danger" },
+  [DriveSyncOutcome.ERROR]: { label: "Couldn't sync", color: "danger" },
+};
+
+/** Whether a Drive sync got as far as listing iCloud Drive, so its counts mean something. */
+export function driveSyncListed(r: { listed: bigint; archived: bigint; changed: bigint; moved: bigint }): boolean {
+  return r.listed > 0n || r.archived > 0n || r.changed > 0n || r.moved > 0n;
+}
+
+export const driveFileChangeBadge: Record<DriveFileChange, Labelled> = {
+  [DriveFileChange.UNSPECIFIED]: { label: "iCloud Drive", color: "informative" },
+  [DriveFileChange.ARCHIVED]: { label: "Archived", color: "success" },
+  [DriveFileChange.CHANGED]: { label: "Changed in iCloud", color: "informative" },
+  [DriveFileChange.MOVED]: { label: "Moved", color: "informative" },
+  [DriveFileChange.DELETED]: { label: "Deleted in iCloud", color: "informative" },
+  [DriveFileChange.RESTORED]: { label: "Back in iCloud", color: "success" },
+  [DriveFileChange.DAMAGED]: { label: "Damaged copy", color: "danger" },
+  [DriveFileChange.REPAIRED]: { label: "Repaired", color: "success" },
 };
 
 export const stateLabel: Record<AssetState, string> = {

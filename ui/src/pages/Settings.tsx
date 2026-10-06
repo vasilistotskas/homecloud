@@ -18,8 +18,9 @@ import { useThemePreference, type ThemePreference } from "../app/themeContext";
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { useNotify } from "../components/toast";
+import { useCopy } from "../components/useCopy";
 import { formatInterval, formatSpan } from "../format";
-import { shellCommand } from "../shell";
+import { icloudLoginCommand } from "../shell";
 import { AgentService } from "../gen/homecloud/agent/v1/agent_pb";
 
 const useStyles = makeStyles({
@@ -84,6 +85,7 @@ const themes: { value: ThemePreference; label: string }[] = [
 export function SettingsPage() {
   const styles = useStyles();
   const notify = useNotify();
+  const copy = useCopy();
   const settings = useQuery(AgentService.method.getSettings, {});
   const info = useQuery(AgentService.method.getInfo, {});
   const { preference, setPreference } = useThemePreference();
@@ -116,16 +118,6 @@ export function SettingsPage() {
       </Page>
     );
   }
-  const copy = (text: string, what: string) => {
-    navigator.clipboard.writeText(text).then(
-      () => {
-        notify("success", `${what} copied`);
-      },
-      () => {
-        notify("error", `Couldn't copy the ${what.toLowerCase()}`);
-      },
-    );
-  };
 
   return (
     <Page title="Settings">
@@ -203,7 +195,11 @@ export function SettingsPage() {
         </Row>
         <Row
           label="Sign-in"
-          detail={`homecloud's own iCloud session; renew it with: ${shellCommand(s.cli, ["icloud", "login", "--config", s.configPath])}`}
+          detail={
+            info.data === undefined
+              ? "homecloud's own iCloud session"
+              : `homecloud's own iCloud session; renew it with: ${icloudLoginCommand(info.data.os, s)}`
+          }
           mono
         />
       </Group>

@@ -33,8 +33,6 @@ import { useNotify } from "../components/toast";
 import { formatBytes, formatCount, formatWhen, toDate } from "../format";
 import { AgentService, AssetKind, AssetState, type LibraryItem } from "../gen/homecloud/agent/v1/agent_pb";
 
-const pageSize = 60;
-
 const useStyles = makeStyles({
   filters: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.spacingHorizontalS },
   split: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalL, alignItems: "flex-start" },
@@ -130,7 +128,7 @@ export function LibraryPage() {
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const q = useInfiniteQuery(
     AgentService.method.listAssets,
-    { pageSize, pageToken: "", kind, hidden },
+    { pageToken: "", kind, hidden },
     {
       pageParamKey: "pageToken",
       getNextPageParam: (last) => (last.nextPageToken === "" ? undefined : last.nextPageToken),

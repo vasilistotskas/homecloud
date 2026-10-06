@@ -102,7 +102,7 @@ export function ConnectPage() {
             }
           }}
         >
-          <Field label="One-time code" hint="Valid for 2 minutes, works once." required>
+          <Field label="One-time code" hint="Works once, until the time homecloud open printed." required>
             <Input
               className={styles.code}
               value={code}

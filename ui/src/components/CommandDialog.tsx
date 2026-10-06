@@ -15,7 +15,8 @@ import {
 import { CopyRegular } from "@fluentui/react-icons";
 import type { ReactNode } from "react";
 
-import { useNotify } from "./toast";
+import { LoadError } from "./LoadError";
+import { useCopy } from "./useCopy";
 
 const useStyles = makeStyles({
   command: {
@@ -31,50 +32,51 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
+/** What a CommandDialog shows: the command, or why it is not available yet. */
+export type CommandState =
+  { kind: "ready"; command: string } | { kind: "loading" } | { kind: "error"; error: unknown; retry: () => void };
+
 /** A dialog that explains a terminal command and lets the user copy it. */
 export function CommandDialog({
   trigger,
+  triggerLabel,
   title,
   intro,
   command,
   after,
 }: {
   trigger: string;
+  /** The trigger's accessible name, when several dialogs share a trigger text. */
+  triggerLabel: string;
   title: string;
   intro: ReactNode;
-  /** Undefined while the settings that make up the command load. */
-  command: string | undefined;
+  command: CommandState;
   after: ReactNode;
 }) {
   const styles = useStyles();
-  const notify = useNotify();
+  const copy = useCopy();
   return (
     <Dialog>
       <DialogTrigger disableButtonEnhancement>
-        <Button appearance="primary">{trigger}</Button>
+        <Button appearance="primary" aria-label={triggerLabel}>
+          {trigger}
+        </Button>
       </DialogTrigger>
       <DialogSurface>
         <DialogBody>
           <DialogTitle>{title}</DialogTitle>
           <DialogContent>
             <Text block>{intro}</Text>
-            {command === undefined ? (
-              <Spinner size="tiny" />
-            ) : (
+            {command.kind === "loading" && <Spinner size="tiny" label="Loading the command…" />}
+            {command.kind === "error" && <LoadError what="the command" error={command.error} onRetry={command.retry} />}
+            {command.kind === "ready" && (
               <div className={styles.command}>
-                <span style={{ flex: 1 }}>{command}</span>
+                <span style={{ flex: 1 }}>{command.command}</span>
                 <Button
                   icon={<CopyRegular />}
                   aria-label="Copy command"
                   onClick={() => {
-                    navigator.clipboard.writeText(command).then(
-                      () => {
-                        notify("success", "Command copied");
-                      },
-                      () => {
-                        notify("error", "Couldn't copy the command");
-                      },
-                    );
+                    copy(command.command, "Command");
                   }}
                 />
               </div>

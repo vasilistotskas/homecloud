@@ -1,7 +1,8 @@
 import { Badge } from "@fluentui/react-components";
 
 import { DownloadOutcome, RunResult, type Run } from "../gen/homecloud/agent/v1/agent_pb";
-import { formatCount, formatDuration, formatWhen, toDate } from "../format";
+import { formatCount } from "../format";
+import { started, took } from "./tables";
 
 /** One sync cycle, formatted for tables. */
 export interface RunRow {
@@ -82,8 +83,6 @@ function resultBadge(run: Run): React.ReactNode {
 }
 
 export function runRow(run: Run): RunRow {
-  const started = toDate(run.startedAt);
-  const finished = toDate(run.finishedAt);
   // A cycle that was interrupted, or stopped because the archive drive was
   // missing, recorded no counts: they are unknown, not zero.
   const c =
@@ -93,15 +92,14 @@ export function runRow(run: Run): RunRow {
   const n = (v: bigint | undefined) => (v === undefined ? "—" : formatCount(v));
   return {
     id: run.id.toString(),
-    started: started === undefined ? "—" : formatWhen(started),
+    started: started(run),
     download: downloadLabel(run),
     inICloud: n(c?.assets),
     added: n(c?.newRenditions),
     changed: n(c?.changedRenditions),
     checked: n(c?.checked),
     failed: n(c === undefined ? undefined : c.mismatched + c.errored),
-    took:
-      started !== undefined && finished !== undefined ? formatDuration(finished.getTime() - started.getTime()) : "—",
+    took: took(run),
     result: resultBadge(run),
   };
 }
