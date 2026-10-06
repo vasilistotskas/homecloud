@@ -115,6 +115,20 @@ describe("App", () => {
     expect(await screen.findByText("re-read every 20 weeks")).toBeInTheDocument();
   });
 
+  it("says the archive drive is missing when the agent reports it", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        watchOverview: () =>
+          failingStream(new ConnectError("archive drive not available: volume not mounted", Code.FailedPrecondition)),
+        getSettings: () => ({ settings }),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("The archive drive isn't available")).toBeInTheDocument();
+    expect(screen.getByText(/volume not mounted/)).toBeInTheDocument();
+    expect(screen.getByText("Archive drive unavailable")).toBeInTheDocument();
+  });
+
   it("explains when the agent cannot be reached", async () => {
     const transport = createRouterTransport(({ service }) => {
       service(AgentService, {

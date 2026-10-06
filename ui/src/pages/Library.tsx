@@ -15,11 +15,18 @@ import {
   ToggleButton,
   tokens,
 } from "@fluentui/react-components";
-import { EyeOffRegular, FolderOpenRegular, LiveRegular, VideoClipRegular } from "@fluentui/react-icons";
+import {
+  EyeOffRegular,
+  FolderOpenRegular,
+  ImageOffRegular,
+  LiveRegular,
+  VideoClipRegular,
+} from "@fluentui/react-icons";
 import { useEffect, useRef, useState } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
+import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { mediaLabel } from "../components/labels";
 import { useNotify } from "../components/toast";
@@ -51,6 +58,14 @@ const useStyles = makeStyles({
   },
   selected: { outline: `3px solid ${tokens.colorBrandStroke1}`, outlineOffset: "2px" },
   img: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+  noImage: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+    height: "100%",
+    color: tokens.colorNeutralForeground3,
+  },
   tag: {
     position: "absolute",
     right: "6px",
@@ -112,7 +127,7 @@ export function LibraryPage() {
   const { overview } = useOverview();
   const [kind, setKind] = useState<AssetKind>(AssetKind.UNSPECIFIED);
   const [hidden, setHidden] = useState(false);
-  const [selected, setSelected] = useState<LibraryItem | undefined>(undefined);
+  const [selected, setSelected] = useState<string | undefined>(undefined);
   const q = useInfiniteQuery(
     AgentService.method.listAssets,
     { pageSize, pageToken: "", kind, hidden },
@@ -122,7 +137,7 @@ export function LibraryPage() {
     },
   );
   const items = (q.data?.pages ?? []).flatMap((p) => p.items);
-  const current = selected ?? items[0];
+  const current = items.find((i) => itemKey(i) === selected) ?? items[0];
 
   // Load the next page when the end of the grid scrolls into view.
   const sentinel = useRef<HTMLDivElement>(null);
@@ -180,11 +195,7 @@ export function LibraryPage() {
         </ToggleButton>
       </div>
       {q.isPending && <Spinner label="Loading the library…" />}
-      {q.isError && (
-        <MessageBar intent="error">
-          <MessageBarBody>Couldn&apos;t load the library: {q.error.message}</MessageBarBody>
-        </MessageBar>
-      )}
+      {q.isError && <LoadError what="the library" error={q.error} onRetry={() => void q.refetch()} />}
       {q.isSuccess && items.length === 0 && (
         <MessageBar intent="info">
           <MessageBarBody>
@@ -204,13 +215,19 @@ export function LibraryPage() {
                       key={item.asset?.assetId}
                       type="button"
                       className={mergeClasses(styles.tile, item === current && styles.selected)}
-                      aria-label={item.asset?.filename}
+                      aria-label={tileLabel(item)}
                       aria-pressed={item === current}
                       onClick={() => {
-                        setSelected(item);
+                        setSelected(itemKey(item));
                       }}
                     >
-                      <img className={styles.img} src={platform.mediaUrl(item.thumbnailUrl)} alt="" loading="lazy" />
+                      {item.thumbnailUrl === "" ? (
+                        <span className={styles.noImage}>
+                          <ImageOffRegular fontSize={32} aria-hidden />
+                        </span>
+                      ) : (
+                        <img className={styles.img} src={platform.mediaUrl(item.thumbnailUrl)} alt="" loading="lazy" />
+                      )}
                       {item.kind === AssetKind.VIDEO && (
                         <span className={styles.tag}>
                           <VideoClipRegular aria-label="Video" />
@@ -243,6 +260,27 @@ const kindLabel: Record<AssetKind, string> = {
   [AssetKind.LIVE_PHOTO]: "Live Photo",
 };
 
+/** Identifies an item across refetches. */
+function itemKey(item: LibraryItem): string {
+  return `${item.asset?.library ?? ""}/${item.asset?.assetId ?? ""}`;
+}
+
+/** What a tile announces: its kind, file name and capture date. */
+function tileLabel(item: LibraryItem): string {
+  const taken = toDate(item.createdAt);
+  return [kindLabel[item.kind], item.asset?.filename ?? "", taken === undefined ? "" : formatWhen(taken)]
+    .filter((part) => part !== "")
+    .join(", ");
+}
+
+const stateBadge: Record<AssetState, { label: string; color: "success" | "warning" | "danger" | "informative" }> = {
+  [AssetState.UNSPECIFIED]: { label: "Unknown", color: "informative" },
+  [AssetState.DISCOVERED]: { label: "Not downloaded yet", color: "warning" },
+  [AssetState.DOWNLOADED]: { label: "Not verified yet", color: "warning" },
+  [AssetState.VERIFIED]: { label: "Verified", color: "success" },
+  [AssetState.QUARANTINED]: { label: "Quarantined", color: "danger" },
+};
+
 function Detail({ item }: { item: LibraryItem }) {
   const styles = useStyles();
   const platform = usePlatform();
@@ -254,7 +292,11 @@ function Detail({ item }: { item: LibraryItem }) {
   const display = renditions.find((r) => r.version === item.displayVersion);
   return (
     <Card className={styles.detail} aria-label="Details">
-      <img className={styles.preview} src={platform.mediaUrl(item.previewUrl)} alt={ref?.filename ?? ""} />
+      {item.previewUrl === "" ? (
+        <Text className={styles.muted}>No picture yet: this item&apos;s photo hasn&apos;t been downloaded.</Text>
+      ) : (
+        <img className={styles.preview} src={platform.mediaUrl(item.previewUrl)} alt={ref?.filename ?? ""} />
+      )}
       <div>
         <Subtitle1 as="h2">{ref?.filename}</Subtitle1>
         <Caption1 block className={styles.muted}>
@@ -263,17 +305,12 @@ function Detail({ item }: { item: LibraryItem }) {
         </Caption1>
       </div>
       <div>
-        {item.state === AssetState.VERIFIED ? (
-          <Badge appearance="tint" color="success">
-            Verified
-          </Badge>
-        ) : (
-          <Badge appearance="tint" color="warning">
-            Not verified yet
-          </Badge>
-        )}
+        <Badge appearance="tint" color={stateBadge[item.state].color}>
+          {stateBadge[item.state].label}
+        </Badge>
       </div>
       {asset.isPending && <Spinner size="tiny" />}
+      {asset.isError && <LoadError what="this item's files" error={asset.error} onRetry={() => void asset.refetch()} />}
       {renditions.length > 0 && (
         <div className={styles.facts}>
           {renditions.map((r) => (

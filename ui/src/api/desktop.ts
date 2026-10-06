@@ -34,14 +34,18 @@ function bearer(token: string): Interceptor {
  */
 export class DesktopTransport implements Transport {
   private inner: Promise<Transport> | undefined;
-  /** The agent's address, known once its endpoint has been read. */
+  /**
+   * Where API and media requests go once the endpoint has been read: the
+   * agent itself, or, under `tauri dev`, the Vite dev server that proxies to
+   * it (the agent accepts only its own origin and the packaged app's).
+   */
   baseUrl = "";
 
   private current(): Promise<Transport> {
     this.inner ??= invoke<Endpoint>("agent_endpoint").then(
       (ep) => {
-        this.baseUrl = ep.url;
-        return createConnectTransport({ baseUrl: ep.url, interceptors: [bearer(ep.token)] });
+        this.baseUrl = import.meta.env.DEV ? window.location.origin : ep.url;
+        return createConnectTransport({ baseUrl: this.baseUrl, interceptors: [bearer(ep.token)] });
       },
       (err: unknown) => {
         this.inner = undefined;

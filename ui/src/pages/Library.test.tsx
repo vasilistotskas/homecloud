@@ -59,14 +59,14 @@ describe("Library", () => {
 
     expect(await screen.findByRole("region", { name: /October 2026/ })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: /September 2026/ })).toBeInTheDocument();
-    const tile = screen.getByRole("button", { name: "A2.HEIC" });
+    const tile = screen.getByRole("button", { name: /A2.HEIC/ });
     expect(tile.querySelector("img")?.getAttribute("src")).toBe(
       "http://agent/media/thumb/PrimarySync/A2/original?sig=x",
     );
     expect(screen.getByLabelText("Video")).toBeInTheDocument();
 
     await userEvent.setup().click(screen.getByRole("button", { name: "Hidden" }));
-    expect(await screen.findByRole("button", { name: "H1.HEIC" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /H1.HEIC/ })).toBeInTheDocument();
     expect(hiddenRequests).toContain(true);
   });
 });

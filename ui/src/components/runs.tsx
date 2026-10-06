@@ -33,6 +33,12 @@ function downloadLabel(run: Run): string {
       return "Account needs attention";
     case DownloadOutcome.ERROR:
       return "Couldn't run";
+    case DownloadOutcome.SKIPPED_LOW_SPACE:
+      return "Skipped: drive almost full";
+    case DownloadOutcome.ARCHIVE_UNAVAILABLE:
+      return "Archive drive unavailable";
+    case DownloadOutcome.INTERRUPTED:
+      return "Interrupted";
     case DownloadOutcome.UNSPECIFIED:
       return "—";
   }
@@ -53,10 +59,20 @@ function resultBadge(run: Run): React.ReactNode {
         </Badge>
       );
     case RunResult.FAILED: {
-      const mismatched = run.cycle?.mismatched ?? 0n;
+      const c = run.cycle;
+      const label =
+        c === undefined
+          ? "Failed"
+          : c.mismatched > 0n
+            ? `${formatCount(c.mismatched)} quarantined`
+            : c.errored > 0n
+              ? `${formatCount(c.errored)} not checked`
+              : c.download === DownloadOutcome.INTERRUPTED
+                ? "Interrupted"
+                : "Failed";
       return (
         <Badge appearance="tint" color="danger">
-          {mismatched > 0n ? `${formatCount(mismatched)} quarantined` : "Failed"}
+          {label}
         </Badge>
       );
     }

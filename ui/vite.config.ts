@@ -3,9 +3,11 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
 import react from "@vitejs/plugin-react";
+import type { ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
 
-const apiPrefix = "/homecloud.agent.v1.AgentService";
+// Paths the agent serves besides the app itself: the API and signed media.
+const agentPrefixes = ["/homecloud.agent.v1.AgentService", "/media/"];
 
 // agentURL reads the running agent's address from its discovery file (the same
 // per-user state directory the agent writes; see internal/platform StateDir).
@@ -41,19 +43,23 @@ export default defineConfig(({ command }) => {
     },
     server: dev
       ? {
-          // The dev server proxies the API so the app stays same-origin, like
-          // when the agent serves it. The agent only accepts its own Origin.
-          proxy: {
-            [apiPrefix]: {
-              target,
-              changeOrigin: true,
-              configure: (proxy) => {
-                proxy.on("proxyReq", (req) => {
-                  req.setHeader("origin", target);
-                });
+          // The dev server proxies the API and media so the app stays
+          // same-origin, like when the agent serves it, in the browser and in
+          // `tauri dev` alike. The agent only accepts its own Origin.
+          proxy: Object.fromEntries(
+            agentPrefixes.map((prefix): [string, ProxyOptions] => [
+              prefix,
+              {
+                target,
+                changeOrigin: true,
+                configure: (proxy) => {
+                  proxy.on("proxyReq", (req) => {
+                    req.setHeader("origin", target);
+                  });
+                },
               },
-            },
-          },
+            ]),
+          ),
         }
       : {},
     test: {

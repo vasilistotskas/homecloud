@@ -14,6 +14,20 @@ window.matchMedia = (query: string): MediaQueryList => ({
   dispatchEvent: () => false,
 });
 
+// jsdom has no ResizeObserver (Fluent's MessageBar watches its own size); nothing
+// is laid out in tests, so observed elements never resize.
+window.ResizeObserver = class {
+  observe(): void {
+    // No layout in jsdom: there is nothing to observe.
+  }
+  unobserve(): void {
+    // Nothing was observed.
+  }
+  disconnect(): void {
+    // Nothing was observed.
+  }
+};
+
 beforeEach(() => {
   window.location.hash = "#/";
 });

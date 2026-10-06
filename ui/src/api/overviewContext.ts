@@ -2,8 +2,11 @@ import { createContext, use } from "react";
 
 import type { Overview } from "../gen/homecloud/agent/v1/agent_pb";
 
-/** Connection to the agent's overview stream. */
-export type Connection = "connecting" | "live" | "reconnecting" | "unauthenticated";
+/**
+ * Connection to the agent's overview stream. "archive-unavailable" means the
+ * agent answers but its archive drive (which holds the ledger) is missing.
+ */
+export type Connection = "connecting" | "live" | "reconnecting" | "unauthenticated" | "archive-unavailable";
 
 export interface OverviewState {
   /** The latest overview; kept while reconnecting so the UI can show its age. */
@@ -11,6 +14,8 @@ export interface OverviewState {
   /** When the latest overview arrived. */
   receivedAt: Date | undefined;
   connection: Connection;
+  /** The agent's explanation while the connection is "archive-unavailable". */
+  problem: string | undefined;
   /** Restarts the stream, e.g. after signing in. */
   reconnect: () => void;
 }

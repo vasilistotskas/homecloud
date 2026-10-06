@@ -15,6 +15,7 @@ import { CopyRegular } from "@fluentui/react-icons";
 import { useState, type ReactNode } from "react";
 
 import { useThemePreference, type ThemePreference } from "../app/themeContext";
+import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { useNotify } from "../components/toast";
 import { formatInterval } from "../format";
@@ -99,6 +100,13 @@ export function SettingsPage() {
     },
   });
 
+  if (settings.isError) {
+    return (
+      <Page title="Settings">
+        <LoadError what="the settings" error={settings.error} onRetry={() => void settings.refetch()} />
+      </Page>
+    );
+  }
   const s = settings.data?.settings;
   if (s === undefined) {
     return (
@@ -128,7 +136,7 @@ export function SettingsPage() {
       <Group title="Archive">
         <Row label="Location" detail={s.storageRoot} mono />
         <Row label="Drive identity" detail={s.storageVolumeId} mono />
-        <Row label="Keep free on the drive" detail="Downloads stop below this">
+        <Row label="Keep free on the drive" detail="New downloads pause below this; archived files are still checked">
           <Text>{s.minFreePercent}%</Text>
         </Row>
       </Group>
@@ -162,6 +170,11 @@ export function SettingsPage() {
         <Row
           label="Video checker"
           detail={`ffprobe ${s.videoProbe?.version ?? ""} · ${s.videoProbe?.binary ?? ""}`}
+          mono
+        />
+        <Row
+          label="Thumbnails"
+          detail={`ffmpeg ${s.thumbnailer?.version ?? ""} · ${s.thumbnailer?.binary ?? ""}`}
           mono
         />
         <Row

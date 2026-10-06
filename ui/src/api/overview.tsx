@@ -38,6 +38,7 @@ export function OverviewProvider({ children }: { children: ReactNode }) {
     overview: undefined,
     receivedAt: undefined,
     connection: "connecting",
+    problem: undefined,
   });
 
   useEffect(() => {
@@ -59,13 +60,20 @@ export function OverviewProvider({ children }: { children: ReactNode }) {
               first = false;
               void queryClient.invalidateQueries();
             }
-            setState({ overview: res.overview, receivedAt: new Date(), connection: "live" });
+            setState({ overview: res.overview, receivedAt: new Date(), connection: "live", problem: undefined });
           }
         } catch (err) {
           if (stopped()) {
             return;
           }
-          if (ConnectError.from(err).code === Code.Unauthenticated) {
+          const ce = ConnectError.from(err);
+          if (ce.code === Code.FailedPrecondition) {
+            // The agent is up but its archive drive is not: keep asking.
+            setState((s) => ({ ...s, connection: "archive-unavailable", problem: ce.rawMessage }));
+            await sleep(backoff(attempt++), abort.signal);
+            continue;
+          }
+          if (ce.code === Code.Unauthenticated) {
             if (platform.kind === "browser") {
               setState((s) => ({ ...s, connection: "unauthenticated" }));
               return;
@@ -86,7 +94,7 @@ export function OverviewProvider({ children }: { children: ReactNode }) {
   const value: OverviewState = {
     ...state,
     reconnect: () => {
-      setState((s) => ({ ...s, connection: "connecting" }));
+      setState((s) => ({ ...s, connection: "connecting", problem: undefined }));
       setGeneration((g) => g + 1);
     },
   };

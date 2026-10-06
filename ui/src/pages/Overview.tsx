@@ -16,6 +16,7 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Subtitle2,
   Table,
@@ -45,6 +46,7 @@ import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
+import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { runRow } from "../components/runs";
 import { useNotify } from "../components/toast";
@@ -53,6 +55,7 @@ import {
   AgentService,
   AppleAccountState,
   DriveHealthState,
+  DownloadOutcome,
   Phase,
   RunKind,
   RunResult,
@@ -137,13 +140,17 @@ const useStyles = makeStyles({
 
 export function OverviewPage() {
   const styles = useStyles();
-  const { overview, connection, receivedAt, reconnect } = useOverview();
+  const { overview, connection, receivedAt, reconnect, problem } = useOverview();
   const settings = useQuery(AgentService.method.getSettings, {});
   const notify = useNotify();
+  const phase = overview?.activity?.phase ?? Phase.UNSPECIFIED;
+  const syncing = cyclePhases.has(phase);
   const startSync = useMutation(AgentService.method.startSync, {
     onSuccess: (res) => {
       if (!res.started) {
-        notify("info", "A sync is already running");
+        notify("info", "A sync is already running or queued");
+      } else if (phase !== Phase.IDLE) {
+        notify("info", "Sync queued: it starts as soon as the current job finishes");
       }
     },
     onError: (err) => {
@@ -151,20 +158,26 @@ export function OverviewPage() {
     },
   });
 
-  const busy = overview?.activity?.phase !== undefined && overview.activity.phase !== Phase.IDLE;
   const actions = (
     <Button
       appearance="primary"
       icon={<ArrowSyncRegular />}
-      disabled={connection !== "live" || busy || startSync.isPending}
+      disabled={connection !== "live" || syncing || startSync.isPending}
       onClick={() => {
         startSync.mutate({});
       }}
     >
-      {busy ? "Syncing…" : "Sync now"}
+      {syncing ? "Syncing…" : "Sync now"}
     </Button>
   );
 
+  if (connection === "archive-unavailable") {
+    return (
+      <Page title="Overview" actions={actions}>
+        <ArchiveUnavailable problem={problem} />
+      </Page>
+    );
+  }
   if (connection === "reconnecting" || (connection === "connecting" && overview === undefined)) {
     return (
       <Page title="Overview" actions={actions}>
@@ -193,6 +206,27 @@ export function OverviewPage() {
       </div>
       <RecentSyncs lastCycleId={overview.lastCycle?.id} />
     </Page>
+  );
+}
+
+/** Phases of a sync cycle; the others are idle time or maintenance jobs. */
+const cyclePhases: ReadonlySet<Phase> = new Set([
+  Phase.DOWNLOADING,
+  Phase.INGESTING,
+  Phase.VERIFYING,
+  Phase.PREPARING_PREVIEWS,
+]);
+
+function ArchiveUnavailable({ problem }: { problem: string | undefined }) {
+  return (
+    <MessageBar intent="error">
+      <MessageBarBody>
+        <MessageBarTitle>The archive drive isn&apos;t available</MessageBarTitle>
+        The agent is running, but the drive that holds your archive and its records is missing or a different drive is
+        mounted in its place. Nothing is downloaded, checked or deleted until it&apos;s back; this page reconnects by
+        itself. {problem}
+      </MessageBarBody>
+    </MessageBar>
   );
 }
 
@@ -287,6 +321,10 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
   let action: ReactNode = null;
 
   const drive = overview.drive?.state ?? DriveHealthState.UNSPECIFIED;
+  const cycle = overview.lastCycle?.cycle;
+  const scrub = overview.lastScrub;
+  const backup = overview.lastLedgerBackup;
+  const minFree = overview.storage?.minFreePercent ?? 0;
 
   if (drive === DriveHealthState.FAILING || drive === DriveHealthState.WARNING) {
     tone = "danger";
@@ -310,6 +348,32 @@ function Hero({ overview, settings }: { overview: Overview; settings: Settings |
     title = `${formatCount(quarantined)} ${quarantined === 1n ? "item" : "items"} failed verification`;
     body = "They're kept aside and will never be deleted from iCloud until you've reviewed them.";
     action = <ReviewButton />;
+  } else if (cycle?.download === DownloadOutcome.SKIPPED_LOW_SPACE) {
+    tone = "warning";
+    icon = <HardDriveRegular />;
+    title = "Your archive drive is almost full";
+    body = `New photos aren't downloaded while less than ${minFree}% of the drive is free. Everything already archived is still checked.`;
+  } else if (cycle?.download === DownloadOutcome.ERROR) {
+    tone = "warning";
+    icon = <ArrowSyncRegular />;
+    title = "The downloader couldn't run";
+    body =
+      "New photos weren't downloaded in the last sync. Activity and the agent's log say why; it is retried every sync.";
+  } else if (cycle !== undefined && cycle.errored > 0n) {
+    tone = "warning";
+    icon = <ShieldErrorRegular />;
+    title = `${formatCount(cycle.errored)} ${cycle.errored === 1n ? "file" : "files"} couldn't be checked`;
+    body = "They couldn't be read in the last sync and are checked again in the next one.";
+  } else if (scrub?.result === RunResult.FAILED && (scrub.scrub?.error ?? "") !== "") {
+    tone = "warning";
+    icon = <ShieldCheckmarkRegular />;
+    title = "The integrity check couldn't run";
+    body = `${scrub.scrub?.error ?? ""}. It is retried every sync.`;
+  } else if (backup?.result === RunResult.FAILED) {
+    tone = "warning";
+    icon = <ShieldCheckmarkRegular />;
+    title = "The records backup failed";
+    body = `${backup.ledgerBackup?.error ?? ""}. It is retried every sync.`;
   } else if (pending > 0n) {
     tone = "brand";
     icon = <ClockRegular />;
@@ -570,6 +634,7 @@ function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
           </TableBody>
         </Table>
       </div>
+      {runs.isError && <LoadError what="recent syncs" error={runs.error} onRetry={() => void runs.refetch()} />}
       {runs.data?.runs.length === 0 && <Text className={styles.muted}>No syncs yet.</Text>}
     </Card>
   );

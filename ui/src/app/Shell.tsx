@@ -21,7 +21,7 @@ import {
 import { Outlet, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
-import { useOverview } from "../api/overviewContext";
+import { useOverview, type Connection } from "../api/overviewContext";
 import { toasterId } from "../components/toast";
 
 const useStyles = makeStyles({
@@ -53,6 +53,14 @@ const useStyles = makeStyles({
   badge: { marginLeft: "auto" },
 });
 
+const connectionStatus: Record<Connection, { label: string; color: string }> = {
+  connecting: { label: "Connecting…", color: tokens.colorNeutralForeground3 },
+  live: { label: "Agent connected", color: tokens.colorPaletteGreenForeground1 },
+  reconnecting: { label: "Agent not reachable", color: tokens.colorPaletteRedForeground1 },
+  unauthenticated: { label: "Not signed in", color: tokens.colorPaletteRedForeground1 },
+  "archive-unavailable": { label: "Archive drive unavailable", color: tokens.colorPaletteDarkOrangeForeground1 },
+};
+
 const pages = [
   { path: "/", label: "Overview", icon: <HomeRegular /> },
   { path: "/library", label: "Library", icon: <ImageMultipleRegular /> },
@@ -82,7 +90,7 @@ export function Shell() {
   }, [connection, navigate]);
 
   const quarantined = Number(overview?.assets?.quarantined ?? 0n);
-  const live = connection === "live";
+  const status = connectionStatus[connection];
 
   return (
     <div className={styles.root}>
@@ -121,13 +129,8 @@ export function Shell() {
         </NavDrawerBody>
         <NavDrawerFooter>
           <div className={styles.footer} role="status">
-            <span
-              className={styles.dot}
-              style={{
-                backgroundColor: live ? tokens.colorPaletteGreenForeground1 : tokens.colorPaletteRedForeground1,
-              }}
-            />
-            <Text size={200}>{live ? "Agent connected" : "Agent not reachable"}</Text>
+            <span className={styles.dot} style={{ backgroundColor: status.color }} />
+            <Text size={200}>{status.label}</Text>
           </div>
         </NavDrawerFooter>
       </NavDrawer>

@@ -1,4 +1,4 @@
-import type { Transport } from "@connectrpc/connect";
+import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { FluentProvider, makeStaticStyles, makeStyles, tokens } from "@fluentui/react-components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -14,6 +14,18 @@ import { ThemeStateProvider } from "./theme";
 // window, so the whole app (sidebar included) would scroll by a few pixels.
 const useGlobalStyles = makeStaticStyles({ body: { margin: 0 } });
 
+/** Errors worth one more try; anything else is shown at once (a retry would fail the same way). */
+const transientCodes: ReadonlySet<Code> = new Set([
+  Code.Unavailable,
+  Code.DeadlineExceeded,
+  Code.Aborted,
+  Code.ResourceExhausted,
+]);
+
+function retryTransient(failureCount: number, error: unknown): boolean {
+  return failureCount < 1 && transientCodes.has(ConnectError.from(error).code);
+}
+
 const useStyles = makeStyles({
   root: { minHeight: "100vh", backgroundColor: tokens.colorNeutralBackground3 },
 });
@@ -24,7 +36,7 @@ export function App({ transport, platform }: { transport: Transport; platform: P
   const styles = useStyles();
   const [router] = useState(createAppRouter);
   const [queryClient] = useState(
-    () => new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true } } }),
+    () => new QueryClient({ defaultOptions: { queries: { retry: retryTransient, refetchOnWindowFocus: true } } }),
   );
   return (
     <ThemeStateProvider>

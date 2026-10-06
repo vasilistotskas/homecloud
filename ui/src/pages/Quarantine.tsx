@@ -16,6 +16,8 @@ import {
 } from "@fluentui/react-components";
 import { FolderOpenRegular } from "@fluentui/react-icons";
 import { useQueryClient } from "@tanstack/react-query";
+
+import { LoadError } from "../components/LoadError";
 import { useState } from "react";
 
 import { usePlatform } from "../app/platformContext";
@@ -63,15 +65,12 @@ export function QuarantinePage() {
   return (
     <Page title="Quarantine">
       <Text className={styles.intro}>
-        These files didn&apos;t match what iCloud says they should be. They stay on disk untouched, and the matching
-        photo or video is never deleted from iCloud while it&apos;s here.
+        These files failed a check: when they were downloaded, they didn&apos;t match what iCloud says they should be,
+        or a later re-check found them changed or missing on disk. They stay on disk untouched, and the matching photo
+        or video is never deleted from iCloud while it&apos;s here.
       </Text>
       {list.isPending && <Spinner label="Loading…" />}
-      {list.isError && (
-        <MessageBar intent="error">
-          <MessageBarBody>Couldn&apos;t load the quarantine: {list.error.message}</MessageBarBody>
-        </MessageBar>
-      )}
+      {list.isError && <LoadError what="the quarantine" error={list.error} onRetry={() => void list.refetch()} />}
       {list.isSuccess && assets.length === 0 && (
         <MessageBar intent="success">
           <MessageBarBody>Nothing is in quarantine. Every archived file passed its checks.</MessageBarBody>
@@ -152,6 +151,7 @@ function Detail({ item }: { item: QuarantinedAsset }) {
         </Body1>
       ))}
       {asset.isPending && <Spinner size="tiny" />}
+      {asset.isError && <LoadError what="this item's files" error={asset.error} onRetry={() => void asset.refetch()} />}
       {asset.data?.asset?.renditions.map((r) => (
         <dl className={styles.facts} key={r.version}>
           <dt className={styles.dt}>Version</dt>

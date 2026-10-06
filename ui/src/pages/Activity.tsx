@@ -21,11 +21,20 @@ import {
 } from "@fluentui/react-components";
 import { useState } from "react";
 
+import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { stateLabel, tierLabel } from "../components/labels";
 import { runRow } from "../components/runs";
-import { formatWhen, toDate } from "../format";
-import { AgentService, DriveHealthState, EventKind, RunKind, type Event } from "../gen/homecloud/agent/v1/agent_pb";
+import { formatBytes, formatCount, formatDuration, formatWhen, toDate } from "../format";
+import {
+  AgentService,
+  DriveHealthState,
+  EventKind,
+  RunKind,
+  RunResult,
+  type Event,
+  type Run,
+} from "../gen/homecloud/agent/v1/agent_pb";
 
 const driveStateLabel: Record<DriveHealthState, string> = {
   [DriveHealthState.UNSPECIFIED]: "Unknown",
@@ -52,22 +61,54 @@ const useStyles = makeStyles({
   filters: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalM },
 });
 
+const tabs = {
+  runs: "Syncs",
+  integrity: "Integrity checks",
+  backups: "Records backups",
+  events: "Events",
+} as const;
+type ActivityTab = keyof typeof tabs;
+
+function isTab(v: unknown): v is ActivityTab {
+  return typeof v === "string" && Object.hasOwn(tabs, v);
+}
+
 export function ActivityPage() {
-  const [tab, setTab] = useState<"runs" | "events">("runs");
+  const [tab, setTab] = useState<ActivityTab>("runs");
   return (
     <Page title="Activity">
       <TabList
         selectedValue={tab}
         onTabSelect={(_, d) => {
-          setTab(d.value === "events" ? "events" : "runs");
+          if (isTab(d.value)) {
+            setTab(d.value);
+          }
         }}
       >
-        <Tab value="runs">Syncs</Tab>
-        <Tab value="events">Events</Tab>
+        {Object.entries(tabs).map(([value, label]) => (
+          <Tab key={value} value={value}>
+            {label}
+          </Tab>
+        ))}
       </TabList>
-      {tab === "runs" ? <Runs /> : <Events />}
+      {tab === "runs" && <Runs />}
+      {tab === "integrity" && <ScrubRuns />}
+      {tab === "backups" && <BackupRuns />}
+      {tab === "events" && <Events />}
     </Page>
   );
+}
+
+/** How long a finished run took. */
+function took(run: Run): string {
+  const started = toDate(run.startedAt);
+  const finished = toDate(run.finishedAt);
+  return started !== undefined && finished !== undefined ? formatDuration(finished.getTime() - started.getTime()) : "—";
+}
+
+function started(run: Run): string {
+  const at = toDate(run.startedAt);
+  return at === undefined ? "—" : formatWhen(at);
 }
 
 function nextPage(last: { nextPageToken: string }): string | undefined {
@@ -102,7 +143,10 @@ function Runs() {
   if (q.isPending) {
     return <Spinner label="Loading syncs…" />;
   }
-  const rows = (q.data?.pages ?? []).flatMap((p) => p.runs).map(runRow);
+  if (q.isError) {
+    return <LoadError what="syncs" error={q.error} onRetry={() => void q.refetch()} />;
+  }
+  const rows = q.data.pages.flatMap((p) => p.runs).map(runRow);
   return (
     <>
       <Card className={styles.tableBox}>
@@ -141,6 +185,152 @@ function Runs() {
       <MoreButton q={q} />
     </>
   );
+}
+
+function ScrubRuns() {
+  const styles = useStyles();
+  const q = useInfiniteQuery(
+    AgentService.method.listRuns,
+    { kind: RunKind.SCRUB, pageSize, pageToken: "" },
+    { pageParamKey: "pageToken", getNextPageParam: nextPage },
+  );
+  if (q.isPending) {
+    return <Spinner label="Loading integrity checks…" />;
+  }
+  if (q.isError) {
+    return <LoadError what="integrity checks" error={q.error} onRetry={() => void q.refetch()} />;
+  }
+  const runs = q.data.pages.flatMap((p) => p.runs);
+  return (
+    <>
+      <Card className={styles.tableBox}>
+        <Table size="small" aria-label="Integrity checks" className={styles.table}>
+          <TableHeader>
+            <TableRow>
+              <TableHeaderCell>Started</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Re-read</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Changed</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Not checked</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
+              <TableHeaderCell>Result</TableHeaderCell>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {runs.map((run) => {
+              const r = run.scrub;
+              return (
+                <TableRow key={run.id.toString()}>
+                  <TableCell className={styles.nowrap}>{started(run)}</TableCell>
+                  <TableCell className={styles.num}>
+                    {r === undefined ? "—" : `${formatCount(r.checked)} of ${formatCount(r.eligible)}`}
+                  </TableCell>
+                  <TableCell className={styles.num}>{r === undefined ? "—" : formatCount(r.mismatched)}</TableCell>
+                  <TableCell className={styles.num}>{r === undefined ? "—" : formatCount(r.errored)}</TableCell>
+                  <TableCell className={styles.num}>{took(run)}</TableCell>
+                  <TableCell className={styles.detail}>
+                    <RunBadge
+                      run={run}
+                      ok="All match"
+                      failed={
+                        r?.error !== ""
+                          ? "Couldn't run"
+                          : r.mismatched > 0n
+                            ? `${formatCount(r.mismatched)} quarantined`
+                            : `${formatCount(r.errored)} not checked`
+                      }
+                    />
+                    {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {runs.length === 0 && <Text className={styles.muted}>No integrity check has run yet.</Text>}
+      </Card>
+      <MoreButton q={q} />
+    </>
+  );
+}
+
+function BackupRuns() {
+  const styles = useStyles();
+  const q = useInfiniteQuery(
+    AgentService.method.listRuns,
+    { kind: RunKind.LEDGER_BACKUP, pageSize, pageToken: "" },
+    { pageParamKey: "pageToken", getNextPageParam: nextPage },
+  );
+  if (q.isPending) {
+    return <Spinner label="Loading records backups…" />;
+  }
+  if (q.isError) {
+    return <LoadError what="records backups" error={q.error} onRetry={() => void q.refetch()} />;
+  }
+  const runs = q.data.pages.flatMap((p) => p.runs);
+  return (
+    <>
+      <Card className={styles.tableBox}>
+        <Table size="small" aria-label="Records backups" className={styles.table}>
+          <TableHeader>
+            <TableRow>
+              <TableHeaderCell>Started</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Size</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Older copies removed</TableHeaderCell>
+              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
+              <TableHeaderCell>Result</TableHeaderCell>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {runs.map((run) => {
+              const r = run.ledgerBackup;
+              const ok = run.result === RunResult.OK;
+              return (
+                <TableRow key={run.id.toString()}>
+                  <TableCell className={styles.nowrap}>{started(run)}</TableCell>
+                  <TableCell className={styles.num}>
+                    {r === undefined || !ok ? "—" : formatBytes(r.sizeBytes)}
+                  </TableCell>
+                  <TableCell className={styles.num}>{r === undefined || !ok ? "—" : formatCount(r.pruned)}</TableCell>
+                  <TableCell className={styles.num}>{took(run)}</TableCell>
+                  <TableCell className={styles.detail}>
+                    <RunBadge run={run} ok="Saved" failed="Failed" />
+                    {r !== undefined && r.error !== "" && <Text className={styles.muted}> {r.error}</Text>}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+        {runs.length === 0 && <Text className={styles.muted}>No records backup has been made yet.</Text>}
+      </Card>
+      <MoreButton q={q} />
+    </>
+  );
+}
+
+function RunBadge({ run, ok, failed }: { run: Run; ok: string; failed: string }) {
+  switch (run.result) {
+    case RunResult.RUNNING:
+      return (
+        <Badge appearance="tint" color="brand">
+          Running
+        </Badge>
+      );
+    case RunResult.OK:
+      return (
+        <Badge appearance="tint" color="success">
+          {ok}
+        </Badge>
+      );
+    case RunResult.FAILED:
+      return (
+        <Badge appearance="tint" color="danger">
+          {failed}
+        </Badge>
+      );
+    case RunResult.UNSPECIFIED:
+      return null;
+  }
 }
 
 const filters = {
@@ -193,7 +383,7 @@ function describe(e: Event): { kind: string; color: "danger" | "success" | "info
       return {
         kind: "Moved",
         color: "informative",
-        text: `The downloader now keeps the  version at  (was ). It is checked again there.`,
+        text: `The downloader now keeps the ${e.detail.value.version} version at ${e.detail.value.to} (was ${e.detail.value.from}). It is checked again there.`,
       };
     case "driveHealthChanged":
       return {
@@ -219,7 +409,7 @@ function Events() {
     { kinds: [...filters[filter].kinds], pageSize, pageToken: "" },
     { pageParamKey: "pageToken", getNextPageParam: nextPage },
   );
-  const events = (q.data?.pages ?? []).flatMap((p) => p.events);
+  const events = q.data?.pages.flatMap((p) => p.events) ?? [];
   return (
     <>
       <div className={styles.filters}>
@@ -243,6 +433,8 @@ function Events() {
       </div>
       {q.isPending ? (
         <Spinner label="Loading events…" />
+      ) : q.isError ? (
+        <LoadError what="events" error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <Card className={styles.tableBox}>
           <Table size="small" aria-label="Events" className={styles.table}>
