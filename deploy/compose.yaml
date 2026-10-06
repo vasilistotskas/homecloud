@@ -32,6 +32,9 @@ services:
     image: ${HOMECLOUD_IMAGE}
     network_mode: service:tailscale
     user: "${PUID}:${PGID}"
+    environment:
+      # Times the CLI prints (a sign-in code's expiry) are local times.
+      TZ: ${TZ}
     volumes:
       - ${HOMECLOUD_ARCHIVE}:/archive
       - ${HOMECLOUD_DATA}/config:/config:ro
