@@ -126,6 +126,7 @@ the running agent with the token from its discovery file; the agent stays instal
 on its own. The app and the agent are built from the same commit: install both together.
 
 ```powershell
+pnpm --dir ui build                              # the installer packages ui/dist as it is
 pnpm --dir desktop install --frozen-lockfile
 pnpm --dir desktop tauri build --bundles nsis   # per-user installer, no admin rights
 # Installs to %LOCALAPPDATA%\homecloud Desktop (apart from the agent's state in %LOCALAPPDATA%\homecloud).

@@ -5,7 +5,8 @@
   "identifier": "io.github.vasilistotskas.homecloud",
   "build": {
     "devUrl": "http://localhost:5173",
-    "frontendDist": "../../ui/dist"
+    "frontendDist": "../../ui/dist",
+    "beforeDevCommand": "pnpm --dir ../ui dev"
   },
   "app": {
     "windows": [

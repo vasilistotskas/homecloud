@@ -93,7 +93,7 @@ func TestRenderUnit(t *testing.T) {
 	for _, want := range []string{
 		"Description=homecloud agent (100%% local)",
 		"Type=notify",
-		`ExecStart="/opt/home cloud/bin/homecloud-agent" --config /home/me/.config/homecloud/config.toml`,
+		`ExecStart="/opt/home cloud/bin/homecloud-agent" "--config" "/home/me/.config/homecloud/config.toml"`,
 		"WorkingDirectory=/opt/home cloud/bin",
 		"Restart=on-failure",
 		"WantedBy=default.target",
