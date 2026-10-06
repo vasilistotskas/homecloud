@@ -136,9 +136,10 @@ func secureHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// authenticate admits API calls with a valid credential. ExchangeLoginCode is
-// open (it is how a browser obtains a credential); CreateLoginCode requires the
-// bearer token; cookie-authenticated calls must also pass CSRF checks.
+// authenticate admits API calls with a valid credential. ExchangeLoginCode
+// and PairDevice are open (they are how a browser or a device obtains a
+// credential; the login code is the credential); CreateLoginCode requires the
+// agent token; cookie-authenticated calls must also pass CSRF checks.
 func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next http.Handler) http.Handler {
 	errs := connect.NewErrorWriter()
 	deny := func(w http.ResponseWriter, r *http.Request, code connect.Code, msg string) {
@@ -148,16 +149,33 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		procedure := strings.TrimSuffix(r.URL.Path, "/")
-		if procedure == agentv2connect.AgentServiceExchangeLoginCodeProcedure {
+		switch procedure {
+		case agentv2connect.AgentServiceExchangeLoginCodeProcedure:
+			// It sets a cookie: no cross-site page may log a browser in.
 			if err := csrf.Check(r); err != nil {
 				deny(w, r, connect.CodePermissionDenied, "cross-origin request rejected")
 				return
 			}
 			next.ServeHTTP(w, r)
 			return
+		case agentv2connect.AgentServicePairDeviceProcedure:
+			// It returns a token to the caller and sets nothing ambient; the
+			// desktop app calls it from its own origin.
+			next.ServeHTTP(w, r)
+			return
 		}
-		switch a.Authenticate(r) {
+		kind, err := a.Authenticate(r)
+		if err != nil {
+			deny(w, r, connect.CodeUnavailable, "credentials cannot be checked right now")
+			return
+		}
+		switch kind {
 		case auth.KindBearer:
+		case auth.KindDevice:
+			if procedure == agentv2connect.AgentServiceCreateLoginCodeProcedure {
+				deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")
+				return
+			}
 		case auth.KindSession:
 			if procedure == agentv2connect.AgentServiceCreateLoginCodeProcedure {
 				deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")

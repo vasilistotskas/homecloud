@@ -4,7 +4,16 @@ import {
   Button,
   Caption1,
   Card,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogTrigger,
   makeStyles,
+  MessageBar,
+  MessageBarBody,
   Spinner,
   Subtitle2,
   Text,
@@ -14,12 +23,14 @@ import {
 import { CopyRegular } from "@fluentui/react-icons";
 import { useState, type ReactNode } from "react";
 
+import { usePlatform } from "../app/platformContext";
 import { useThemePreference, type ThemePreference } from "../app/themeContext";
 import { LoadError } from "../components/LoadError";
+import { PairForm } from "../components/PairForm";
 import { Page } from "../components/Page";
 import { useNotify } from "../components/toast";
 import { useCopy } from "../components/useCopy";
-import { formatInterval, formatSpan } from "../format";
+import { formatInterval, formatSpan, formatWhen, toDate } from "../format";
 import { icloudLoginCommand } from "../shell";
 import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
 
@@ -250,6 +261,9 @@ export function SettingsPage() {
         </Row>
       </Group>
 
+      <ConnectionGroup />
+      <PairedDevicesGroup />
+
       <Group title="This app">
         <Row label="Appearance">
           <div className={styles.buttons} role="group" aria-label="Appearance">
@@ -276,5 +290,154 @@ export function SettingsPage() {
         />
       </Group>
     </Page>
+  );
+}
+
+/** Which homecloud the desktop app uses, and switching it. */
+function ConnectionGroup() {
+  const styles = useStyles();
+  const platform = usePlatform();
+  const [error, setError] = useState<string>();
+  if (platform.kind !== "desktop") {
+    return null;
+  }
+  const c = platform.connection;
+  return (
+    <Group title="Connection">
+      {c.kind === "this_pc" ? (
+        <Row label="Uses" detail="The homecloud agent on this computer">
+          <Dialog>
+            <DialogTrigger disableButtonEnhancement>
+              <Button>Connect to another device…</Button>
+            </DialogTrigger>
+            <DialogSurface>
+              <DialogBody>
+                <DialogTitle>Connect to homecloud on another device</DialogTitle>
+                <DialogContent>
+                  <Text block>
+                    For homecloud running on a NAS, reached through Tailscale. On that device run{" "}
+                    <code>homecloud open --print</code> (in Docker:{" "}
+                    <code>docker compose exec homecloud homecloud open --print</code>) for a one-time code. This
+                    computer then keeps its own credential in the system's credential store.
+                  </Text>
+                  <PairForm initialUrl="" deviceName={platform.deviceName} pair={platform.pair} />
+                </DialogContent>
+                <DialogActions>
+                  <DialogTrigger disableButtonEnhancement>
+                    <Button>Cancel</Button>
+                  </DialogTrigger>
+                </DialogActions>
+              </DialogBody>
+            </DialogSurface>
+          </Dialog>
+        </Row>
+      ) : (
+        <Row label="Uses" detail={c.url} mono>
+          <div className={styles.buttons}>
+            <Button
+              onClick={() => {
+                setError(undefined);
+                platform.disconnect().catch((err: unknown) => {
+                  setError(String(err));
+                });
+              }}
+            >
+              Disconnect
+            </Button>
+            {error !== undefined && (
+              <Button
+                onClick={() => {
+                  void platform.forget();
+                }}
+              >
+                Forget anyway
+              </Button>
+            )}
+          </div>
+        </Row>
+      )}
+      {error !== undefined && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            Couldn't revoke this computer there ({error}). Forget it anyway, then revoke it there under Paired devices.
+          </MessageBarBody>
+        </MessageBar>
+      )}
+    </Group>
+  );
+}
+
+/** Devices paired with this homecloud, each revocable. */
+function PairedDevicesGroup() {
+  const platform = usePlatform();
+  const notify = useNotify();
+  const devices = useQuery(AgentService.method.listDevices, {});
+  const revoke = useMutation(AgentService.method.revokeDevice, {
+    onSuccess: () => {
+      void devices.refetch();
+    },
+    onError: (err) => {
+      notify("error", "Couldn't revoke the device", err.message);
+    },
+  });
+  const self = platform.kind === "desktop" && platform.connection.kind === "remote" ? platform.connection.deviceId : "";
+  return (
+    <Group title="Paired devices">
+      {devices.isPending && <Spinner size="tiny" label="Loading paired devices…" />}
+      {devices.isError && (
+        <LoadError what="the paired devices" error={devices.error} onRetry={() => void devices.refetch()} />
+      )}
+      {devices.data?.devices.length === 0 && (
+        <Row label="None" detail="The desktop app on another computer appears here once it is paired." />
+      )}
+      {devices.data?.devices.map((d) => {
+        const paired = toDate(d.pairedAt);
+        const seen = toDate(d.lastSeenAt);
+        return (
+          <Row
+            key={d.id}
+            label={d.id === self ? `${d.name} (this computer)` : d.name}
+            detail={[
+              paired === undefined ? "" : `Paired ${formatWhen(paired)}`,
+              seen === undefined ? "" : `last seen ${formatWhen(seen)}`,
+            ]
+              .filter((x) => x !== "")
+              .join(" · ")}
+          >
+            <Dialog>
+              <DialogTrigger disableButtonEnhancement>
+                <Button aria-label={`Revoke ${d.name}`}>Revoke…</Button>
+              </DialogTrigger>
+              <DialogSurface>
+                <DialogBody>
+                  <DialogTitle>Revoke {d.name}?</DialogTitle>
+                  <DialogContent>
+                    It can no longer use this homecloud. Pairing it again needs a new one-time code.
+                  </DialogContent>
+                  <DialogActions>
+                    <DialogTrigger disableButtonEnhancement>
+                      <Button>Cancel</Button>
+                    </DialogTrigger>
+                    <Button
+                      appearance="primary"
+                      disabled={revoke.isPending}
+                      onClick={() => {
+                        if (d.id === self && platform.kind === "desktop") {
+                          void platform.forget();
+                          return;
+                        }
+                        revoke.mutate({ deviceId: d.id });
+                      }}
+                    >
+                      Revoke
+                    </Button>
+                  </DialogActions>
+                </DialogBody>
+              </DialogSurface>
+            </Dialog>
+          </Row>
+        );
+      })}
+    </Group>
   );
 }

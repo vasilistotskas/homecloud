@@ -54,11 +54,22 @@ service AgentService {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // CreateLoginCode issues a short-lived, single-use code that a browser can
-  // exchange for a session. Requires the bearer token.
+  // exchange for a session, or a device can pair with. Requires the agent
+  // token.
   rpc CreateLoginCode(CreateLoginCodeRequest) returns (CreateLoginCodeResponse);
-  // ExchangeLoginCode trades a login code for a session cookie. It is the only
-  // method callable without credentials.
+  // ExchangeLoginCode trades a login code for a session cookie. Callable
+  // without credentials: the code is the credential.
   rpc ExchangeLoginCode(ExchangeLoginCodeRequest) returns (ExchangeLoginCodeResponse);
+  // PairDevice trades a login code for a device token, which the device
+  // keeps and sends as its bearer token until it is revoked. Callable without
+  // credentials: the code is the credential.
+  rpc PairDevice(PairDeviceRequest) returns (PairDeviceResponse);
+  // ListDevices lists the paired devices that are not revoked.
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // RevokeDevice ends a paired device's access at once.
+  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
 }
 
 message GetInfoRequest {}
@@ -803,3 +814,35 @@ message ExchangeLoginCodeRequest {
 }
 
 message ExchangeLoginCodeResponse {}
+
+message PairDeviceRequest {
+  string code = 1;
+  // How the device is listed, e.g. the computer's name (1-64 characters).
+  string name = 2;
+}
+
+message PairDeviceResponse {
+  string device_id = 1;
+  // The device's credential: shown once, stored by the agent only as a hash.
+  string token = 2;
+}
+
+message ListDevicesRequest {}
+
+message ListDevicesResponse {
+  repeated PairedDevice devices = 1;
+}
+
+message PairedDevice {
+  string id = 1;
+  string name = 2;
+  google.protobuf.Timestamp paired_at = 3;
+  // To the minute.
+  google.protobuf.Timestamp last_seen_at = 4;
+}
+
+message RevokeDeviceRequest {
+  string device_id = 1;
+}
+
+message RevokeDeviceResponse {}

@@ -286,6 +286,44 @@ describe("App", () => {
     window.location.hash = "";
   });
 
+  it("lists paired devices and revokes one", async () => {
+    const revoked: string[] = [];
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { assets: { verified: 1n } }) };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        getInfo: () => ({ agentVersion: "test", apiVersion: "v1", os: "linux" }),
+        listDevices: () => ({
+          devices: revoked.includes("d1")
+            ? []
+            : [
+                {
+                  id: "d1",
+                  name: "Laptop",
+                  pairedAt: { seconds: 1_790_000_000n },
+                  lastSeenAt: { seconds: 1_790_000_600n },
+                },
+              ],
+        }),
+        revokeDevice: (req) => {
+          revoked.push(req.deviceId);
+          return {};
+        },
+      });
+    });
+    const user = userEvent.setup();
+    window.location.hash = "#/settings";
+    render(<App transport={transport} platform={browser} />);
+    await user.click(await screen.findByRole("button", { name: "Revoke Laptop" }));
+    await user.click(await screen.findByRole("button", { name: "Revoke" }));
+    expect(await screen.findByText("None")).toBeInTheDocument();
+    expect(revoked).toEqual(["d1"]);
+    window.location.hash = "";
+  });
+
   it("says the archive drive is missing when the agent reports it", async () => {
     const transport = createRouterTransport(({ service }) => {
       service(AgentService, {

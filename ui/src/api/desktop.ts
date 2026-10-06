@@ -2,6 +2,7 @@ import type { DescMessage, DescMethodStreaming, DescMethodUnary, MessageInitShap
 import {
   Code,
   ConnectError,
+  createClient,
   type ContextValues,
   type Interceptor,
   type StreamResponse,
@@ -11,13 +12,22 @@ import {
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { invoke } from "@tauri-apps/api/core";
 
-import type { Platform } from "../app/platformContext";
+import type { DesktopConnection, Platform } from "../app/platformContext";
+import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
 
-/** The agent's discovery record, as read by the desktop shell (internal/auth.Endpoint). */
-interface Endpoint {
+/** Which agent the desktop shell uses (desktop/src-tauri ConnectionSettings). */
+type ConnectionSettings = { kind: "this_pc" } | { kind: "remote"; url: string; device_id: string };
+
+/** The address and token the desktop shell calls the agent with. */
+interface Credentials {
   url: string;
   token: string;
-  agent_version: string;
+}
+
+/** Reads which agent the desktop app uses. */
+export async function desktopConnection(): Promise<DesktopConnection> {
+  const s = await invoke<ConnectionSettings>("connection_settings");
+  return s.kind === "this_pc" ? { kind: "this_pc" } : { kind: "remote", url: s.url, deviceId: s.device_id };
 }
 
 function bearer(token: string): Interceptor {
@@ -28,24 +38,28 @@ function bearer(token: string): Interceptor {
 }
 
 /**
- * Talks to the agent named in its discovery file, with its bearer token. The
- * agent issues a new token every time it starts, so the endpoint is re-read
- * whenever the agent rejects the current one.
+ * Talks to the agent the desktop app uses with its credentials. This PC's
+ * agent issues a new token every time it starts, so they are re-read
+ * whenever it rejects the current one; a paired device's token is rejected
+ * only once it is revoked, which no retry can mend.
  */
 export class DesktopTransport implements Transport {
   private inner: Promise<Transport> | undefined;
   /**
-   * Where API and media requests go once the endpoint has been read: the
-   * agent itself, or, under `tauri dev`, the Vite dev server that proxies to
-   * it (the agent accepts only its own origin and the packaged app's).
+   * Where API and media requests go once the credentials have been read: the
+   * agent itself, or, under `tauri dev` for this PC, the Vite dev server that
+   * proxies to it (the agent accepts only its own origin and the packaged
+   * app's).
    */
   baseUrl = "";
 
+  constructor(readonly connection: DesktopConnection) {}
+
   private current(): Promise<Transport> {
-    this.inner ??= invoke<Endpoint>("agent_endpoint").then(
-      (ep) => {
-        this.baseUrl = import.meta.env.DEV ? window.location.origin : ep.url;
-        return createConnectTransport({ baseUrl: this.baseUrl, interceptors: [bearer(ep.token)] });
+    this.inner ??= invoke<Credentials>("connection_credentials").then(
+      (c) => {
+        this.baseUrl = import.meta.env.DEV && this.connection.kind === "this_pc" ? window.location.origin : c.url;
+        return createConnectTransport({ baseUrl: this.baseUrl, interceptors: [bearer(c.token)] });
       },
       (err: unknown) => {
         this.inner = undefined;
@@ -55,7 +69,7 @@ export class DesktopTransport implements Transport {
     return this.inner;
   }
 
-  /** Forgets the agent's address and token; the next call reads them again. */
+  /** Forgets the address and token; the next call reads them again. */
   invalidate(): void {
     this.inner = undefined;
   }
@@ -72,7 +86,7 @@ export class DesktopTransport implements Transport {
     try {
       return await call();
     } catch (err) {
-      if (ConnectError.from(err).code !== Code.Unauthenticated) {
+      if (this.connection.kind !== "this_pc" || ConnectError.from(err).code !== Code.Unauthenticated) {
         throw err;
       }
       this.invalidate();
@@ -92,16 +106,45 @@ export class DesktopTransport implements Transport {
   }
 }
 
-/** The desktop shell's operating-system actions (desktop/src-tauri/src/lib.rs). */
+/**
+ * Pairs this computer with the homecloud at url using a one-time code from
+ * `homecloud open --print` there, and uses it from now on.
+ */
+async function pair(url: string, code: string, name: string): Promise<void> {
+  const client = createClient(AgentService, createConnectTransport({ baseUrl: url }));
+  const res = await client.pairDevice({ code, name });
+  await invoke("connect_remote", { url, deviceId: res.deviceId, token: res.token });
+}
+
+/** The desktop shell's connection and operating-system actions (desktop/src-tauri/src/lib.rs). */
 export function desktopPlatform(transport: DesktopTransport): Platform {
   return {
     kind: "desktop",
+    connection: transport.connection,
     // Media URLs are paths on the agent, which is not the webview's origin.
     mediaUrl: (path) => transport.baseUrl + path,
     startAgent: () => invoke("start_agent"),
     revealInFolder: (path) => invoke("reveal_in_folder", { path }),
     onUnauthenticated: () => {
       transport.invalidate();
+    },
+    deviceName: () => invoke<string>("device_name"),
+    pair: async (url, code, name) => {
+      await pair(url, code, name);
+      window.location.reload();
+    },
+    disconnect: async () => {
+      if (transport.connection.kind === "remote") {
+        // Revoke this device on the other side first; a device it can no
+        // longer reach is revoked from there (Settings, Paired devices).
+        await createClient(AgentService, transport).revokeDevice({ deviceId: transport.connection.deviceId });
+      }
+      await invoke("use_this_pc");
+      window.location.reload();
+    },
+    forget: async () => {
+      await invoke("use_this_pc");
+      window.location.reload();
     },
   };
 }

@@ -73,6 +73,14 @@ const (
 	// AgentServiceExchangeLoginCodeProcedure is the fully-qualified name of the AgentService's
 	// ExchangeLoginCode RPC.
 	AgentServiceExchangeLoginCodeProcedure = "/homecloud.agent.v2.AgentService/ExchangeLoginCode"
+	// AgentServicePairDeviceProcedure is the fully-qualified name of the AgentService's PairDevice RPC.
+	AgentServicePairDeviceProcedure = "/homecloud.agent.v2.AgentService/PairDevice"
+	// AgentServiceListDevicesProcedure is the fully-qualified name of the AgentService's ListDevices
+	// RPC.
+	AgentServiceListDevicesProcedure = "/homecloud.agent.v2.AgentService/ListDevices"
+	// AgentServiceRevokeDeviceProcedure is the fully-qualified name of the AgentService's RevokeDevice
+	// RPC.
+	AgentServiceRevokeDeviceProcedure = "/homecloud.agent.v2.AgentService/RevokeDevice"
 )
 
 // AgentServiceClient is a client for the homecloud.agent.v2.AgentService service.
@@ -105,11 +113,20 @@ type AgentServiceClient interface {
 	// GetSettings returns the agent's effective configuration.
 	GetSettings(context.Context, *connect.Request[v2.GetSettingsRequest]) (*connect.Response[v2.GetSettingsResponse], error)
 	// CreateLoginCode issues a short-lived, single-use code that a browser can
-	// exchange for a session. Requires the bearer token.
+	// exchange for a session, or a device can pair with. Requires the agent
+	// token.
 	CreateLoginCode(context.Context, *connect.Request[v2.CreateLoginCodeRequest]) (*connect.Response[v2.CreateLoginCodeResponse], error)
-	// ExchangeLoginCode trades a login code for a session cookie. It is the only
-	// method callable without credentials.
+	// ExchangeLoginCode trades a login code for a session cookie. Callable
+	// without credentials: the code is the credential.
 	ExchangeLoginCode(context.Context, *connect.Request[v2.ExchangeLoginCodeRequest]) (*connect.Response[v2.ExchangeLoginCodeResponse], error)
+	// PairDevice trades a login code for a device token, which the device
+	// keeps and sends as its bearer token until it is revoked. Callable without
+	// credentials: the code is the credential.
+	PairDevice(context.Context, *connect.Request[v2.PairDeviceRequest]) (*connect.Response[v2.PairDeviceResponse], error)
+	// ListDevices lists the paired devices that are not revoked.
+	ListDevices(context.Context, *connect.Request[v2.ListDevicesRequest]) (*connect.Response[v2.ListDevicesResponse], error)
+	// RevokeDevice ends a paired device's access at once.
+	RevokeDevice(context.Context, *connect.Request[v2.RevokeDeviceRequest]) (*connect.Response[v2.RevokeDeviceResponse], error)
 }
 
 // NewAgentServiceClient constructs a client for the homecloud.agent.v2.AgentService service. By
@@ -215,6 +232,25 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("ExchangeLoginCode")),
 			connect.WithClientOptions(opts...),
 		),
+		pairDevice: connect.NewClient[v2.PairDeviceRequest, v2.PairDeviceResponse](
+			httpClient,
+			baseURL+AgentServicePairDeviceProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("PairDevice")),
+			connect.WithClientOptions(opts...),
+		),
+		listDevices: connect.NewClient[v2.ListDevicesRequest, v2.ListDevicesResponse](
+			httpClient,
+			baseURL+AgentServiceListDevicesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ListDevices")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		revokeDevice: connect.NewClient[v2.RevokeDeviceRequest, v2.RevokeDeviceResponse](
+			httpClient,
+			baseURL+AgentServiceRevokeDeviceProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RevokeDevice")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -234,6 +270,9 @@ type agentServiceClient struct {
 	getSettings          *connect.Client[v2.GetSettingsRequest, v2.GetSettingsResponse]
 	createLoginCode      *connect.Client[v2.CreateLoginCodeRequest, v2.CreateLoginCodeResponse]
 	exchangeLoginCode    *connect.Client[v2.ExchangeLoginCodeRequest, v2.ExchangeLoginCodeResponse]
+	pairDevice           *connect.Client[v2.PairDeviceRequest, v2.PairDeviceResponse]
+	listDevices          *connect.Client[v2.ListDevicesRequest, v2.ListDevicesResponse]
+	revokeDevice         *connect.Client[v2.RevokeDeviceRequest, v2.RevokeDeviceResponse]
 }
 
 // GetInfo calls homecloud.agent.v2.AgentService.GetInfo.
@@ -306,6 +345,21 @@ func (c *agentServiceClient) ExchangeLoginCode(ctx context.Context, req *connect
 	return c.exchangeLoginCode.CallUnary(ctx, req)
 }
 
+// PairDevice calls homecloud.agent.v2.AgentService.PairDevice.
+func (c *agentServiceClient) PairDevice(ctx context.Context, req *connect.Request[v2.PairDeviceRequest]) (*connect.Response[v2.PairDeviceResponse], error) {
+	return c.pairDevice.CallUnary(ctx, req)
+}
+
+// ListDevices calls homecloud.agent.v2.AgentService.ListDevices.
+func (c *agentServiceClient) ListDevices(ctx context.Context, req *connect.Request[v2.ListDevicesRequest]) (*connect.Response[v2.ListDevicesResponse], error) {
+	return c.listDevices.CallUnary(ctx, req)
+}
+
+// RevokeDevice calls homecloud.agent.v2.AgentService.RevokeDevice.
+func (c *agentServiceClient) RevokeDevice(ctx context.Context, req *connect.Request[v2.RevokeDeviceRequest]) (*connect.Response[v2.RevokeDeviceResponse], error) {
+	return c.revokeDevice.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the homecloud.agent.v2.AgentService service.
 type AgentServiceHandler interface {
 	// GetInfo identifies the agent. Incompatible API changes get a new proto
@@ -336,11 +390,20 @@ type AgentServiceHandler interface {
 	// GetSettings returns the agent's effective configuration.
 	GetSettings(context.Context, *connect.Request[v2.GetSettingsRequest]) (*connect.Response[v2.GetSettingsResponse], error)
 	// CreateLoginCode issues a short-lived, single-use code that a browser can
-	// exchange for a session. Requires the bearer token.
+	// exchange for a session, or a device can pair with. Requires the agent
+	// token.
 	CreateLoginCode(context.Context, *connect.Request[v2.CreateLoginCodeRequest]) (*connect.Response[v2.CreateLoginCodeResponse], error)
-	// ExchangeLoginCode trades a login code for a session cookie. It is the only
-	// method callable without credentials.
+	// ExchangeLoginCode trades a login code for a session cookie. Callable
+	// without credentials: the code is the credential.
 	ExchangeLoginCode(context.Context, *connect.Request[v2.ExchangeLoginCodeRequest]) (*connect.Response[v2.ExchangeLoginCodeResponse], error)
+	// PairDevice trades a login code for a device token, which the device
+	// keeps and sends as its bearer token until it is revoked. Callable without
+	// credentials: the code is the credential.
+	PairDevice(context.Context, *connect.Request[v2.PairDeviceRequest]) (*connect.Response[v2.PairDeviceResponse], error)
+	// ListDevices lists the paired devices that are not revoked.
+	ListDevices(context.Context, *connect.Request[v2.ListDevicesRequest]) (*connect.Response[v2.ListDevicesResponse], error)
+	// RevokeDevice ends a paired device's access at once.
+	RevokeDevice(context.Context, *connect.Request[v2.RevokeDeviceRequest]) (*connect.Response[v2.RevokeDeviceResponse], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -442,6 +505,25 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("ExchangeLoginCode")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServicePairDeviceHandler := connect.NewUnaryHandler(
+		AgentServicePairDeviceProcedure,
+		svc.PairDevice,
+		connect.WithSchema(agentServiceMethods.ByName("PairDevice")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceListDevicesHandler := connect.NewUnaryHandler(
+		AgentServiceListDevicesProcedure,
+		svc.ListDevices,
+		connect.WithSchema(agentServiceMethods.ByName("ListDevices")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceRevokeDeviceHandler := connect.NewUnaryHandler(
+		AgentServiceRevokeDeviceProcedure,
+		svc.RevokeDevice,
+		connect.WithSchema(agentServiceMethods.ByName("RevokeDevice")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/homecloud.agent.v2.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceGetInfoProcedure:
@@ -472,6 +554,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceCreateLoginCodeHandler.ServeHTTP(w, r)
 		case AgentServiceExchangeLoginCodeProcedure:
 			agentServiceExchangeLoginCodeHandler.ServeHTTP(w, r)
+		case AgentServicePairDeviceProcedure:
+			agentServicePairDeviceHandler.ServeHTTP(w, r)
+		case AgentServiceListDevicesProcedure:
+			agentServiceListDevicesHandler.ServeHTTP(w, r)
+		case AgentServiceRevokeDeviceProcedure:
+			agentServiceRevokeDeviceHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -535,4 +623,16 @@ func (UnimplementedAgentServiceHandler) CreateLoginCode(context.Context, *connec
 
 func (UnimplementedAgentServiceHandler) ExchangeLoginCode(context.Context, *connect.Request[v2.ExchangeLoginCodeRequest]) (*connect.Response[v2.ExchangeLoginCodeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v2.AgentService.ExchangeLoginCode is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) PairDevice(context.Context, *connect.Request[v2.PairDeviceRequest]) (*connect.Response[v2.PairDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v2.AgentService.PairDevice is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ListDevices(context.Context, *connect.Request[v2.ListDevicesRequest]) (*connect.Response[v2.ListDevicesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v2.AgentService.ListDevices is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RevokeDevice(context.Context, *connect.Request[v2.RevokeDeviceRequest]) (*connect.Response[v2.RevokeDeviceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v2.AgentService.RevokeDevice is not implemented"))
 }

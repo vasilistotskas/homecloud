@@ -74,11 +74,13 @@ export function OverviewProvider({ children }: { children: ReactNode }) {
             continue;
           }
           if (ce.code === Code.Unauthenticated) {
-            if (platform.kind === "browser") {
+            // A browser without a session, or a desktop app whose pairing was
+            // revoked, must sign in again; this PC's agent only issued a new
+            // token, which the desktop app re-reads.
+            if (platform.kind === "browser" || platform.connection.kind === "remote") {
               setState((s) => ({ ...s, connection: "unauthenticated" }));
               return;
             }
-            // The desktop app re-reads the agent's new token and keeps trying.
             platform.onUnauthenticated();
           }
         }

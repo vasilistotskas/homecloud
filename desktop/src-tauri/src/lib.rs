@@ -1,7 +1,7 @@
 //! Desktop shell for the homecloud agent. The window shows the same web app the
-//! agent serves; this side only finds the running agent and offers a few
-//! operating-system actions. The agent itself runs separately and is never
-//! supervised here.
+//! agent serves; this side only finds the agent, keeps the credential for a
+//! homecloud on another device, and offers a few operating-system actions.
+//! The agent itself runs separately and is never supervised here.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -12,6 +12,18 @@ use tauri_plugin_opener::OpenerExt;
 
 /// The agent's discovery file inside its state directory (internal/auth).
 const ENDPOINT_FILE: &str = "agent.json";
+
+/// Which agent the app uses, in the app's config directory. Absent means this
+/// PC's agent.
+const CONNECTION_FILE: &str = "connection.json";
+
+/// The credential store service under which a paired device's token is kept,
+/// one entry per homecloud address.
+const KEYRING_SERVICE: &str = "homecloud";
+
+/// The domain a homecloud on another device is reached at: Tailscale Serve
+/// (deploy/compose.yaml). The content security policy allows only it.
+const REMOTE_DOMAIN: &str = ".ts.net";
 
 /// Name of the agent's logon task (Windows) or systemd user unit (Linux), as
 /// registered by `homecloud install`.
@@ -54,14 +66,143 @@ fn state_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "HOME is not set".to_owned())
 }
 
-/// Reads the running agent's address and token. It fails when the agent is
-/// not running, because the agent removes the file when it stops.
+/// Which agent the app uses: this PC's, or a homecloud on another device the
+/// app is paired with. The token of a paired device is not part of it.
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum ConnectionSettings {
+    ThisPc,
+    Remote { url: String, device_id: String },
+}
+
+/// The address and token the app calls the agent with.
+#[derive(Serialize)]
+struct Credentials {
+    url: String,
+    token: String,
+}
+
+fn connection_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|d| d.join(CONNECTION_FILE))
+        .map_err(|e| format!("locate the app's config directory: {e}"))
+}
+
+/// Accepts the address of a homecloud on another device: https on a Tailscale
+/// name, lowercase, nothing after the host (as web.public_origin).
+fn validate_remote_url(url: &str) -> Result<(), String> {
+    let host = url
+        .strip_prefix("https://")
+        .ok_or_else(|| format!("{url} is not an https address"))?;
+    if host.is_empty()
+        || !host.ends_with(REMOTE_DOMAIN)
+        || host.len() == REMOTE_DOMAIN.len()
+        || host != host.to_lowercase()
+        || host.contains(['/', '?', '#', '@', ':'])
+    {
+        return Err(format!(
+            "{url} is not a homecloud address on your tailnet, like https://homecloud.example{REMOTE_DOMAIN}"
+        ));
+    }
+    Ok(())
+}
+
+fn keyring_entry(url: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYRING_SERVICE, url).map_err(|e| format!("open the credential store: {e}"))
+}
+
+/// Which agent the app uses. It never fails for a missing file: this PC's
+/// agent is the default.
 #[tauri::command]
-fn agent_endpoint() -> Result<Endpoint, String> {
-    let path = state_dir()?.join(ENDPOINT_FILE);
-    let data = std::fs::read(&path)
-        .map_err(|e| format!("the agent is not running ({}: {e})", path.display()))?;
-    serde_json::from_slice(&data).map_err(|e| format!("decode {}: {e}", path.display()))
+fn connection_settings(app: tauri::AppHandle) -> Result<ConnectionSettings, String> {
+    let path = connection_path(&app)?;
+    match std::fs::read(&path) {
+        Ok(data) => {
+            serde_json::from_slice(&data).map_err(|e| format!("decode {}: {e}", path.display()))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ConnectionSettings::ThisPc),
+        Err(e) => Err(format!("read {}: {e}", path.display())),
+    }
+}
+
+/// The address and token to call the agent with. For this PC's agent they
+/// come from its discovery file, which exists only while it runs; for a paired
+/// device, from the credential store.
+#[tauri::command]
+fn connection_credentials(app: tauri::AppHandle) -> Result<Credentials, String> {
+    match connection_settings(app)? {
+        ConnectionSettings::ThisPc => {
+            let path = state_dir()?.join(ENDPOINT_FILE);
+            let data = std::fs::read(&path)
+                .map_err(|e| format!("the agent is not running ({}: {e})", path.display()))?;
+            let ep: Endpoint = serde_json::from_slice(&data)
+                .map_err(|e| format!("decode {}: {e}", path.display()))?;
+            Ok(Credentials {
+                url: ep.url,
+                token: ep.token,
+            })
+        }
+        ConnectionSettings::Remote { url, .. } => {
+            let token = keyring_entry(&url)?
+                .get_password()
+                .map_err(|e| format!("read this device's credential for {url}: {e}"))?;
+            Ok(Credentials { url, token })
+        }
+    }
+}
+
+/// Uses the homecloud at url from now on, with the token pairing returned.
+#[tauri::command]
+fn connect_remote(
+    app: tauri::AppHandle,
+    url: String,
+    device_id: String,
+    token: String,
+) -> Result<(), String> {
+    validate_remote_url(&url)?;
+    keyring_entry(&url)?
+        .set_password(&token)
+        .map_err(|e| format!("store this device's credential: {e}"))?;
+    let path = connection_path(&app)?;
+    let data = serde_json::to_vec_pretty(&ConnectionSettings::Remote { url, device_id })
+        .map_err(|e| format!("encode the connection: {e}"))?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    }
+    // Write beside the file and rename, so a crash never leaves half a file.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, data).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("write {}: {e}", path.display()))
+}
+
+/// Uses this PC's agent again and forgets the paired device's credential.
+#[tauri::command]
+fn use_this_pc(app: tauri::AppHandle) -> Result<(), String> {
+    if let ConnectionSettings::Remote { url, .. } = connection_settings(app.clone())? {
+        match keyring_entry(&url)?.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => {}
+            Err(e) => return Err(format!("forget this device's credential: {e}")),
+        }
+    }
+    let path = connection_path(&app)?;
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("remove {}: {e}", path.display())),
+    }
+}
+
+/// This computer's name, offered as the paired device's name.
+#[tauri::command]
+fn device_name() -> String {
+    #[cfg(windows)]
+    let name = std::env::var("COMPUTERNAME").ok();
+    #[cfg(target_os = "linux")]
+    let name = std::fs::read_to_string("/proc/sys/kernel/hostname").ok();
+    name.map(|n| n.trim().to_owned())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "This computer".to_owned())
 }
 
 /// Starts the agent through the registration `homecloud install` created.
@@ -122,10 +263,62 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_log::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            agent_endpoint,
+            connection_settings,
+            connection_credentials,
+            connect_remote,
+            use_this_pc,
+            device_name,
             start_agent,
             reveal_in_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running homecloud");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_urls() {
+        for ok in [
+            "https://homecloud.tail1234.ts.net",
+            "https://nas.example.ts.net",
+        ] {
+            assert!(validate_remote_url(ok).is_ok(), "{ok} rejected");
+        }
+        for bad in [
+            "http://homecloud.tail1234.ts.net",
+            "https://homecloud.tail1234.ts.net/",
+            "https://homecloud.tail1234.ts.net:8443",
+            "https://HOMECLOUD.tail1234.ts.net",
+            "https://example.com",
+            "https://.ts.net",
+            "https://evil.com#.ts.net",
+            "homecloud.tail1234.ts.net",
+        ] {
+            assert!(validate_remote_url(bad).is_err(), "{bad} accepted");
+        }
+    }
+
+    #[test]
+    fn connection_settings_round_trip() {
+        let remote = ConnectionSettings::Remote {
+            url: "https://nas.example.ts.net".to_owned(),
+            device_id: "d1".to_owned(),
+        };
+        let json = serde_json::to_string(&remote).unwrap();
+        assert_eq!(
+            json,
+            r#"{"kind":"remote","url":"https://nas.example.ts.net","device_id":"d1"}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<ConnectionSettings>(&json).unwrap(),
+            remote
+        );
+        assert_eq!(
+            serde_json::from_str::<ConnectionSettings>(r#"{"kind":"this_pc"}"#).unwrap(),
+            ConnectionSettings::ThisPc
+        );
+    }
 }

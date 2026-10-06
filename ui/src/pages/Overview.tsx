@@ -249,12 +249,19 @@ function Offline({ lastContact, onRetry }: { lastContact: Date | undefined; onRe
         <PlugDisconnectedRegular />
       </div>
       <Title3 as="h2">Can&apos;t reach the homecloud agent</Title3>
-      <Text className={styles.muted}>
-        The agent downloads and checks your files in the background and starts when you sign in. Your files on disk are
-        not affected. It may have stopped, or still be starting.
-      </Text>
+      {platform.kind === "desktop" && platform.connection.kind === "remote" ? (
+        <Text className={styles.muted}>
+          homecloud at {platform.connection.url} isn&apos;t answering. Check that Tailscale is connected on this
+          computer and that the device running homecloud is on. Your files there are not affected.
+        </Text>
+      ) : (
+        <Text className={styles.muted}>
+          The agent downloads and checks your files in the background and starts when you sign in. Your files on disk
+          are not affected. It may have stopped, or still be starting.
+        </Text>
+      )}
       <div className={styles.offlineActions}>
-        {platform.kind === "desktop" && (
+        {platform.kind === "desktop" && platform.connection.kind === "this_pc" && (
           <Button
             appearance="primary"
             disabled={starting}

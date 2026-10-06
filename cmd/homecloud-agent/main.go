@@ -136,7 +136,7 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 	if err != nil {
 		return err
 	}
-	authn := auth.New(token, cfg.Web.SessionTTL.Std(), *cfg.Web.PublicOrigin != "", time.Now)
+	authn := auth.New(token, cfg.Web.SessionTTL.Std(), *cfg.Web.PublicOrigin != "", db, time.Now)
 	signer, err := media.NewSigner(time.Now)
 	if err != nil {
 		return err

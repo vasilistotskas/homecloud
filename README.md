@@ -179,6 +179,12 @@ The desktop app (Tauri 2, `desktop/`) shows the same web app in a native window 
 the running agent with the token from its discovery file; the agent stays installed and running
 on its own. The app and the agent are built from the same commit: install both together.
 
+To use homecloud on a NAS instead, open **Settings → Connection → Connect to another device**,
+enter its Tailscale address and a one-time code from `homecloud open --print` there: the app
+pairs once and keeps its own device token in the system credential store (Windows Credential
+Manager, Secret Service on Linux). **Settings → Paired devices** lists and revokes paired
+devices; **Disconnect** revokes this computer there and returns to this PC's agent.
+
 ```powershell
 pnpm --dir ui build                              # the installer packages ui/dist as it is
 pnpm --dir desktop install --frozen-lockfile

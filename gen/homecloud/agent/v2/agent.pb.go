@@ -5340,6 +5340,341 @@ func (*ExchangeLoginCodeResponse) Descriptor() ([]byte, []int) {
 	return file_homecloud_agent_v2_agent_proto_rawDescGZIP(), []int{61}
 }
 
+type PairDeviceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Code  string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	// How the device is listed, e.g. the computer's name (1-64 characters).
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PairDeviceRequest) Reset() {
+	*x = PairDeviceRequest{}
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairDeviceRequest) ProtoMessage() {}
+
+func (x *PairDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairDeviceRequest.ProtoReflect.Descriptor instead.
+func (*PairDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v2_agent_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *PairDeviceRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *PairDeviceRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type PairDeviceResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	// The device's credential: shown once, stored by the agent only as a hash.
+	Token         string `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PairDeviceResponse) Reset() {
+	*x = PairDeviceResponse{}
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairDeviceResponse) ProtoMessage() {}
+
+func (x *PairDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairDeviceResponse.ProtoReflect.Descriptor instead.
+func (*PairDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v2_agent_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *PairDeviceResponse) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+func (x *PairDeviceResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+type ListDevicesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDevicesRequest) Reset() {
+	*x = ListDevicesRequest{}
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDevicesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDevicesRequest) ProtoMessage() {}
+
+func (x *ListDevicesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDevicesRequest.ProtoReflect.Descriptor instead.
+func (*ListDevicesRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v2_agent_proto_rawDescGZIP(), []int{64}
+}
+
+type ListDevicesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Devices       []*PairedDevice        `protobuf:"bytes,1,rep,name=devices,proto3" json:"devices,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDevicesResponse) Reset() {
+	*x = ListDevicesResponse{}
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDevicesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDevicesResponse) ProtoMessage() {}
+
+func (x *ListDevicesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDevicesResponse.ProtoReflect.Descriptor instead.
+func (*ListDevicesResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v2_agent_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *ListDevicesResponse) GetDevices() []*PairedDevice {
+	if x != nil {
+		return x.Devices
+	}
+	return nil
+}
+
+type PairedDevice struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Name     string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	PairedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=paired_at,json=pairedAt,proto3" json:"paired_at,omitempty"`
+	// To the minute.
+	LastSeenAt    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PairedDevice) Reset() {
+	*x = PairedDevice{}
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PairedDevice) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PairedDevice) ProtoMessage() {}
+
+func (x *PairedDevice) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PairedDevice.ProtoReflect.Descriptor instead.
+func (*PairedDevice) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v2_agent_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *PairedDevice) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PairedDevice) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PairedDevice) GetPairedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.PairedAt
+	}
+	return nil
+}
+
+func (x *PairedDevice) GetLastSeenAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastSeenAt
+	}
+	return nil
+}
+
+type RevokeDeviceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeviceId      string                 `protobuf:"bytes,1,opt,name=device_id,json=deviceId,proto3" json:"device_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeDeviceRequest) Reset() {
+	*x = RevokeDeviceRequest{}
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeDeviceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeDeviceRequest) ProtoMessage() {}
+
+func (x *RevokeDeviceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeDeviceRequest.ProtoReflect.Descriptor instead.
+func (*RevokeDeviceRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v2_agent_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *RevokeDeviceRequest) GetDeviceId() string {
+	if x != nil {
+		return x.DeviceId
+	}
+	return ""
+}
+
+type RevokeDeviceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeDeviceResponse) Reset() {
+	*x = RevokeDeviceResponse{}
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeDeviceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeDeviceResponse) ProtoMessage() {}
+
+func (x *RevokeDeviceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v2_agent_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeDeviceResponse.ProtoReflect.Descriptor instead.
+func (*RevokeDeviceResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v2_agent_proto_rawDescGZIP(), []int{68}
+}
+
 var File_homecloud_agent_v2_agent_proto protoreflect.FileDescriptor
 
 const file_homecloud_agent_v2_agent_proto_rawDesc = "" +
@@ -5714,7 +6049,25 @@ const file_homecloud_agent_v2_agent_proto_rawDesc = "" +
 	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\".\n" +
 	"\x18ExchangeLoginCodeRequest\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\"\x1b\n" +
-	"\x19ExchangeLoginCodeResponse*\xb5\x01\n" +
+	"\x19ExchangeLoginCodeResponse\";\n" +
+	"\x11PairDeviceRequest\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"G\n" +
+	"\x12PairDeviceResponse\x12\x1b\n" +
+	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\x12\x14\n" +
+	"\x05token\x18\x02 \x01(\tR\x05token\"\x14\n" +
+	"\x12ListDevicesRequest\"Q\n" +
+	"\x13ListDevicesResponse\x12:\n" +
+	"\adevices\x18\x01 \x03(\v2 .homecloud.agent.v2.PairedDeviceR\adevices\"\xa9\x01\n" +
+	"\fPairedDevice\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x127\n" +
+	"\tpaired_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\bpairedAt\x12<\n" +
+	"\flast_seen_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"lastSeenAt\"2\n" +
+	"\x13RevokeDeviceRequest\x12\x1b\n" +
+	"\tdevice_id\x18\x01 \x01(\tR\bdeviceId\"\x16\n" +
+	"\x14RevokeDeviceResponse*\xb5\x01\n" +
 	"\x10DriveHealthState\x12\"\n" +
 	"\x1eDRIVE_HEALTH_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15DRIVE_HEALTH_STATE_OK\x10\x01\x12\x1e\n" +
@@ -5827,7 +6180,7 @@ const file_homecloud_agent_v2_agent_proto_rawDesc = "" +
 	"\x10MEDIA_TYPE_PHOTO\x10\x01\x12\x14\n" +
 	"\x10MEDIA_TYPE_VIDEO\x10\x02\x12\x1f\n" +
 	"\x1bMEDIA_TYPE_LIVE_PHOTO_IMAGE\x10\x03\x12\x1f\n" +
-	"\x1bMEDIA_TYPE_LIVE_PHOTO_VIDEO\x10\x042\xa8\v\n" +
+	"\x1bMEDIA_TYPE_LIVE_PHOTO_VIDEO\x10\x042\xcd\r\n" +
 	"\fAgentService\x12W\n" +
 	"\aGetInfo\x12\".homecloud.agent.v2.GetInfoRequest\x1a#.homecloud.agent.v2.GetInfoResponse\"\x03\x90\x02\x01\x12c\n" +
 	"\vGetOverview\x12&.homecloud.agent.v2.GetOverviewRequest\x1a'.homecloud.agent.v2.GetOverviewResponse\"\x03\x90\x02\x01\x12f\n" +
@@ -5844,7 +6197,11 @@ const file_homecloud_agent_v2_agent_proto_rawDesc = "" +
 	"\x14SendTestNotification\x12/.homecloud.agent.v2.SendTestNotificationRequest\x1a0.homecloud.agent.v2.SendTestNotificationResponse\x12c\n" +
 	"\vGetSettings\x12&.homecloud.agent.v2.GetSettingsRequest\x1a'.homecloud.agent.v2.GetSettingsResponse\"\x03\x90\x02\x01\x12j\n" +
 	"\x0fCreateLoginCode\x12*.homecloud.agent.v2.CreateLoginCodeRequest\x1a+.homecloud.agent.v2.CreateLoginCodeResponse\x12p\n" +
-	"\x11ExchangeLoginCode\x12,.homecloud.agent.v2.ExchangeLoginCodeRequest\x1a-.homecloud.agent.v2.ExchangeLoginCodeResponseB\xd2\x01\n" +
+	"\x11ExchangeLoginCode\x12,.homecloud.agent.v2.ExchangeLoginCodeRequest\x1a-.homecloud.agent.v2.ExchangeLoginCodeResponse\x12[\n" +
+	"\n" +
+	"PairDevice\x12%.homecloud.agent.v2.PairDeviceRequest\x1a&.homecloud.agent.v2.PairDeviceResponse\x12c\n" +
+	"\vListDevices\x12&.homecloud.agent.v2.ListDevicesRequest\x1a'.homecloud.agent.v2.ListDevicesResponse\"\x03\x90\x02\x01\x12a\n" +
+	"\fRevokeDevice\x12'.homecloud.agent.v2.RevokeDeviceRequest\x1a(.homecloud.agent.v2.RevokeDeviceResponseB\xd2\x01\n" +
 	"\x16com.homecloud.agent.v2B\n" +
 	"AgentProtoP\x01ZBgithub.com/vasilistotskas/homecloud/gen/homecloud/agent/v2;agentv2\xa2\x02\x03HAX\xaa\x02\x12Homecloud.Agent.V2\xca\x02\x12Homecloud\\Agent\\V2\xe2\x02\x1eHomecloud\\Agent\\V2\\GPBMetadata\xea\x02\x14Homecloud::Agent::V2b\x06proto3"
 
@@ -5861,7 +6218,7 @@ func file_homecloud_agent_v2_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_homecloud_agent_v2_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 14)
-var file_homecloud_agent_v2_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 62)
+var file_homecloud_agent_v2_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 69)
 var file_homecloud_agent_v2_agent_proto_goTypes = []any{
 	(DriveHealthState)(0),                // 0: homecloud.agent.v2.DriveHealthState
 	(AppleAccountState)(0),               // 1: homecloud.agent.v2.AppleAccountState
@@ -5939,7 +6296,14 @@ var file_homecloud_agent_v2_agent_proto_goTypes = []any{
 	(*CreateLoginCodeResponse)(nil),      // 73: homecloud.agent.v2.CreateLoginCodeResponse
 	(*ExchangeLoginCodeRequest)(nil),     // 74: homecloud.agent.v2.ExchangeLoginCodeRequest
 	(*ExchangeLoginCodeResponse)(nil),    // 75: homecloud.agent.v2.ExchangeLoginCodeResponse
-	(*timestamppb.Timestamp)(nil),        // 76: google.protobuf.Timestamp
+	(*PairDeviceRequest)(nil),            // 76: homecloud.agent.v2.PairDeviceRequest
+	(*PairDeviceResponse)(nil),           // 77: homecloud.agent.v2.PairDeviceResponse
+	(*ListDevicesRequest)(nil),           // 78: homecloud.agent.v2.ListDevicesRequest
+	(*ListDevicesResponse)(nil),          // 79: homecloud.agent.v2.ListDevicesResponse
+	(*PairedDevice)(nil),                 // 80: homecloud.agent.v2.PairedDevice
+	(*RevokeDeviceRequest)(nil),          // 81: homecloud.agent.v2.RevokeDeviceRequest
+	(*RevokeDeviceResponse)(nil),         // 82: homecloud.agent.v2.RevokeDeviceResponse
+	(*timestamppb.Timestamp)(nil),        // 83: google.protobuf.Timestamp
 }
 var file_homecloud_agent_v2_agent_proto_depIdxs = []int32{
 	20,  // 0: homecloud.agent.v2.GetOverviewResponse.overview:type_name -> homecloud.agent.v2.Overview
@@ -5956,19 +6320,19 @@ var file_homecloud_agent_v2_agent_proto_depIdxs = []int32{
 	28,  // 11: homecloud.agent.v2.Overview.last_iphone_backup:type_name -> homecloud.agent.v2.Run
 	28,  // 12: homecloud.agent.v2.Overview.last_drive_sync:type_name -> homecloud.agent.v2.Run
 	21,  // 13: homecloud.agent.v2.Overview.icloud_drive:type_name -> homecloud.agent.v2.ICloudDrive
-	76,  // 14: homecloud.agent.v2.ICloudDrive.signed_in_at:type_name -> google.protobuf.Timestamp
+	83,  // 14: homecloud.agent.v2.ICloudDrive.signed_in_at:type_name -> google.protobuf.Timestamp
 	0,   // 15: homecloud.agent.v2.DriveHealth.state:type_name -> homecloud.agent.v2.DriveHealthState
-	76,  // 16: homecloud.agent.v2.DriveHealth.checked_at:type_name -> google.protobuf.Timestamp
+	83,  // 16: homecloud.agent.v2.DriveHealth.checked_at:type_name -> google.protobuf.Timestamp
 	1,   // 17: homecloud.agent.v2.AppleAccount.state:type_name -> homecloud.agent.v2.AppleAccountState
 	2,   // 18: homecloud.agent.v2.Activity.phase:type_name -> homecloud.agent.v2.Phase
-	76,  // 19: homecloud.agent.v2.Activity.phase_started_at:type_name -> google.protobuf.Timestamp
-	76,  // 20: homecloud.agent.v2.Activity.next_cycle_at:type_name -> google.protobuf.Timestamp
-	76,  // 21: homecloud.agent.v2.Activity.next_scrub_at:type_name -> google.protobuf.Timestamp
-	76,  // 22: homecloud.agent.v2.Activity.next_ledger_backup_at:type_name -> google.protobuf.Timestamp
-	76,  // 23: homecloud.agent.v2.Activity.next_iphone_backup_check_at:type_name -> google.protobuf.Timestamp
-	76,  // 24: homecloud.agent.v2.Activity.next_drive_sync_at:type_name -> google.protobuf.Timestamp
-	76,  // 25: homecloud.agent.v2.Run.started_at:type_name -> google.protobuf.Timestamp
-	76,  // 26: homecloud.agent.v2.Run.finished_at:type_name -> google.protobuf.Timestamp
+	83,  // 19: homecloud.agent.v2.Activity.phase_started_at:type_name -> google.protobuf.Timestamp
+	83,  // 20: homecloud.agent.v2.Activity.next_cycle_at:type_name -> google.protobuf.Timestamp
+	83,  // 21: homecloud.agent.v2.Activity.next_scrub_at:type_name -> google.protobuf.Timestamp
+	83,  // 22: homecloud.agent.v2.Activity.next_ledger_backup_at:type_name -> google.protobuf.Timestamp
+	83,  // 23: homecloud.agent.v2.Activity.next_iphone_backup_check_at:type_name -> google.protobuf.Timestamp
+	83,  // 24: homecloud.agent.v2.Activity.next_drive_sync_at:type_name -> google.protobuf.Timestamp
+	83,  // 25: homecloud.agent.v2.Run.started_at:type_name -> google.protobuf.Timestamp
+	83,  // 26: homecloud.agent.v2.Run.finished_at:type_name -> google.protobuf.Timestamp
 	6,   // 27: homecloud.agent.v2.Run.result:type_name -> homecloud.agent.v2.RunResult
 	35,  // 28: homecloud.agent.v2.Run.cycle:type_name -> homecloud.agent.v2.CycleReport
 	29,  // 29: homecloud.agent.v2.Run.scrub:type_name -> homecloud.agent.v2.ScrubReport
@@ -5978,13 +6342,13 @@ var file_homecloud_agent_v2_agent_proto_depIdxs = []int32{
 	30,  // 33: homecloud.agent.v2.ScrubReport.drive:type_name -> homecloud.agent.v2.DriveScrub
 	4,   // 34: homecloud.agent.v2.DriveSyncReport.outcome:type_name -> homecloud.agent.v2.DriveSyncOutcome
 	34,  // 35: homecloud.agent.v2.IPhoneBackupReport.devices:type_name -> homecloud.agent.v2.IPhoneBackup
-	76,  // 36: homecloud.agent.v2.IPhoneBackup.completed_at:type_name -> google.protobuf.Timestamp
+	83,  // 36: homecloud.agent.v2.IPhoneBackup.completed_at:type_name -> google.protobuf.Timestamp
 	5,   // 37: homecloud.agent.v2.IPhoneBackup.state:type_name -> homecloud.agent.v2.IPhoneBackupState
-	76,  // 38: homecloud.agent.v2.IPhoneBackup.last_full_read_at:type_name -> google.protobuf.Timestamp
+	83,  // 38: homecloud.agent.v2.IPhoneBackup.last_full_read_at:type_name -> google.protobuf.Timestamp
 	7,   // 39: homecloud.agent.v2.CycleReport.download:type_name -> homecloud.agent.v2.DownloadOutcome
 	3,   // 40: homecloud.agent.v2.ListRunsRequest.kind:type_name -> homecloud.agent.v2.RunKind
 	28,  // 41: homecloud.agent.v2.ListRunsResponse.runs:type_name -> homecloud.agent.v2.Run
-	76,  // 42: homecloud.agent.v2.Event.at:type_name -> google.protobuf.Timestamp
+	83,  // 42: homecloud.agent.v2.Event.at:type_name -> google.protobuf.Timestamp
 	40,  // 43: homecloud.agent.v2.Event.asset:type_name -> homecloud.agent.v2.AssetRef
 	41,  // 44: homecloud.agent.v2.Event.rendition_changed:type_name -> homecloud.agent.v2.RenditionChanged
 	42,  // 45: homecloud.agent.v2.Event.state_changed:type_name -> homecloud.agent.v2.StateChanged
@@ -6008,65 +6372,74 @@ var file_homecloud_agent_v2_agent_proto_depIdxs = []int32{
 	52,  // 63: homecloud.agent.v2.ListAssetsResponse.items:type_name -> homecloud.agent.v2.LibraryItem
 	40,  // 64: homecloud.agent.v2.LibraryItem.asset:type_name -> homecloud.agent.v2.AssetRef
 	12,  // 65: homecloud.agent.v2.LibraryItem.kind:type_name -> homecloud.agent.v2.AssetKind
-	76,  // 66: homecloud.agent.v2.LibraryItem.created_at:type_name -> google.protobuf.Timestamp
+	83,  // 66: homecloud.agent.v2.LibraryItem.created_at:type_name -> google.protobuf.Timestamp
 	10,  // 67: homecloud.agent.v2.LibraryItem.state:type_name -> homecloud.agent.v2.AssetState
 	55,  // 68: homecloud.agent.v2.ListQuarantineResponse.assets:type_name -> homecloud.agent.v2.QuarantinedAsset
 	40,  // 69: homecloud.agent.v2.QuarantinedAsset.asset:type_name -> homecloud.agent.v2.AssetRef
-	76,  // 70: homecloud.agent.v2.QuarantinedAsset.quarantined_at:type_name -> google.protobuf.Timestamp
+	83,  // 70: homecloud.agent.v2.QuarantinedAsset.quarantined_at:type_name -> google.protobuf.Timestamp
 	56,  // 71: homecloud.agent.v2.QuarantinedAsset.failures:type_name -> homecloud.agent.v2.Failure
 	11,  // 72: homecloud.agent.v2.Failure.tier:type_name -> homecloud.agent.v2.Tier
 	59,  // 73: homecloud.agent.v2.GetAssetResponse.asset:type_name -> homecloud.agent.v2.Asset
 	40,  // 74: homecloud.agent.v2.Asset.ref:type_name -> homecloud.agent.v2.AssetRef
 	10,  // 75: homecloud.agent.v2.Asset.state:type_name -> homecloud.agent.v2.AssetState
-	76,  // 76: homecloud.agent.v2.Asset.state_changed_at:type_name -> google.protobuf.Timestamp
-	76,  // 77: homecloud.agent.v2.Asset.created_at:type_name -> google.protobuf.Timestamp
-	76,  // 78: homecloud.agent.v2.Asset.added_at:type_name -> google.protobuf.Timestamp
-	76,  // 79: homecloud.agent.v2.Asset.last_seen_at:type_name -> google.protobuf.Timestamp
+	83,  // 76: homecloud.agent.v2.Asset.state_changed_at:type_name -> google.protobuf.Timestamp
+	83,  // 77: homecloud.agent.v2.Asset.created_at:type_name -> google.protobuf.Timestamp
+	83,  // 78: homecloud.agent.v2.Asset.added_at:type_name -> google.protobuf.Timestamp
+	83,  // 79: homecloud.agent.v2.Asset.last_seen_at:type_name -> google.protobuf.Timestamp
 	60,  // 80: homecloud.agent.v2.Asset.renditions:type_name -> homecloud.agent.v2.Rendition
 	13,  // 81: homecloud.agent.v2.Rendition.media_type:type_name -> homecloud.agent.v2.MediaType
 	11,  // 82: homecloud.agent.v2.Rendition.required_tiers:type_name -> homecloud.agent.v2.Tier
 	61,  // 83: homecloud.agent.v2.Rendition.passes:type_name -> homecloud.agent.v2.TierPass
 	56,  // 84: homecloud.agent.v2.Rendition.failure:type_name -> homecloud.agent.v2.Failure
 	11,  // 85: homecloud.agent.v2.TierPass.tier:type_name -> homecloud.agent.v2.Tier
-	76,  // 86: homecloud.agent.v2.TierPass.at:type_name -> google.protobuf.Timestamp
+	83,  // 86: homecloud.agent.v2.TierPass.at:type_name -> google.protobuf.Timestamp
 	70,  // 87: homecloud.agent.v2.GetSettingsResponse.settings:type_name -> homecloud.agent.v2.Settings
 	71,  // 88: homecloud.agent.v2.Settings.downloader:type_name -> homecloud.agent.v2.ToolPin
 	71,  // 89: homecloud.agent.v2.Settings.video_probe:type_name -> homecloud.agent.v2.ToolPin
 	71,  // 90: homecloud.agent.v2.Settings.thumbnailer:type_name -> homecloud.agent.v2.ToolPin
-	76,  // 91: homecloud.agent.v2.CreateLoginCodeResponse.expires_at:type_name -> google.protobuf.Timestamp
-	14,  // 92: homecloud.agent.v2.AgentService.GetInfo:input_type -> homecloud.agent.v2.GetInfoRequest
-	16,  // 93: homecloud.agent.v2.AgentService.GetOverview:input_type -> homecloud.agent.v2.GetOverviewRequest
-	18,  // 94: homecloud.agent.v2.AgentService.WatchOverview:input_type -> homecloud.agent.v2.WatchOverviewRequest
-	36,  // 95: homecloud.agent.v2.AgentService.ListRuns:input_type -> homecloud.agent.v2.ListRunsRequest
-	48,  // 96: homecloud.agent.v2.AgentService.ListEvents:input_type -> homecloud.agent.v2.ListEventsRequest
-	50,  // 97: homecloud.agent.v2.AgentService.ListAssets:input_type -> homecloud.agent.v2.ListAssetsRequest
-	53,  // 98: homecloud.agent.v2.AgentService.ListQuarantine:input_type -> homecloud.agent.v2.ListQuarantineRequest
-	57,  // 99: homecloud.agent.v2.AgentService.GetAsset:input_type -> homecloud.agent.v2.GetAssetRequest
-	62,  // 100: homecloud.agent.v2.AgentService.ReleaseQuarantine:input_type -> homecloud.agent.v2.ReleaseQuarantineRequest
-	64,  // 101: homecloud.agent.v2.AgentService.StartSync:input_type -> homecloud.agent.v2.StartSyncRequest
-	66,  // 102: homecloud.agent.v2.AgentService.SendTestNotification:input_type -> homecloud.agent.v2.SendTestNotificationRequest
-	68,  // 103: homecloud.agent.v2.AgentService.GetSettings:input_type -> homecloud.agent.v2.GetSettingsRequest
-	72,  // 104: homecloud.agent.v2.AgentService.CreateLoginCode:input_type -> homecloud.agent.v2.CreateLoginCodeRequest
-	74,  // 105: homecloud.agent.v2.AgentService.ExchangeLoginCode:input_type -> homecloud.agent.v2.ExchangeLoginCodeRequest
-	15,  // 106: homecloud.agent.v2.AgentService.GetInfo:output_type -> homecloud.agent.v2.GetInfoResponse
-	17,  // 107: homecloud.agent.v2.AgentService.GetOverview:output_type -> homecloud.agent.v2.GetOverviewResponse
-	19,  // 108: homecloud.agent.v2.AgentService.WatchOverview:output_type -> homecloud.agent.v2.WatchOverviewResponse
-	37,  // 109: homecloud.agent.v2.AgentService.ListRuns:output_type -> homecloud.agent.v2.ListRunsResponse
-	49,  // 110: homecloud.agent.v2.AgentService.ListEvents:output_type -> homecloud.agent.v2.ListEventsResponse
-	51,  // 111: homecloud.agent.v2.AgentService.ListAssets:output_type -> homecloud.agent.v2.ListAssetsResponse
-	54,  // 112: homecloud.agent.v2.AgentService.ListQuarantine:output_type -> homecloud.agent.v2.ListQuarantineResponse
-	58,  // 113: homecloud.agent.v2.AgentService.GetAsset:output_type -> homecloud.agent.v2.GetAssetResponse
-	63,  // 114: homecloud.agent.v2.AgentService.ReleaseQuarantine:output_type -> homecloud.agent.v2.ReleaseQuarantineResponse
-	65,  // 115: homecloud.agent.v2.AgentService.StartSync:output_type -> homecloud.agent.v2.StartSyncResponse
-	67,  // 116: homecloud.agent.v2.AgentService.SendTestNotification:output_type -> homecloud.agent.v2.SendTestNotificationResponse
-	69,  // 117: homecloud.agent.v2.AgentService.GetSettings:output_type -> homecloud.agent.v2.GetSettingsResponse
-	73,  // 118: homecloud.agent.v2.AgentService.CreateLoginCode:output_type -> homecloud.agent.v2.CreateLoginCodeResponse
-	75,  // 119: homecloud.agent.v2.AgentService.ExchangeLoginCode:output_type -> homecloud.agent.v2.ExchangeLoginCodeResponse
-	106, // [106:120] is the sub-list for method output_type
-	92,  // [92:106] is the sub-list for method input_type
-	92,  // [92:92] is the sub-list for extension type_name
-	92,  // [92:92] is the sub-list for extension extendee
-	0,   // [0:92] is the sub-list for field type_name
+	83,  // 91: homecloud.agent.v2.CreateLoginCodeResponse.expires_at:type_name -> google.protobuf.Timestamp
+	80,  // 92: homecloud.agent.v2.ListDevicesResponse.devices:type_name -> homecloud.agent.v2.PairedDevice
+	83,  // 93: homecloud.agent.v2.PairedDevice.paired_at:type_name -> google.protobuf.Timestamp
+	83,  // 94: homecloud.agent.v2.PairedDevice.last_seen_at:type_name -> google.protobuf.Timestamp
+	14,  // 95: homecloud.agent.v2.AgentService.GetInfo:input_type -> homecloud.agent.v2.GetInfoRequest
+	16,  // 96: homecloud.agent.v2.AgentService.GetOverview:input_type -> homecloud.agent.v2.GetOverviewRequest
+	18,  // 97: homecloud.agent.v2.AgentService.WatchOverview:input_type -> homecloud.agent.v2.WatchOverviewRequest
+	36,  // 98: homecloud.agent.v2.AgentService.ListRuns:input_type -> homecloud.agent.v2.ListRunsRequest
+	48,  // 99: homecloud.agent.v2.AgentService.ListEvents:input_type -> homecloud.agent.v2.ListEventsRequest
+	50,  // 100: homecloud.agent.v2.AgentService.ListAssets:input_type -> homecloud.agent.v2.ListAssetsRequest
+	53,  // 101: homecloud.agent.v2.AgentService.ListQuarantine:input_type -> homecloud.agent.v2.ListQuarantineRequest
+	57,  // 102: homecloud.agent.v2.AgentService.GetAsset:input_type -> homecloud.agent.v2.GetAssetRequest
+	62,  // 103: homecloud.agent.v2.AgentService.ReleaseQuarantine:input_type -> homecloud.agent.v2.ReleaseQuarantineRequest
+	64,  // 104: homecloud.agent.v2.AgentService.StartSync:input_type -> homecloud.agent.v2.StartSyncRequest
+	66,  // 105: homecloud.agent.v2.AgentService.SendTestNotification:input_type -> homecloud.agent.v2.SendTestNotificationRequest
+	68,  // 106: homecloud.agent.v2.AgentService.GetSettings:input_type -> homecloud.agent.v2.GetSettingsRequest
+	72,  // 107: homecloud.agent.v2.AgentService.CreateLoginCode:input_type -> homecloud.agent.v2.CreateLoginCodeRequest
+	74,  // 108: homecloud.agent.v2.AgentService.ExchangeLoginCode:input_type -> homecloud.agent.v2.ExchangeLoginCodeRequest
+	76,  // 109: homecloud.agent.v2.AgentService.PairDevice:input_type -> homecloud.agent.v2.PairDeviceRequest
+	78,  // 110: homecloud.agent.v2.AgentService.ListDevices:input_type -> homecloud.agent.v2.ListDevicesRequest
+	81,  // 111: homecloud.agent.v2.AgentService.RevokeDevice:input_type -> homecloud.agent.v2.RevokeDeviceRequest
+	15,  // 112: homecloud.agent.v2.AgentService.GetInfo:output_type -> homecloud.agent.v2.GetInfoResponse
+	17,  // 113: homecloud.agent.v2.AgentService.GetOverview:output_type -> homecloud.agent.v2.GetOverviewResponse
+	19,  // 114: homecloud.agent.v2.AgentService.WatchOverview:output_type -> homecloud.agent.v2.WatchOverviewResponse
+	37,  // 115: homecloud.agent.v2.AgentService.ListRuns:output_type -> homecloud.agent.v2.ListRunsResponse
+	49,  // 116: homecloud.agent.v2.AgentService.ListEvents:output_type -> homecloud.agent.v2.ListEventsResponse
+	51,  // 117: homecloud.agent.v2.AgentService.ListAssets:output_type -> homecloud.agent.v2.ListAssetsResponse
+	54,  // 118: homecloud.agent.v2.AgentService.ListQuarantine:output_type -> homecloud.agent.v2.ListQuarantineResponse
+	58,  // 119: homecloud.agent.v2.AgentService.GetAsset:output_type -> homecloud.agent.v2.GetAssetResponse
+	63,  // 120: homecloud.agent.v2.AgentService.ReleaseQuarantine:output_type -> homecloud.agent.v2.ReleaseQuarantineResponse
+	65,  // 121: homecloud.agent.v2.AgentService.StartSync:output_type -> homecloud.agent.v2.StartSyncResponse
+	67,  // 122: homecloud.agent.v2.AgentService.SendTestNotification:output_type -> homecloud.agent.v2.SendTestNotificationResponse
+	69,  // 123: homecloud.agent.v2.AgentService.GetSettings:output_type -> homecloud.agent.v2.GetSettingsResponse
+	73,  // 124: homecloud.agent.v2.AgentService.CreateLoginCode:output_type -> homecloud.agent.v2.CreateLoginCodeResponse
+	75,  // 125: homecloud.agent.v2.AgentService.ExchangeLoginCode:output_type -> homecloud.agent.v2.ExchangeLoginCodeResponse
+	77,  // 126: homecloud.agent.v2.AgentService.PairDevice:output_type -> homecloud.agent.v2.PairDeviceResponse
+	79,  // 127: homecloud.agent.v2.AgentService.ListDevices:output_type -> homecloud.agent.v2.ListDevicesResponse
+	82,  // 128: homecloud.agent.v2.AgentService.RevokeDevice:output_type -> homecloud.agent.v2.RevokeDeviceResponse
+	112, // [112:129] is the sub-list for method output_type
+	95,  // [95:112] is the sub-list for method input_type
+	95,  // [95:95] is the sub-list for extension type_name
+	95,  // [95:95] is the sub-list for extension extendee
+	0,   // [0:95] is the sub-list for field type_name
 }
 
 func init() { file_homecloud_agent_v2_agent_proto_init() }
@@ -6091,7 +6464,7 @@ func file_homecloud_agent_v2_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_homecloud_agent_v2_agent_proto_rawDesc), len(file_homecloud_agent_v2_agent_proto_rawDesc)),
 			NumEnums:      14,
-			NumMessages:   62,
+			NumMessages:   69,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

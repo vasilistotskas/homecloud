@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window: core window APIs and the app's three commands only.",
+  "description": "The main window: core window APIs and the app's own commands only.",
   "windows": ["main"],
-  "permissions": ["core:default", "allow-agent-endpoint", "allow-start-agent", "allow-reveal-in-folder"]
+  "permissions": [
+    "core:default",
+    "allow-connection-settings",
+    "allow-connection-credentials",
+    "allow-connect-remote",
+    "allow-use-this-pc",
+    "allow-device-name",
+    "allow-start-agent",
+    "allow-reveal-in-folder"
+  ]
 }

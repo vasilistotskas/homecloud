@@ -163,7 +163,7 @@ function Detail({ item }: { item: QuarantinedAsset }) {
           <dt className={styles.dt}>On disk</dt>
           <dd className={`${styles.dd} ${styles.mono}`}>
             {r.localPath}
-            {platform.kind === "desktop" && (
+            {platform.kind === "desktop" && platform.connection.kind === "this_pc" && (
               <Button
                 size="small"
                 appearance="subtle"

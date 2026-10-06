@@ -46,10 +46,10 @@ describe("DesktopTransport", () => {
     const seen: string[] = [];
     createConnectTransport.mockImplementation(agentAccepting("new", seen));
     invoke
-      .mockResolvedValueOnce({ url: "http://127.0.0.1:8790", token: "old", agent_version: "x" })
-      .mockResolvedValueOnce({ url: "http://127.0.0.1:8790", token: "new", agent_version: "x" });
+      .mockResolvedValueOnce({ url: "http://127.0.0.1:8790", token: "old" })
+      .mockResolvedValueOnce({ url: "http://127.0.0.1:8790", token: "new" });
 
-    const res = await call(new DesktopTransport());
+    const res = await call(new DesktopTransport({ kind: "this_pc" }));
     expect(res.message.apiVersion).toBe("1.0");
     expect(seen).toEqual(["Bearer old", "Bearer new"]);
     expect(invoke).toHaveBeenCalledTimes(2);
@@ -57,12 +57,31 @@ describe("DesktopTransport", () => {
 
   it("reports an agent that is not running as unavailable and tries again later", async () => {
     invoke.mockRejectedValueOnce("the agent is not running");
-    const t = new DesktopTransport();
+    const t = new DesktopTransport({ kind: "this_pc" });
     await expect(call(t)).rejects.toMatchObject({ code: Code.Unavailable });
 
     const seen: string[] = [];
     createConnectTransport.mockImplementation(agentAccepting("tok", seen));
-    invoke.mockResolvedValueOnce({ url: "http://127.0.0.1:8790", token: "tok", agent_version: "x" });
+    invoke.mockResolvedValueOnce({ url: "http://127.0.0.1:8790", token: "tok" });
     await expect(call(t)).resolves.toBeDefined();
+  });
+
+  it("does not retry a paired device whose token was revoked", async () => {
+    const seen: string[] = [];
+    createConnectTransport.mockImplementation(agentAccepting("other", seen));
+    invoke.mockResolvedValue({ url: "https://nas.example.ts.net", token: "revoked" });
+    const t = new DesktopTransport({ kind: "remote", url: "https://nas.example.ts.net", deviceId: "d1" });
+    await expect(call(t)).rejects.toMatchObject({ code: Code.Unauthenticated });
+    expect(seen).toEqual(["Bearer revoked"]);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("connection_credentials");
+  });
+
+  it("calls a paired device at its own address", async () => {
+    createConnectTransport.mockImplementation(agentAccepting("tok", []));
+    invoke.mockResolvedValue({ url: "https://nas.example.ts.net", token: "tok" });
+    const t = new DesktopTransport({ kind: "remote", url: "https://nas.example.ts.net", deviceId: "d1" });
+    await call(t);
+    expect(t.baseUrl).toBe("https://nas.example.ts.net");
   });
 });

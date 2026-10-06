@@ -321,7 +321,7 @@ function Detail({ item }: { item: LibraryItem }) {
         </div>
       )}
       {display !== undefined && <Text className={styles.path}>{display.localPath}</Text>}
-      {platform.kind === "desktop" && display !== undefined && (
+      {platform.kind === "desktop" && platform.connection.kind === "this_pc" && display !== undefined && (
         <Button
           icon={<FolderOpenRegular />}
           onClick={() => {

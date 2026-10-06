@@ -91,7 +91,7 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 	if err != nil {
 		t.Fatal(err)
 	}
-	authn := auth.New(token, 7*24*time.Hour, publicOrigin != "", func() time.Time { return t0 })
+	authn := auth.New(token, 7*24*time.Hour, publicOrigin != "", db, func() time.Time { return t0 })
 	agent := &fakeAgent{hub: app.NewHub(), started: true}
 	for _, opt := range opts {
 		opt(agent)
@@ -276,6 +276,64 @@ func TestPublicOrigin(t *testing.T) {
 	_ = res.Body.Close()
 	if cookies := res.Cookies(); res.StatusCode != http.StatusOK || len(cookies) != 1 || !cookies[0].Secure {
 		t.Fatalf("exchange over the public origin: status %d cookies %+v; want one Secure cookie", res.StatusCode, cookies)
+	}
+}
+
+// A desktop app on another computer pairs once with a login code and then
+// uses its own token, which can do what a browser session can (not mint
+// login codes) until it is revoked.
+func TestPairedDevice(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(&agentv2.CreateLoginCodeRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The desktop app pairs from its own origin, with no credential yet.
+	anon := agentv2connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(origin("http://tauri.localhost")))
+	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv2.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: " "})); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("blank name = %v", err)
+	}
+	paired, err := anon.PairDevice(ctx, connect.NewRequest(&agentv2.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: "Laptop"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv2.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: "Laptop"})); code(err) != connect.CodePermissionDenied {
+		t.Fatalf("reused code = %v", err)
+	}
+
+	device := agentv2connect.NewAgentServiceClient(http.DefaultClient, e.url,
+		connect.WithInterceptors(origin("http://tauri.localhost"), auth.Bearer(paired.Msg.GetToken())))
+	if _, err = device.GetInfo(ctx, connect.NewRequest(&agentv2.GetInfoRequest{})); err != nil {
+		t.Fatalf("device call: %v", err)
+	}
+	if _, err = device.CreateLoginCode(ctx, connect.NewRequest(&agentv2.CreateLoginCodeRequest{})); code(err) != connect.CodePermissionDenied {
+		t.Fatalf("a device minted a login code: %v", err)
+	}
+	list, err := device.ListDevices(ctx, connect.NewRequest(&agentv2.ListDevicesRequest{}))
+	if err != nil || len(list.Msg.GetDevices()) != 1 || list.Msg.GetDevices()[0].GetName() != "Laptop" ||
+		list.Msg.GetDevices()[0].GetId() != paired.Msg.GetDeviceId() {
+		t.Fatalf("devices = %v, %v", list, err)
+	}
+
+	if _, err = e.client.RevokeDevice(ctx, connect.NewRequest(&agentv2.RevokeDeviceRequest{DeviceId: paired.Msg.GetDeviceId()})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = device.GetInfo(ctx, connect.NewRequest(&agentv2.GetInfoRequest{})); code(err) != connect.CodeUnauthenticated {
+		t.Fatalf("revoked device call = %v, want Unauthenticated", err)
+	}
+	if _, err = e.client.RevokeDevice(ctx, connect.NewRequest(&agentv2.RevokeDeviceRequest{DeviceId: paired.Msg.GetDeviceId()})); code(err) != connect.CodeNotFound {
+		t.Fatalf("revoking twice = %v", err)
+	}
+}
+
+// origin sends requests from a browser origin, as the desktop app's webview.
+func origin(o string) connect.UnaryInterceptorFunc {
+	return func(next connect.UnaryFunc) connect.UnaryFunc {
+		return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+			req.Header().Set("Origin", o)
+			return next(ctx, req)
+		}
 	}
 }
 

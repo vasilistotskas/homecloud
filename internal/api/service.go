@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,6 +43,8 @@ const (
 
 // Ledger is the part of the ledger the API reads and writes.
 type Ledger interface {
+	PairedDevices(ctx context.Context) ([]ledger.PairedDevice, error)
+	RevokePairedDevice(ctx context.Context, id string, now time.Time) error
 	StateCounts(ctx context.Context) (map[ledger.AssetState]int, error)
 	ArchiveTotals(ctx context.Context) (files, bytes int64, err error)
 	DriveTotals(ctx context.Context) (files, bytes, deleted int64, err error)
@@ -484,6 +487,52 @@ func (s *Service) ExchangeLoginCode(_ context.Context, req *connect.Request[agen
 	res := connect.NewResponse(&agentv2.ExchangeLoginCodeResponse{})
 	res.Header().Set("Set-Cookie", cookie.String())
 	return res, nil
+}
+
+// maxDeviceName bounds a paired device's name, in characters.
+const maxDeviceName = 64
+
+// PairDevice implements AgentService.
+func (s *Service) PairDevice(ctx context.Context, req *connect.Request[agentv2.PairDeviceRequest]) (*connect.Response[agentv2.PairDeviceResponse], error) {
+	name := strings.TrimSpace(req.Msg.GetName())
+	if n := utf8.RuneCountInString(name); n == 0 || n > maxDeviceName || !utf8.ValidString(name) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("name must be 1-%d characters", maxDeviceName))
+	}
+	id, token, err := s.auth.Pair(ctx, req.Msg.GetCode(), name)
+	if errors.Is(err, auth.ErrInvalidCode) {
+		return nil, connect.NewError(connect.CodePermissionDenied, err)
+	}
+	if err != nil {
+		return nil, internal(err)
+	}
+	return connect.NewResponse(&agentv2.PairDeviceResponse{DeviceId: id, Token: token}), nil
+}
+
+// ListDevices implements AgentService.
+func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[agentv2.ListDevicesRequest]) (*connect.Response[agentv2.ListDevicesResponse], error) {
+	devices, err := s.db.PairedDevices(ctx)
+	if err != nil {
+		return nil, internal(err)
+	}
+	res := &agentv2.ListDevicesResponse{}
+	for _, d := range devices {
+		res.Devices = append(res.Devices, &agentv2.PairedDevice{
+			Id: d.ID, Name: d.Name, PairedAt: timestamppb.New(d.PairedAt), LastSeenAt: timestamppb.New(d.LastSeenAt),
+		})
+	}
+	return connect.NewResponse(res), nil
+}
+
+// RevokeDevice implements AgentService.
+func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[agentv2.RevokeDeviceRequest]) (*connect.Response[agentv2.RevokeDeviceResponse], error) {
+	err := s.db.RevokePairedDevice(ctx, req.Msg.GetDeviceId(), s.now())
+	if errors.Is(err, ledger.ErrNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if err != nil {
+		return nil, internal(err)
+	}
+	return connect.NewResponse(&agentv2.RevokeDeviceResponse{}), nil
 }
 
 func internal(err error) error {

@@ -17,6 +17,8 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { useOverview } from "../api/overviewContext";
+import { usePlatform } from "../app/platformContext";
+import { PairForm } from "../components/PairForm";
 import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
 
 const route = getRouteApi("/connect");
@@ -48,8 +50,68 @@ function normalize(code: string): string {
   return code.replace(/[^A-Za-z0-9]/g, "");
 }
 
-/** Pairs this browser with the agent using a one-time code from `homecloud open`. */
+/**
+ * Signs in: a browser exchanges a one-time code from `homecloud open` for a
+ * session; a desktop app whose pairing with another device was revoked pairs
+ * again.
+ */
 export function ConnectPage() {
+  const platform = usePlatform();
+  if (platform.kind === "desktop" && platform.connection.kind === "remote") {
+    return (
+      <PairAgain
+        url={platform.connection.url}
+        deviceName={platform.deviceName}
+        pair={platform.pair}
+        forget={platform.forget}
+      />
+    );
+  }
+  return <ConnectBrowser />;
+}
+
+function PairAgain({
+  url,
+  deviceName,
+  pair,
+  forget,
+}: {
+  url: string;
+  deviceName: () => Promise<string>;
+  pair: (url: string, code: string, name: string) => Promise<void>;
+  forget: () => Promise<void>;
+}) {
+  const styles = useStyles();
+  return (
+    <div className={styles.root}>
+      <Card className={styles.card}>
+        <div className={styles.brand}>
+          <CloudRegular className={styles.icon} aria-hidden />
+          <Text weight="semibold" size={400}>
+            homecloud
+          </Text>
+        </div>
+        <Title3 as="h1">Pair this computer again</Title3>
+        <Text>
+          homecloud at {url} no longer accepts this computer: it was revoked there. On that device run{" "}
+          <code>homecloud open --print</code> for a new one-time code.
+        </Text>
+        <PairForm initialUrl={url} deviceName={deviceName} pair={pair} />
+        <Button
+          appearance="subtle"
+          onClick={() => {
+            void forget();
+          }}
+        >
+          Use this computer's agent instead
+        </Button>
+      </Card>
+    </div>
+  );
+}
+
+/** Pairs this browser with the agent using a one-time code from `homecloud open`. */
+function ConnectBrowser() {
   const styles = useStyles();
   const navigate = useNavigate();
   const { reconnect } = useOverview();
