@@ -57,7 +57,7 @@ func newApp() *cli.Command {
 				Sources: cli.EnvVars(config.EnvPath),
 			},
 		},
-		Commands: []*cli.Command{
+		Commands: append([]*cli.Command{
 			{
 				Name:   "doctor",
 				Usage:  "run read-only environment checks",
@@ -110,7 +110,7 @@ func newApp() *cli.Command {
 				Usage:  "stop starting homecloud-agent at logon",
 				Action: runUninstall,
 			},
-		},
+		}, icloudCommands()...),
 	}
 }
 

@@ -6,7 +6,8 @@ Personal, private service that makes a local drive the verified home of my iClou
 - Design, decisions, sources and spike findings: [`docs/design.md`](docs/design.md)
 - Status: **P1 done, M1–M4 live, P2 in progress**: iCloud Photos archive with verification,
   weekly integrity re-checks, daily ledger backups, drive health, library browser, local API, web
-  and desktop apps, and a monitor of the local iPhone backups. The iCloud Drive archive is next.
+  and desktop apps, a monitor of the local iPhone backups, and homecloud's own iCloud sign-in
+  (`homecloud icloud login`, read-only `homecloud drive ls`). The iCloud Drive archive is next.
   No deletion capability exists yet (P3).
 
 ## How it works
@@ -20,6 +21,7 @@ ledger (`homecloud.db`) with an append-only audit log, and every problem sends a
 flowchart TB
     subgraph apple["Apple"]
         icloud[("iCloud Photos")]
+        drivesvc[("iCloud sign-in<br/>+ iCloud Drive")]
         devices["Apple Devices app<br/>(encrypted local backups)"]
     end
     subgraph apps["Your apps"]
@@ -66,6 +68,8 @@ flowchart TB
     devices --> iphone
     maint -- "read only" --> iphone
     cli -- "one ledger writer at a time" --> ledger
+    cli -- "icloud login · drive ls<br/>(read only)" --> drivesvc
+    cli --> session[("icloud-session.json<br/>state dir, owner only")]
     agent -. "alerts" .-> phone
 ```
 
@@ -175,6 +179,9 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud verify` | Ingest kei's manifest and run all outstanding verification, without iCloud |
 | `homecloud notify-test` | Send a test push notification |
 | `homecloud install` / `uninstall` | Register / remove the logon task (Windows) or systemd user unit (Linux) |
+| `homecloud icloud login` | Sign in to iCloud in a terminal (password, then a code from a trusted device or `sms N`); the password is used once and never stored |
+| `homecloud icloud status` | Check that the saved iCloud session still works |
+| `homecloud drive ls [--folder ID]` | List an iCloud Drive folder (read only) |
 
 `verify` and `quarantine release` write the ledger, which the running agent owns: while it runs
 they refuse, and the same actions are in the app (Sync now, Quarantine → Release).

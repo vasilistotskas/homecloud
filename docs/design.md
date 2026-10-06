@@ -106,7 +106,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 
 - **P0** — toolchain, repo, CI, this document; spikes: (A) kei `asset_id` ↔ pyicloud identity on 20 assets (gate for P3), (B) kei auth/manifest representation of Live Photos/edits/`added_at`/exit codes, (C) console-less logon launch; `homecloud doctor`.
 - **P1** — kei full sync, ledger, verification, status UI, ntfy. One-time in-session reconciliation of the interim archive, then its removal.
-- **P2** — local encrypted iPhone backup + monitor (milestone A, implemented — §8e); iCloud Drive archive (milestones B1–B3, planned).
+- **P2** — local encrypted iPhone backup + monitor (milestone A, implemented — §8e); homecloud's own iCloud sign-in (milestone B1, implemented — §8f); iCloud Drive archive (milestones B2–B3, planned).
 - **P3** — staged deleter.
 
 ## 8a. Platforms, API and GUI (decided 2026-10-05)
@@ -170,6 +170,15 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 - **Record and alerts:** a maintenance job (run kind `iphone_backup`, every `check_interval`) records an `IPhoneBackupReport`; each device's state change appends `iphone_backup_changed` (subject = UDID; recorded only on change, like drive health). Problems and "no backup on this computer" alert once a day per condition; alerts never name the device or its identifiers.
 - **Owner steps:** install Apple Devices, connect the iPhone, tick "Encrypt local backup", back up once; then keep it connected or on the same Wi-Fi regularly. Until the first backup the app shows "No iPhone backup on this computer yet".
 
+## 8f. iCloud sign-in for iCloud Drive (implemented, P2 milestone B1)
+
+- **Why our own client:** rclone's `iclouddrive` backend deletes valid Pages/Numbers/Keynote downloads (package ZIP smaller than the listed size; rclone #8404, #9798), exposes no hashes and cannot express "archive, never delete"; kei's session is private to kei (and two clients would race rotating the same tokens). `internal/icloud` signs in as iCloud.com does; `internal/drive` reads Drive.
+- **Sign-in (`homecloud icloud login`, owner only, in a terminal):** SRP-6a (`/signin/init`, `/signin/complete`; RFC 5054 2048-bit group, SHA-256, PBKDF2 `s2k`/`s2k_fo`, Apple's conventions: no account name in x, lowercase account name in M1, A and S padded, B as received) → on 409 a code: `PUT /verify/trusteddevice/securitycode` pushes it (no longer automatic since iOS 26.4), or `sms N` texts a trusted number read from `GET /appleauth/auth` (JSON or the page's `boot_args`); a valid code may be answered 409 with `securityCode.valid` or a new `X-Apple-Session-Token` → **escrow** when a 409 carries `X-Apple-EDP`/`X-Apple-PDP`: a second SRP proof with an empty account name (`/escrow/init`, `/escrow/complete` with K) → `GET /2sv/trust` (trust token) → `setup/ws/1/accountLogin` (web cookies + service map) → under Advanced Data Protection, `requestPCS` for `iclouddrive`, approved on a trusted device. A later sign-in that presents the trust token needs only the password (and escrow), no code.
+- **Sources:** request sequence and headers as icloud-photos-sync PR #1124 (merged 2026-10-05, live-tested incl. escrow; GPL-3.0, used as protocol reference only); SRP adapted from rclone (MIT, see `THIRD_PARTY_NOTICES.md`) and checked against icloud-photos-sync's reference vectors (two real iCloud exchanges, `s2k_fo`, leading-zero padding of A, B and S — all match). Client id = iCloud.com's public web client id (same in both).
+- **Session:** `icloud-session.json` in the per-user state dir, written owner-only and atomically (`platform.WriteSecretFile`): cookies as received (replayed into a standard `cookiejar` with the public suffix list; Max-Age stored as absolute expiry), session token, trust token, account country, service map, signed-in time. **The password is never stored.**
+- **Unattended use:** a call answered 401/421 refreshes once (`setup/ws/1/validate` with the cookies, then `accountLogin` with the session and trust tokens). When Apple refuses, or asks for a code again (`hsaChallengeRequired`), or Drive needs ADP approval again (423), the result is `ErrSignInRequired` and the owner runs `homecloud icloud login` again (B2 turns this into a Drive run outcome, an app state and a daily alert).
+- **Drive listing (`homecloud drive ls`, B1 spike):** `retrieveItemDetailsInFolders` on drivews (root `FOLDER::com.apple.CloudDocs::root`); item types FOLDER, FILE, APP_LIBRARY, APP_CONTAINER; an unknown type is an error, never skipped.
+
 ## 9. Dependencies (verified 2026-10-05)
 
 | Dependency | Version | Source |
@@ -181,6 +190,8 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 | github.com/DeRuina/timberjack | v1.4.8 | https://pkg.go.dev/github.com/DeRuina/timberjack?tab=versions |
 | howett.net/plist | v1.0.2-0.20260819222228-760f9a56c6a7 (master; includes the bplist bounds fix #90, newer than v1.0.1) | https://github.com/DHowett/go-plist/commits/main |
 | golang.org/x/sys | v0.48.0 | https://pkg.go.dev/golang.org/x/sys?tab=versions (monitor GO-2026-5024) |
+| golang.org/x/net (publicsuffix) | v0.59.0 | https://proxy.golang.org/golang.org/x/net/@latest (2026-09-08) |
+| golang.org/x/term (password prompt) | v0.46.0 | https://proxy.golang.org/golang.org/x/term/@latest (2026-09-08) |
 | golang.org/x/text (indirect) | v0.41.0 | https://pkg.go.dev/golang.org/x/text |
 | github.com/google/go-cmp | v0.7.0 | https://pkg.go.dev/github.com/google/go-cmp?tab=versions |
 | connectrpc.com/connect (+ protoc-gen-connect-go) | v1.21.0 | https://github.com/connectrpc/connect-go/releases |
