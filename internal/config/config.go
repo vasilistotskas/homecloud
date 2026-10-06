@@ -140,11 +140,14 @@ type Drive struct {
 // Logs configures the agent's rotating log files under <storage.root>/logs on
 // Windows. On Linux the agent logs to journald, which rotates by itself.
 type Logs struct {
-	// MaxSizeMB is the size at which a log file is rotated.
+	// MaxSizeMB is the size at which a log file is rotated, in MiB.
 	MaxSizeMB int `toml:"max_size_mb"`
 	// MaxBackups is how many rotated files are kept per log.
 	MaxBackups int `toml:"max_backups"`
 }
+
+// MaxBytes is MaxSizeMB in bytes.
+func (l Logs) MaxBytes() int64 { return int64(l.MaxSizeMB) << 20 }
 
 // IPhoneBackup configures the monitor of local iPhone backups, which Apple's
 // Devices app (or iTunes, or idevicebackup2) writes; homecloud only reads them.
@@ -230,8 +233,7 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	dec := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
-		var strict *toml.StrictMissingError
-		if errors.As(err, &strict) {
+		if strict, ok := errors.AsType[*toml.StrictMissingError](err); ok {
 			return nil, fmt.Errorf("config %s: unknown keys:\n%s", path, strict.String())
 		}
 		return nil, fmt.Errorf("decode config %s: %w", path, err)

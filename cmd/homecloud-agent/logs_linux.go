@@ -4,21 +4,24 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
-// agentLogs are the agent's log destinations. Under systemd, stderr is
-// captured by journald (journalctl --user -u homecloud-agent).
+// agentLogs are the agent's log destinations. Under systemd (and in a
+// container), stderr is captured by journald or the container runtime.
 type agentLogs struct {
-	agent, kei io.Writer
+	log *slog.Logger
+	kei io.Writer
 }
 
-// openLogs ignores the [logs] settings: journald rotates by itself.
-func openLogs(string, config.Logs) *agentLogs {
-	return &agentLogs{agent: os.Stderr, kei: os.Stderr}
+// openLogs ignores the [logs] settings: journald and container runtimes
+// rotate by themselves.
+func openLogs(string, config.Logs) (*agentLogs, error) {
+	return &agentLogs{log: slog.New(slog.NewJSONHandler(os.Stderr, nil)), kei: os.Stderr}, nil
 }
 
 func (*agentLogs) Close() error { return nil }

@@ -65,9 +65,12 @@ func run() (err error) {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logs := openLogs(cfg.Storage.Root, cfg.Logs)
+	logs, err := openLogs(cfg.Storage.Root, cfg.Logs)
+	if err != nil {
+		return err
+	}
 	defer func() { err = errors.Join(err, logs.Close()) }()
-	log := slog.New(slog.NewJSONHandler(logs.agent, nil))
+	log := logs.log
 	log.Info("homecloud-agent starting", "version", version, "config", cfgPath)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

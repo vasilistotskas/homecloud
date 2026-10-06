@@ -5,7 +5,6 @@ go 1.27.1
 require (
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/cors v0.1.0
-	github.com/DeRuina/timberjack v1.4.8
 	github.com/evanoberholster/imagemeta v1.1.0
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/go-cmp v0.7.0

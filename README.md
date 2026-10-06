@@ -242,7 +242,8 @@ When kei's Apple session expires the agent alerts every `notify.repeat_every`; r
 `homecloud.db-shm` next to `<storage.root>\homecloud.db` if they exist, copy the newest
 `homecloud-*.db` from `backup.dir` over `homecloud.db`, and start the agent again.
 
-**Logs:** Windows: `<storage.root>\logs\homecloud-agent.log` and `kei.log` (rotated); failures
+**Logs:** Windows: `<storage.root>\logs\homecloud-agent.log` and `kei.log`, rotated at
+`logs.max_size_mb` into `homecloud-agent-<UTC time>.log` backups (newest `logs.max_backups` kept); failures
 before the config is loaded go to `%LOCALAPPDATA%\homecloud\agent-startup.log`. Linux: the
 journal (`journalctl --user -u homecloud-agent`).
 

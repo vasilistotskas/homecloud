@@ -54,6 +54,7 @@ Packages:
 | `internal/drive` | iCloud Drive listing, downloads with Apple's signature check, and the never-deleting archive (§8g) |
 | `internal/iphonebackup` | Reads and judges the local iPhone backups Apple's tools write (§8e) |
 | `internal/parallel` | `ForEach`: the one bounded worker pool (verification, scrub, Drive downloads) |
+| `internal/logfile` | Size-rotated log files (Windows agent and kei logs): backups `<name>-<UTC time>.log`, never renamed again, oldest beyond `logs.max_backups` deleted; every file operation goes through an `os.Root` on the logs folder; a rotation that fails (a viewer holding the file) is reported in the agent log and retried at the next write |
 | `internal/notify` | ntfy client |
 | `internal/export` | `manifest.csv` and `README.txt` at the archive root, rewritten atomically after every cycle |
 | `internal/thumbs` | Thumbnail and preview rendering and cache (§8c) |
@@ -123,7 +124,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
   | Free space | `GetDiskFreeSpaceEx` | `statfs` `Bavail × Frsize` |
   | Single instance | `Local\` named mutex | `flock(LOCK_EX\|LOCK_NB)` on `$XDG_RUNTIME_DIR/homecloud/agent.lock` |
   | Start at logon | Task Scheduler logon task (`schtasks /XML`) | systemd `--user` unit, `Type=notify`, `Restart=on-failure` (linger for headless hosts) |
-  | Agent logs | rotating files under `storage.root\logs` | stderr → journald |
+  | Agent logs | size-rotated files under `storage.root\logs` (`internal/logfile`) | stderr → journald (or the container runtime) |
   | Windowless build | `-ldflags=-H=windowsgui` | n/a |
 
   kei's Linux binaries require glibc ≥ 2.39 (Ubuntu 24.04 / Debian 13+).
