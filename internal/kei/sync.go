@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // Outcome classifies a completed kei sync by exit code (kei src/lib.rs, v0.24.1).
@@ -44,7 +45,7 @@ func (o Outcome) String() string {
 // Sync runs one non-interactive `kei sync`, streaming kei's output to log.
 // Exit codes 0, 2, 3 and 4 map to an Outcome; anything else is an error.
 func Sync(ctx context.Context, cfg config.Kei, log io.Writer) (Outcome, error) {
-	cmd := exec.CommandContext(ctx, cfg.Binary, //nolint:gosec // paths come from validated config
+	cmd := platform.Command(ctx, cfg.Binary,
 		"sync", "--config", cfg.Config, "--no-friendly", "--no-progress-bar")
 	cmd.Stdout, cmd.Stderr = log, log
 	err := cmd.Run()

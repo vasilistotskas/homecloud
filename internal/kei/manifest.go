@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"regexp"
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // Status is kei's per-version download state (kei src/state/types.rs AssetStatus).
@@ -112,7 +112,7 @@ func ParseManifest(r io.Reader) ([]ManifestRow, error) {
 // Manifest runs `kei manifest --format json` (read-only; does not contact iCloud).
 func Manifest(ctx context.Context, cfg config.Kei) ([]ManifestRow, error) {
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, cfg.Binary, "manifest", "--format", "json", "--config", cfg.Config) //nolint:gosec // paths come from validated config
+	cmd := platform.Command(ctx, cfg.Binary, "manifest", "--format", "json", "--config", cfg.Config)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("kei manifest: %w: %s", err, bytes.TrimSpace(stderr.Bytes()))

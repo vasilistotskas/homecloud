@@ -6,11 +6,11 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"strconv"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/tool"
 )
 
@@ -46,7 +46,7 @@ type probeReport struct {
 // with a positive duration.
 func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
 	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, cfg.FFprobe, //nolint:gosec // binary from validated config, path from ledger
+	cmd := platform.Command(ctx, cfg.FFprobe,
 		"-v", "error",
 		"-show_entries", "format=duration:stream=codec_type,duration",
 		"-of", "json",

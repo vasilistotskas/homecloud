@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"unicode/utf16"
 
@@ -152,7 +151,7 @@ func registerTask(ctx context.Context, name string, doc []byte) (err error) {
 
 func schtasks(ctx context.Context, args ...string) error {
 	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, "schtasks.exe", args...) //nolint:gosec // fixed system tool; args are built by this package
+	cmd := Command(ctx, "schtasks.exe", args...)
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("schtasks %s: %w: %s", args[0], err, bytes.TrimSpace(out.Bytes()))

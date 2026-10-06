@@ -6,6 +6,7 @@ linters:
     - bodyclose
     - errorlint
     - exhaustive
+    - forbidigo
     - gocritic
     - gosec
     - misspell
@@ -20,6 +21,12 @@ linters:
   settings:
     exhaustive:
       default-signifies-exhaustive: true
+    forbidigo:
+      forbid:
+        - pattern: ^exec\.Command(Context)?$
+          pkg: ^os/exec$
+          msg: start programs with platform.Command, which runs them without a console window on Windows
+      analyze-types: true
     wrapcheck:
       # Errors from this module's own packages already carry context at their source.
       ignore-package-globs:
@@ -34,6 +41,10 @@ linters:
       - path: _test\.go
         linters:
           - wrapcheck
+      # platform.Command is the one place that may call os/exec directly.
+      - path: internal/platform/command\.go
+        linters:
+          - forbidigo
 
 formatters:
   enable:

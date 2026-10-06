@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 func TestRenderArgs(t *testing.T) {
@@ -56,7 +57,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "red.png")
 	// ffmpeg and ffprobe come from PATH, found by exec.LookPath above.
-	makeSource := exec.CommandContext(context.Background(), ffmpeg, //nolint:gosec // test tool from PATH
+	makeSource := platform.Command(context.Background(), ffmpeg, //nolint:gosec // test tool from PATH
 		"-v", "error", "-f", "lavfi", "-i", "color=red:s=640x480", "-frames:v", "1", src)
 	if out, runErr := makeSource.CombinedOutput(); runErr != nil {
 		t.Fatalf("make source: %v %s", runErr, out)
@@ -70,7 +71,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	if path != r.CachePath(sha, Thumb) {
 		t.Fatalf("path = %s", path)
 	}
-	probe := exec.CommandContext(context.Background(), ffprobe, //nolint:gosec // test tool from PATH
+	probe := platform.Command(context.Background(), ffprobe, //nolint:gosec // test tool from PATH
 		"-v", "error", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", path)
 	out, err := probe.Output()
 	if err != nil || strings.TrimSpace(string(out)) != "webp,320,320" {
@@ -95,7 +96,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	probe = exec.CommandContext(context.Background(), ffprobe, //nolint:gosec // test tool from PATH
+	probe = platform.Command(context.Background(), ffprobe, //nolint:gosec // test tool from PATH
 		"-v", "error", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", dngPath)
 	if out, err := probe.Output(); err != nil || strings.TrimSpace(string(out)) != "webp,64,48" {
 		t.Fatalf("rendered DNG = %q, %v", out, err)

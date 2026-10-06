@@ -50,7 +50,7 @@ Packages:
 | `internal/verify` | Verification tiers (`RequiredTiers`, content, box structure, ffprobe). |
 | `internal/doctor` | Read-only environment checks behind `homecloud doctor` |
 | `internal/tool` | Version checks of pinned external executables |
-| `internal/platform` | Every OS-specific behaviour (see §8a) |
+| `internal/platform` | Every OS-specific behaviour (see §8a), including `Command`, the only way homecloud starts a program: on Windows it sets `CREATE_NO_WINDOW`, because the agent is a GUI-subsystem process and Windows would otherwise open a console window for every kei/ffmpeg/ffprobe run (enforced by a `forbidigo` rule on `os/exec`) |
 | `internal/policy` | *(planned, P3)* Pure deletion-eligibility predicate and batch caps (no I/O) |
 | `internal/deleter` | *(planned, P3)* Journal (fsync before any call), sidecar execution, post-delete confirmation |
 | `internal/health` | Archive-drive health verdict (§8b). *(planned: volume identity, free space, ledger integrity and data freshness as deletion gates)* |

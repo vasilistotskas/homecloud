@@ -15,13 +15,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/tool"
 )
 
@@ -211,7 +211,7 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 		}
 	}()
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, r.cfg.FFmpeg, renderArgs(input, tmp, sizeFilters[size], tiled)...) //nolint:gosec // binary from validated config, paths from the ledger
+	cmd := platform.Command(ctx, r.cfg.FFmpeg, renderArgs(input, tmp, sizeFilters[size], tiled)...)
 	if isRaw {
 		cmd.Stdin = bytes.NewReader(preview)
 	}
@@ -249,7 +249,7 @@ func renderArgs(input []string, dest, filter string, tiled bool) []string {
 
 // isTiled reports whether src is a tiled (grid) HEIF image.
 func (r *Renderer) isTiled(ctx context.Context, src string) (bool, error) {
-	out, err := exec.CommandContext(ctx, r.cfg.FFprobe, //nolint:gosec // binary from validated config, path from the ledger
+	out, err := platform.Command(ctx, r.cfg.FFprobe,
 		"-v", "error", "-show_entries", "stream_group=index", "-of", "csv=p=0", src).Output()
 	if err != nil {
 		return false, fmt.Errorf("ffprobe %s: %w", src, err)

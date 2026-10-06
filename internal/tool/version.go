@@ -4,9 +4,10 @@ package tool
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"regexp"
 	"time"
+
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // Pin describes an external executable whose exact version is required.
@@ -30,7 +31,7 @@ func (p Pin) Version(ctx context.Context) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, p.Binary, p.Args...).CombinedOutput() //nolint:gosec // binary path comes from validated config
+	out, err := platform.Command(ctx, p.Binary, p.Args...).CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%s: run %s: %w", p.Name, p.Binary, err)
 	}

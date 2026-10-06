@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -95,7 +94,7 @@ func escapeSpecifiers(s string) string {
 
 func systemctl(ctx context.Context, args ...string) error {
 	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, "systemctl", append([]string{"--user"}, args...)...) //nolint:gosec // fixed system tool; args are built by this package
+	cmd := Command(ctx, "systemctl", append([]string{"--user"}, args...)...)
 	cmd.Stdout, cmd.Stderr = &out, &out
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("systemctl --user %s: %w: %s", strings.Join(args, " "), err, bytes.TrimSpace(out.Bytes()))
