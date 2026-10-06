@@ -77,3 +77,34 @@ func TestJarForgetsDeletedCookies(t *testing.T) {
 		t.Fatalf("a deleted cookie is still kept: %v", j.save())
 	}
 }
+
+func TestJarKeepsOneRecordPerCookieAcrossRestores(t *testing.T) {
+	j, err := newJar(time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := mustURL(t, "https://setup.icloud.com/setup/ws/1/accountLogin")
+	set := func(j *jar, value string) {
+		j.SetCookies(u, []*http.Cookie{{Name: "X-APPLE-WEBAUTH-TOKEN", Value: value, Domain: ".icloud.com", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}})
+	}
+	set(j, "old")
+	// Restore, then Apple renews the cookie, as each session use does.
+	for _, value := range []string{"new", "newer"} {
+		restored, restoreErr := restoreJar(j.save(), time.Now)
+		if restoreErr != nil {
+			t.Fatal(restoreErr)
+		}
+		set(restored, value)
+		j = restored
+	}
+	if n := len(j.save()); n != 1 {
+		t.Fatalf("%d records for one cookie: %v", n, j.save())
+	}
+	final, err := restoreJar(j.save(), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names(final.Cookies(mustURL(t, "https://p1-drivews.icloud.com/"))); got["X-APPLE-WEBAUTH-TOKEN"] != "newer" {
+		t.Fatalf("restored token = %q; want the newest", got["X-APPLE-WEBAUTH-TOKEN"])
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -65,11 +66,7 @@ func (j *jar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	defer j.mu.Unlock()
 	j.inner.SetCookies(u, cookies)
 	for _, c := range cookies {
-		scope := c.Domain
-		if scope == "" {
-			scope = u.Host
-		}
-		key := scope + "|" + c.Path + "|" + c.Name
+		key := recordKey(u, c)
 		if c.MaxAge < 0 || (!c.Expires.IsZero() && !c.Expires.After(j.now())) {
 			delete(j.records, key)
 			continue
@@ -81,6 +78,18 @@ func (j *jar) SetCookies(u *url.URL, cookies []*http.Cookie) {
 		}
 		j.records[key] = cookieRecord{URL: (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String(), SetCookie: stored.String()}
 	}
+}
+
+// recordKey identifies a cookie the way RFC 6265 does (name, domain, path).
+// Domains compare without case or a leading dot: Apple sends ".icloud.com" and
+// a restored cookie says "icloud.com". Host-only cookies stay apart from
+// domain cookies of the same host.
+func recordKey(u *url.URL, c *http.Cookie) string {
+	scope := "domain:" + strings.ToLower(strings.TrimPrefix(c.Domain, "."))
+	if c.Domain == "" {
+		scope = "host:" + strings.ToLower(u.Hostname())
+	}
+	return scope + "|" + c.Path + "|" + c.Name
 }
 
 // Cookies implements http.CookieJar.
