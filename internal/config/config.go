@@ -116,6 +116,32 @@ func (d *Duration) UnmarshalText(text []byte) error {
 // Std returns the value as a time.Duration.
 func (d Duration) Std() time.Duration { return time.Duration(d) }
 
+// EnvPath names the environment variable that overrides the default path.
+const EnvPath = "HOMECLOUD_CONFIG"
+
+// DefaultPath is where the configuration lives unless --config or EnvPath
+// says otherwise: %APPDATA%\homecloud\config.toml on Windows,
+// $XDG_CONFIG_HOME/homecloud/config.toml (default ~/.config) on Linux.
+func DefaultPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("locate config dir: %w", err)
+	}
+	return filepath.Join(dir, "homecloud", "config.toml"), nil
+}
+
+// Resolve returns the configuration path in precedence order: flag, then
+// EnvPath, then DefaultPath.
+func Resolve(flag string) (string, error) {
+	if flag != "" {
+		return flag, nil
+	}
+	if p := os.Getenv(EnvPath); p != "" {
+		return p, nil
+	}
+	return DefaultPath()
+}
+
 // Load reads, strictly decodes and validates the configuration at path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // path is operator-supplied by design
@@ -183,8 +209,9 @@ func (c *Config) Validate() error {
 
 	if ap, err := netip.ParseAddrPort(c.Web.Listen); err != nil {
 		add("web.listen must be ip:port, got %q: %w", c.Web.Listen, err)
-	} else if !ap.Addr().IsLoopback() {
-		add("web.listen must be a loopback address, got %q", c.Web.Listen)
+	} else if ap.Addr() != netip.AddrFrom4([4]byte{127, 0, 0, 1}) {
+		// The desktop app's content security policy allows exactly this address.
+		add("web.listen must be 127.0.0.1:<port> (local only, and the address the desktop app trusts), got %q", c.Web.Listen)
 	}
 
 	if u, err := url.Parse(c.Notify.Server); err != nil || u.Scheme != "https" || u.Host == "" || strings.TrimSuffix(u.Path, "/") != "" {

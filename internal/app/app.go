@@ -16,6 +16,11 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/verify"
 )
 
+// LedgerWriterLock names the single-instance lock held by whichever process
+// writes the ledger: the agent for its whole life, or a CLI command that
+// verifies or releases quarantine while the agent is stopped.
+const LedgerWriterLock = "homecloud-ledger-writer"
+
 // LedgerFile is the ledger's file name inside storage.root.
 const LedgerFile = "homecloud.db"
 
@@ -76,8 +81,11 @@ type VerifyStats struct {
 
 // Verify runs every outstanding verification tier once. Mismatches quarantine
 // the asset; transient errors are logged and retried on the next run.
-func Verify(ctx context.Context, cfg *config.Config, db *ledger.DB, log *slog.Logger, now func() time.Time) (VerifyStats, error) {
-	pending, err := db.PendingVerification(ctx, -1)
+// progress is called after each rendition is recorded.
+func Verify(ctx context.Context, cfg *config.Config, db *ledger.DB, log *slog.Logger, now func() time.Time,
+	progress func(),
+) (VerifyStats, error) {
+	pending, err := db.PendingVerification(ctx)
 	if err != nil {
 		return VerifyStats{}, fmt.Errorf("verify: %w", err)
 	}
@@ -102,6 +110,7 @@ func Verify(ctx context.Context, cfg *config.Config, db *ledger.DB, log *slog.Lo
 				log.Error("verification error; will retry", "asset", p.AssetID, "version", p.Version, "err", outcome)
 			}
 		})
+		progress()
 	})
 	if err := ctx.Err(); err != nil {
 		return stats, fmt.Errorf("verify: %w", err)

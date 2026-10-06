@@ -134,7 +134,7 @@ func TestRecordDriveHealthOnlyOnChange(t *testing.T) {
 			t.Fatalf("step %d (%s): prev=%q changed=%v err=%v", i, s.state, prev, changed, err)
 		}
 	}
-	events, err := db.Events(ctx, []string{DriveHealthEvent}, 0, 10)
+	events, err := db.Events(ctx, []string{EventDriveHealthChanged}, 0, 10)
 	if err != nil || len(events) != 3 || events[0].Asset != "" || events[0].Filename != "" {
 		t.Fatalf("events = %+v, %v", events, err)
 	}
@@ -155,5 +155,30 @@ func TestEachManifestRow(t *testing.T) {
 	stop := errors.New("stop")
 	if err := db.EachManifestRow(ctx, func(ManifestRow) error { return stop }); !errors.Is(err, stop) {
 		t.Fatalf("callback error = %v, want it returned", err)
+	}
+}
+
+func TestLastCompletedRunSkipsRunsThatCouldNotWork(t *testing.T) {
+	db, _ := openTemp(t)
+	ctx := context.Background()
+	finish := func(ok bool, detail map[string]any) int64 {
+		t.Helper()
+		id, err := db.StartRun(ctx, "scrub", t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.FinishRun(ctx, id, ok, detail, t0); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	findings := finish(false, map[string]any{"mismatched": 1}) // did its work, found a problem
+	finish(false, map[string]any{"error": "volume not mounted"})
+	got, err := db.LastCompletedRun(ctx, "scrub")
+	if err != nil || got.ID != findings {
+		t.Fatalf("LastCompletedRun = %d, %v; want run %d", got.ID, err, findings)
+	}
+	if _, err := db.LastCompletedRun(ctx, "ledger_backup"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("no runs of kind: %v, want ErrNotFound", err)
 	}
 }

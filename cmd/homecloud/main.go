@@ -53,9 +53,8 @@ func newApp() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",
-				Usage:   "path to the homecloud TOML config",
-				Value:   defaultConfigPath(),
-				Sources: cli.EnvVars("HOMECLOUD_CONFIG"),
+				Usage:   "path to the homecloud TOML config (default: the per-user config dir)",
+				Sources: cli.EnvVars(config.EnvPath),
 			},
 		},
 		Commands: []*cli.Command{
@@ -115,18 +114,23 @@ func newApp() *cli.Command {
 	}
 }
 
-func defaultConfigPath() string {
-	dir, err := os.UserConfigDir()
+// configPath resolves the configuration path like the agent does.
+func configPath(cmd *cli.Command) (string, error) {
+	path, err := config.Resolve(cmd.String("config"))
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return filepath.Join(dir, "homecloud", "config.toml")
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("config path %s: %w", path, err)
+	}
+	return abs, nil
 }
 
 func loadConfig(cmd *cli.Command) (*config.Config, error) {
-	path := cmd.String("config")
-	if path == "" {
-		return nil, fmt.Errorf("no config path: set --config or HOMECLOUD_CONFIG")
+	path, err := configPath(cmd)
+	if err != nil {
+		return nil, err
 	}
 	cfg, err := config.Load(path)
 	if err != nil {
@@ -143,11 +147,29 @@ func openLedger(ctx context.Context, cfg *config.Config) (*ledger.DB, error) {
 	return db, nil
 }
 
+// acquireLedgerWriter takes the ledger-writer lock, or explains that the agent
+// holds it. Only one process writes the ledger at a time.
+func acquireLedgerWriter(use string) (*platform.Lock, error) {
+	lock, err := platform.AcquireInstance(app.LedgerWriterLock)
+	if errors.Is(err, platform.ErrAlreadyRunning) {
+		return nil, cli.Exit("the homecloud agent is running and owns the ledger: "+use, 1)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("ledger writer lock: %w", err)
+	}
+	return lock, nil
+}
+
 func runVerify(ctx context.Context, cmd *cli.Command) (err error) {
 	cfg, err := loadConfig(cmd)
 	if err != nil {
 		return err
 	}
+	lock, err := acquireLedgerWriter("it verifies every cycle; use Sync now in the app (homecloud open)")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, lock.Release()) }()
 	db, err := openLedger(ctx, cfg)
 	if err != nil {
 		return err
@@ -163,7 +185,7 @@ func runVerify(ctx context.Context, cmd *cli.Command) (err error) {
 		"new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
 
 	started := time.Now()
-	verified, err := app.Verify(ctx, cfg, db, log, time.Now)
+	verified, err := app.Verify(ctx, cfg, db, log, time.Now, func() {})
 	log.Info("verified", "checked", verified.Checked, "passed", verified.Passed,
 		"mismatched", verified.Mismatched, "errored", verified.Errored, "elapsed", time.Since(started).Round(time.Second))
 	if err != nil {
@@ -241,6 +263,11 @@ func runQuarantineRelease(ctx context.Context, cmd *cli.Command) (err error) {
 	if err != nil {
 		return err
 	}
+	lock, err := acquireLedgerWriter("release quarantine in the app (homecloud open)")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, lock.Release()) }()
 	db, err := openLedger(ctx, cfg)
 	if err != nil {
 		return err
@@ -270,10 +297,16 @@ func runInstall(ctx context.Context, cmd *cli.Command) error {
 	if _, err := loadConfig(cmd); err != nil {
 		return err
 	}
+	cfgPath, err := configPath(cmd)
+	if err != nil {
+		return err
+	}
 	svc, err := agentService()
 	if err != nil {
 		return fmt.Errorf("install: %w", err)
 	}
+	// The agent loads exactly the configuration validated above.
+	svc.Args = []string{"--config", cfgPath}
 	if installErr := platform.InstallAgent(ctx, svc); installErr != nil {
 		return fmt.Errorf("install: %w", installErr)
 	}

@@ -5,9 +5,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -41,10 +44,17 @@ type probeReport struct {
 	} `json:"format"`
 }
 
+// probeTimeout bounds one ffprobe run. Probing reads container metadata, which
+// takes seconds even for multi-gigabyte videos; a run this long is hung, and
+// its file is retried next cycle instead of stalling the cycle.
+const probeTimeout = 5 * time.Minute
+
 // Probe runs ffprobe on a video (tier 3). It requires a clean exit with no
 // diagnostics, a positive container duration, and at least one video stream
 // with a positive duration.
 func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
 	var stdout, stderr bytes.Buffer
 	cmd := platform.Command(ctx, cfg.FFprobe,
 		"-v", "error",
@@ -55,6 +65,13 @@ func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("ffprobe %s: %w", path, ctx.Err())
+		}
+		// Only ffprobe itself rejecting the file is evidence against it. Failing
+		// to start ffprobe (moved, locked, missing) says nothing about the file
+		// and is retried, never quarantined.
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) {
+			return fmt.Errorf("run ffprobe on %s: %w", path, err)
 		}
 		return fmt.Errorf("%w: ffprobe rejected %s: %s", ErrMismatch, path, bytes.TrimSpace(stderr.Bytes()))
 	}

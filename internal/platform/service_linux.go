@@ -67,15 +67,19 @@ func renderUnit(svc AgentService) ([]byte, error) {
 	if !filepath.IsAbs(svc.Executable) || !filepath.IsAbs(svc.WorkingDir) {
 		return nil, fmt.Errorf("agent executable and working dir must be absolute: %q, %q", svc.Executable, svc.WorkingDir)
 	}
-	for _, s := range []string{svc.Description, svc.Executable, svc.WorkingDir} {
+	for _, s := range append([]string{svc.Description, svc.Executable, svc.WorkingDir}, svc.Args...) {
 		if strings.ContainsFunc(s, unicode.IsControl) {
 			return nil, fmt.Errorf("unit values must not contain control characters: %q", s)
 		}
 	}
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "[Unit]\nDescription=%s\n\n", escapeSpecifiers(svc.Description))
+	exec := []string{quoteExecArg(svc.Executable)}
+	for _, a := range svc.Args {
+		exec = append(exec, quoteExecArg(a))
+	}
 	fmt.Fprintf(&b, "[Service]\nType=notify\nExecStart=%s\nWorkingDirectory=%s\nRestart=on-failure\nRestartSec=10s\n\n",
-		quoteExecArg(svc.Executable), escapeSpecifiers(svc.WorkingDir))
+		strings.Join(exec, " "), escapeSpecifiers(svc.WorkingDir))
 	b.WriteString("[Install]\nWantedBy=default.target\n")
 	return b.Bytes(), nil
 }

@@ -50,10 +50,6 @@ type IngestStats struct {
 	Assets, Renditions, NewRenditions, ChangedRenditions, MovedRenditions int
 }
 
-// RenditionMovedEvent is recorded when the downloader reports a rendition at a
-// new local path; its verification starts over.
-const RenditionMovedEvent = "rendition_moved"
-
 // Ingest records renditions in one transaction. A rendition whose size or hash
 // changed loses its verification evidence. Asset states are recomputed, except
 // that quarantine is sticky.
@@ -98,14 +94,14 @@ func (db *DB) Ingest(ctx context.Context, rs []Rendition, now time.Time) (stats 
 			}
 			if res.movedFrom != "" {
 				stats.MovedRenditions++
-				if err = appendEvent(ctx, tx, ts, r.Library, r.AssetID, RenditionMovedEvent,
+				if err = appendEvent(ctx, tx, ts, r.Library, r.AssetID, EventRenditionMoved,
 					map[string]any{"version": r.Version, "from": res.movedFrom, "to": r.LocalPath}); err != nil {
 					return stats, err
 				}
 			}
 			if res.changed {
 				stats.ChangedRenditions++
-				if err = appendEvent(ctx, tx, ts, r.Library, r.AssetID, "rendition_changed",
+				if err = appendEvent(ctx, tx, ts, r.Library, r.AssetID, EventRenditionChanged,
 					map[string]any{"version": r.Version, "size": r.SizeBytes, "sha256": r.SHA256}); err != nil {
 					return stats, err
 				}
@@ -165,7 +161,8 @@ type upsertResult struct {
 
 // upsertResource records r. Any change of bytes or location clears the
 // rendition's verification evidence, so every tier runs again on the file
-// that is actually at local_path now.
+// that is actually at local_path now. A recorded failure is kept: quarantine
+// lasts until an operator releases it, and the failure is what they review.
 func upsertResource(ctx context.Context, tx *sql.Tx, r Rendition) (res upsertResult, err error) {
 	if r.SizeBytes > 1<<62 {
 		return res, fmt.Errorf("rendition %s/%s/%s: implausible size %d", r.Library, r.AssetID, r.Version, r.SizeBytes)
@@ -206,7 +203,7 @@ func upsertResource(ctx context.Context, tx *sql.Tx, r Rendition) (res upsertRes
 			verified_content_at   = CASE WHEN ? THEN NULL ELSE verified_content_at END,
 			verified_structure_at = CASE WHEN ? THEN NULL ELSE verified_structure_at END,
 			verified_probe_at     = CASE WHEN ? THEN NULL ELSE verified_probe_at END,
-			failure               = CASE WHEN ? THEN NULL ELSE failure END
+			last_scrub_at         = CASE WHEN ? THEN NULL ELSE last_scrub_at END
 		WHERE library = ? AND asset_id = ? AND version = ?`,
 		r.Filename, r.LocalPath, r.MediaType, size, r.SHA256,
 		r.RequiresStructure, r.RequiresProbe,
@@ -256,7 +253,7 @@ func recomputeState(ctx context.Context, tx *sql.Tx, library, assetID string, gr
 		next, ts, library, assetID); err != nil {
 		return fmt.Errorf("set state %s/%s: %w", library, assetID, err)
 	}
-	return appendEvent(ctx, tx, ts, library, assetID, "state_changed", map[string]any{"from": current, "to": next})
+	return appendEvent(ctx, tx, ts, library, assetID, EventStateChanged, map[string]any{"from": current, "to": next})
 }
 
 // verifiedPredicate is true for a resource that passed every tier it requires:

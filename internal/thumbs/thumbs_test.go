@@ -89,6 +89,16 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 		t.Fatal("a cached rendering must not be rendered again")
 	}
 
+	// A render outlives the request that started it: it fills the cache for others.
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err = r.Ensure(gone, Source{Path: src, SHA256: sha}, Preview); err != nil {
+		t.Fatalf("render started by a cancelled request: %v", err)
+	}
+	if _, err = os.Stat(r.CachePath(sha, Preview)); err != nil {
+		t.Fatalf("cancelled request left no cached preview: %v", err)
+	}
+
 	// A DNG renders from its embedded preview: a 64×48 JPEG fits the 1600 box unscaled.
 	dng := writeTIFF(t, dir, testJPEG(t, 64, 48), 64, 48, true)
 	dngSHA := strings.Repeat("cd", 32)

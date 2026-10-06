@@ -24,9 +24,9 @@ type PendingResource struct {
 	NeedsContent, NeedsStructure, NeedsProbe bool
 }
 
-// PendingVerification returns up to limit renditions (all when limit < 0) of
-// downloaded assets that are missing a required tier, oldest state change first.
-func (db *DB) PendingVerification(ctx context.Context, limit int) (out []PendingResource, err error) {
+// PendingVerification returns the renditions of downloaded assets that are
+// missing a required tier, oldest state change first.
+func (db *DB) PendingVerification(ctx context.Context) (out []PendingResource, err error) {
 	rows, err := db.r.QueryContext(ctx, `
 		SELECT r.library, r.asset_id, r.version, r.local_path, r.media_type, r.size_bytes, r.kei_sha256,
 		       r.verified_content_at IS NULL,
@@ -34,8 +34,7 @@ func (db *DB) PendingVerification(ctx context.Context, limit int) (out []Pending
 		       r.requires_probe = 1 AND r.verified_probe_at IS NULL
 		FROM resources r JOIN assets a USING (library, asset_id)
 		WHERE a.state = ? AND r.failure IS NULL AND NOT `+verifiedPredicate+`
-		ORDER BY a.state_changed_at, r.library, r.asset_id, r.version
-		LIMIT ?`, StateDownloaded, limit)
+		ORDER BY a.state_changed_at, r.library, r.asset_id, r.version`, StateDownloaded)
 	if err != nil {
 		return nil, fmt.Errorf("query pending verification: %w", err)
 	}
@@ -91,7 +90,7 @@ func (t Tier) passStatement() (string, error) {
 func (t Tier) failStatement() (string, error) {
 	switch t {
 	case TierContent:
-		return `UPDATE resources SET failure = ?, verified_content_at = NULL
+		return `UPDATE resources SET failure = ?, verified_content_at = NULL, last_scrub_at = NULL
 			WHERE library = ? AND asset_id = ? AND version = ?`, nil
 	case TierStructure:
 		return `UPDATE resources SET failure = ?, verified_structure_at = NULL
@@ -143,7 +142,7 @@ func (db *DB) RecordPass(ctx context.Context, k Key, tier Tier, now time.Time) (
 			StateVerified, ts, k.Library, k.AssetID); err != nil {
 			return fmt.Errorf("promote %s/%s: %w", k.Library, k.AssetID, err)
 		}
-		if err = appendEvent(ctx, tx, ts, k.Library, k.AssetID, "state_changed",
+		if err = appendEvent(ctx, tx, ts, k.Library, k.AssetID, EventStateChanged,
 			map[string]any{"from": current, "to": StateVerified}); err != nil {
 			return err
 		}
@@ -183,7 +182,7 @@ func (db *DB) RecordMismatch(ctx context.Context, k Key, tier Tier, reason strin
 		StateQuarantined, ts, k.Library, k.AssetID); err != nil {
 		return fmt.Errorf("quarantine %s/%s: %w", k.Library, k.AssetID, err)
 	}
-	if err = appendEvent(ctx, tx, ts, k.Library, k.AssetID, "quarantined",
+	if err = appendEvent(ctx, tx, ts, k.Library, k.AssetID, EventQuarantined,
 		map[string]any{"version": k.Version, "tier": tier, "reason": reason}); err != nil {
 		return err
 	}
@@ -223,7 +222,7 @@ func (db *DB) ReleaseQuarantine(ctx context.Context, library, assetID, reason st
 		library, assetID); err != nil {
 		return fmt.Errorf("clear failures %s/%s: %w", library, assetID, err)
 	}
-	if err = appendEvent(ctx, tx, ts, library, assetID, "quarantine_released", map[string]any{"reason": reason}); err != nil {
+	if err = appendEvent(ctx, tx, ts, library, assetID, EventQuarantineReleased, map[string]any{"reason": reason}); err != nil {
 		return err
 	}
 	if err = tx.Commit(); err != nil {

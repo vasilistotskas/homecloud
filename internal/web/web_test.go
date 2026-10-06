@@ -35,10 +35,13 @@ var t0 = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 type fakeAgent struct {
 	hub     *app.Hub
 	started bool
+	// archive is what CheckArchive reports.
+	archive error
 }
 
-func (f *fakeAgent) Hub() *app.Hub      { return f.hub }
-func (f *fakeAgent) RequestCycle() bool { return f.started }
+func (f *fakeAgent) Hub() *app.Hub       { return f.hub }
+func (f *fakeAgent) RequestCycle() bool  { return f.started }
+func (f *fakeAgent) CheckArchive() error { return f.archive }
 
 type nopNotifier struct{}
 
@@ -54,7 +57,9 @@ type env struct {
 	client   agentv1connect.AgentServiceClient
 }
 
-func setup(t *testing.T) *env {
+// setup starts the API over a fresh ledger; opts adjust the fake agent
+// before the server starts.
+func setup(t *testing.T, opts ...func(*fakeAgent)) *env {
 	t.Helper()
 	ctx := context.Background()
 	db, err := ledger.Open(ctx, filepath.Join(t.TempDir(), "ledger.db"))
@@ -78,6 +83,9 @@ func setup(t *testing.T) *env {
 	}
 	authn := auth.New(token, func() time.Time { return t0 })
 	agent := &fakeAgent{hub: app.NewHub(), started: true}
+	for _, opt := range opts {
+		opt(agent)
+	}
 	signer, err := media.NewSigner(func() time.Time { return t0 })
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +98,7 @@ func setup(t *testing.T) *env {
 		Web:      config.Web{Listen: listen},
 		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
 	}
+
 	h, err := web.Handler(web.Options{
 		Listen: listen,
 		Service: api.New(api.Deps{
@@ -504,5 +513,13 @@ func TestLibraryAndSignedThumbnails(t *testing.T) {
 	}
 	if status, _, _ := get(t, e, strings.Split(item.GetThumbnailUrl(), "?")[0], ""); status != http.StatusForbidden {
 		t.Fatalf("unsigned thumbnail = %d", status)
+	}
+}
+
+func TestOverviewReportsMissingArchiveDrive(t *testing.T) {
+	e := setup(t, func(a *fakeAgent) { a.archive = errors.New("archive root is on another volume") })
+	_, err := e.client.GetOverview(context.Background(), connect.NewRequest(&agentv1.GetOverviewRequest{}))
+	if code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("GetOverview on a replaced archive volume = %v, want failed_precondition", err)
 	}
 }

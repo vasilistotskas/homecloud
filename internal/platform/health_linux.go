@@ -30,7 +30,9 @@ const (
 // (NVMe controllers and ATA drives). Drives udisks cannot map, such as
 // device-mapper volumes, return ErrHealthUnsupported.
 func DriveHealthOf(ctx context.Context, path string) (DriveHealth, error) {
-	device, err := mountedDevice(path)
+	// The filesystem UUID identifies the volume however it is mounted (for
+	// example as /dev/root), and udisks resolves it through Block.IdUUID.
+	uuid, err := VolumeID(path)
 	if err != nil {
 		return DriveHealth{}, err
 	}
@@ -42,18 +44,18 @@ func DriveHealthOf(ctx context.Context, path string) (DriveHealth, error) {
 
 	var blocks []dbus.ObjectPath
 	if callErr := conn.Object(udisksBus, udisksManager).CallWithContext(ctx, ifaceManager+".ResolveDevice", 0,
-		map[string]dbus.Variant{"path": dbus.MakeVariant(device)}, map[string]dbus.Variant{}).Store(&blocks); callErr != nil {
-		return DriveHealth{}, fmt.Errorf("udisks: resolve %s: %w", device, callErr)
+		map[string]dbus.Variant{"uuid": dbus.MakeVariant(uuid)}, map[string]dbus.Variant{}).Store(&blocks); callErr != nil {
+		return DriveHealth{}, fmt.Errorf("udisks: resolve filesystem %s: %w", uuid, callErr)
 	}
 	if len(blocks) == 0 {
-		return DriveHealth{}, fmt.Errorf("%w: udisks does not know %s", ErrHealthUnsupported, device)
+		return DriveHealth{}, fmt.Errorf("%w: udisks does not know filesystem %s", ErrHealthUnsupported, uuid)
 	}
 	var drivePath dbus.ObjectPath
 	if propErr := conn.Object(udisksBus, blocks[0]).StoreProperty(ifaceBlock+".Drive", &drivePath); propErr != nil {
-		return DriveHealth{}, fmt.Errorf("udisks: drive of %s: %w", device, propErr)
+		return DriveHealth{}, fmt.Errorf("udisks: drive of filesystem %s: %w", uuid, propErr)
 	}
 	if drivePath == noDriveObjectRef {
-		return DriveHealth{}, fmt.Errorf("%w: %s is not on a physical drive udisks can see", ErrHealthUnsupported, device)
+		return DriveHealth{}, fmt.Errorf("%w: filesystem %s is not on a physical drive udisks can see", ErrHealthUnsupported, uuid)
 	}
 	drive := conn.Object(udisksBus, drivePath)
 	var model string

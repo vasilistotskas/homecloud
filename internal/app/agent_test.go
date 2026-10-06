@@ -246,6 +246,10 @@ func TestRequestCycleCoalesces(t *testing.T) {
 	if agent.RequestCycle() {
 		t.Fatal("a request while a cycle runs must be refused")
 	}
+	agent.setPhase(PhaseCheckingArchive)
+	if !agent.RequestCycle() {
+		t.Fatal("a request during maintenance must be queued for right after it")
+	}
 }
 
 func TestCycleRecordsParsableReportAndEndsIdle(t *testing.T) {
@@ -292,7 +296,7 @@ func TestCycleAlertsOnceWhenDriveFails(t *testing.T) {
 	if err := agent.Cycle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	events, err := agent.db.Events(ctx, []string{ledger.DriveHealthEvent}, 0, 10)
+	events, err := agent.db.Events(ctx, []string{ledger.EventDriveHealthChanged}, 0, 10)
 	if err != nil || len(events) != 2 {
 		t.Fatalf("drive events = %+v, %v; want failing then ok", events, err)
 	}

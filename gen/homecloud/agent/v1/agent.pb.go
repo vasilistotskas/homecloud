@@ -326,6 +326,13 @@ const (
 	DownloadOutcome_DOWNLOAD_OUTCOME_NEEDS_ATTENTION  DownloadOutcome = 4
 	// The downloader could not be run or exited unexpectedly.
 	DownloadOutcome_DOWNLOAD_OUTCOME_ERROR DownloadOutcome = 5
+	// Not run: the archive drive is below its minimum free space.
+	DownloadOutcome_DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE DownloadOutcome = 6
+	// Not run: the configured archive drive was missing or replaced; nothing
+	// else ran in that cycle either.
+	DownloadOutcome_DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE DownloadOutcome = 7
+	// The agent stopped before the cycle finished (e.g. Windows logoff).
+	DownloadOutcome_DOWNLOAD_OUTCOME_INTERRUPTED DownloadOutcome = 8
 )
 
 // Enum value maps for DownloadOutcome.
@@ -337,14 +344,20 @@ var (
 		3: "DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED",
 		4: "DOWNLOAD_OUTCOME_NEEDS_ATTENTION",
 		5: "DOWNLOAD_OUTCOME_ERROR",
+		6: "DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE",
+		7: "DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE",
+		8: "DOWNLOAD_OUTCOME_INTERRUPTED",
 	}
 	DownloadOutcome_value = map[string]int32{
-		"DOWNLOAD_OUTCOME_UNSPECIFIED":      0,
-		"DOWNLOAD_OUTCOME_OK":               1,
-		"DOWNLOAD_OUTCOME_PARTIAL":          2,
-		"DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED": 3,
-		"DOWNLOAD_OUTCOME_NEEDS_ATTENTION":  4,
-		"DOWNLOAD_OUTCOME_ERROR":            5,
+		"DOWNLOAD_OUTCOME_UNSPECIFIED":         0,
+		"DOWNLOAD_OUTCOME_OK":                  1,
+		"DOWNLOAD_OUTCOME_PARTIAL":             2,
+		"DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED":    3,
+		"DOWNLOAD_OUTCOME_NEEDS_ATTENTION":     4,
+		"DOWNLOAD_OUTCOME_ERROR":               5,
+		"DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE":   6,
+		"DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE": 7,
+		"DOWNLOAD_OUTCOME_INTERRUPTED":         8,
 	}
 )
 
@@ -2787,7 +2800,9 @@ type LibraryItem struct {
 	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	State     AssetState             `protobuf:"varint,4,opt,name=state,proto3,enum=homecloud.agent.v1.AssetState" json:"state,omitempty"`
 	// Signed URLs of a 320 px square thumbnail and a preview that fits 1600 px,
-	// both WebP, valid for at least 12 hours.
+	// both WebP, valid for at least 12 hours. All three fields are empty while
+	// no displayable rendition is on disk yet (e.g. a Live Photo whose video
+	// arrived before its picture).
 	ThumbnailUrl string `protobuf:"bytes,5,opt,name=thumbnail_url,json=thumbnailUrl,proto3" json:"thumbnail_url,omitempty"`
 	PreviewUrl   string `protobuf:"bytes,6,opt,name=preview_url,json=previewUrl,proto3" json:"preview_url,omitempty"`
 	// The rendition they show: the edited version when there is one.
@@ -3562,7 +3577,8 @@ func (*StartSyncRequest) Descriptor() ([]byte, []int) {
 
 type StartSyncResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// False when a cycle was already running or queued; the request joined it.
+	// True when a cycle starts now, or right after the maintenance job that is
+	// running. False when a cycle is already running or requested.
 	Started       bool `protobuf:"varint,1,opt,name=started,proto3" json:"started,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -4486,14 +4502,17 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\x16RUN_RESULT_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12RUN_RESULT_RUNNING\x10\x01\x12\x11\n" +
 	"\rRUN_RESULT_OK\x10\x02\x12\x15\n" +
-	"\x11RUN_RESULT_FAILED\x10\x03*\xd3\x01\n" +
+	"\x11RUN_RESULT_FAILED\x10\x03*\xc7\x02\n" +
 	"\x0fDownloadOutcome\x12 \n" +
 	"\x1cDOWNLOAD_OUTCOME_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13DOWNLOAD_OUTCOME_OK\x10\x01\x12\x1c\n" +
 	"\x18DOWNLOAD_OUTCOME_PARTIAL\x10\x02\x12%\n" +
 	"!DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED\x10\x03\x12$\n" +
 	" DOWNLOAD_OUTCOME_NEEDS_ATTENTION\x10\x04\x12\x1a\n" +
-	"\x16DOWNLOAD_OUTCOME_ERROR\x10\x05*\xec\x01\n" +
+	"\x16DOWNLOAD_OUTCOME_ERROR\x10\x05\x12&\n" +
+	"\"DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE\x10\x06\x12(\n" +
+	"$DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE\x10\a\x12 \n" +
+	"\x1cDOWNLOAD_OUTCOME_INTERRUPTED\x10\b*\xec\x01\n" +
 	"\tEventKind\x12\x1a\n" +
 	"\x16EVENT_KIND_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cEVENT_KIND_RENDITION_CHANGED\x10\x01\x12\x1c\n" +

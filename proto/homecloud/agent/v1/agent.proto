@@ -10,8 +10,9 @@ import "google/protobuf/timestamp.proto";
 
 // AgentService exposes the agent's state and the operator actions it accepts.
 service AgentService {
-  // GetInfo identifies the agent. Clients call it first and refuse to work
-  // with an agent whose api_version major differs from their own.
+  // GetInfo identifies the agent. Incompatible API changes get a new proto
+  // package (homecloud.agent.v2), so an outdated client fails with
+  // Unimplemented; api_version is informational, for display and support.
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
@@ -279,6 +280,13 @@ enum DownloadOutcome {
   DOWNLOAD_OUTCOME_NEEDS_ATTENTION = 4;
   // The downloader could not be run or exited unexpectedly.
   DOWNLOAD_OUTCOME_ERROR = 5;
+  // Not run: the archive drive is below its minimum free space.
+  DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE = 6;
+  // Not run: the configured archive drive was missing or replaced; nothing
+  // else ran in that cycle either.
+  DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE = 7;
+  // The agent stopped before the cycle finished (e.g. Windows logoff).
+  DOWNLOAD_OUTCOME_INTERRUPTED = 8;
 }
 
 message ListRunsRequest {
@@ -429,7 +437,9 @@ message LibraryItem {
   google.protobuf.Timestamp created_at = 3;
   AssetState state = 4;
   // Signed URLs of a 320 px square thumbnail and a preview that fits 1600 px,
-  // both WebP, valid for at least 12 hours.
+  // both WebP, valid for at least 12 hours. All three fields are empty while
+  // no displayable rendition is on disk yet (e.g. a Live Photo whose video
+  // arrived before its picture).
   string thumbnail_url = 5;
   string preview_url = 6;
   // The rendition they show: the edited version when there is one.
@@ -514,7 +524,8 @@ message ReleaseQuarantineResponse {}
 message StartSyncRequest {}
 
 message StartSyncResponse {
-  // False when a cycle was already running or queued; the request joined it.
+  // True when a cycle starts now, or right after the maintenance job that is
+  // running. False when a cycle is already running or requested.
   bool started = 1;
 }
 

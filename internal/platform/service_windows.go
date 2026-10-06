@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
@@ -80,6 +82,7 @@ type taskXML struct {
 		Context string `xml:"Context,attr"`
 		Exec    struct {
 			Command          string `xml:"Command"`
+			Arguments        string `xml:"Arguments,omitempty"`
 			WorkingDirectory string `xml:"WorkingDirectory"`
 		} `xml:"Exec"`
 	} `xml:"Actions"`
@@ -105,6 +108,12 @@ func renderTask(svc AgentService, userSID, userName string) ([]byte, error) {
 	t.Triggers.LogonTrigger.UserID = userName
 	t.Actions.Context = "Author"
 	t.Actions.Exec.Command, t.Actions.Exec.WorkingDirectory = svc.Executable, svc.WorkingDir
+	// Arguments is one command line; quote each argument the way Windows parses it.
+	args := make([]string, 0, len(svc.Args))
+	for _, a := range svc.Args {
+		args = append(args, syscall.EscapeArg(a))
+	}
+	t.Actions.Exec.Arguments = strings.Join(args, " ")
 
 	body, err := xml.MarshalIndent(t, "", "  ")
 	if err != nil {

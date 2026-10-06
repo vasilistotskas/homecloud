@@ -56,6 +56,8 @@ type Ledger interface {
 type Agent interface {
 	Hub() *app.Hub
 	RequestCycle() bool
+	// CheckArchive reports whether the configured archive volume is mounted.
+	CheckArchive() error
 }
 
 // Service implements AgentService.
@@ -115,6 +117,11 @@ func (s *Service) GetOverview(ctx context.Context, _ *connect.Request[agentv1.Ge
 	return connect.NewResponse(&agentv1.GetOverviewResponse{Overview: ov}), nil
 }
 
+// overviewInterval is the minimum time between updates on one overview
+// stream. Verification wakes the hub after every file and each update re-reads
+// the ledger, so changes within the interval fold into the next update.
+const overviewInterval = time.Second
+
 // WatchOverview implements AgentService.
 func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv1.WatchOverviewRequest], stream *connect.ServerStream[agentv1.WatchOverviewResponse]) error {
 	for {
@@ -126,24 +133,36 @@ func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv1.
 		if err := stream.Send(&agentv1.WatchOverviewResponse{Overview: ov}); err != nil {
 			return fmt.Errorf("send overview: %w", err)
 		}
+		sent := time.Now()
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-changed:
 		}
+		if wait := overviewInterval - time.Since(sent); wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil
+			case <-timer.C:
+			}
+		}
 	}
 }
 
 func (s *Service) overview(ctx context.Context, st app.Status) (*agentv1.Overview, error) {
+	// The ledger lives on the archive volume, so without it there is no
+	// overview; say so precisely instead of failing as an internal error.
+	space, err := s.archiveSpace()
+	if err != nil {
+		return nil, err
+	}
 	counts, err := s.db.StateCounts(ctx)
 	if err != nil {
 		return nil, internal(err)
 	}
 	files, bytes, err := s.db.ArchiveTotals(ctx)
-	if err != nil {
-		return nil, internal(err)
-	}
-	space, err := platform.DiskSpace(s.cfg.Storage.Root)
 	if err != nil {
 		return nil, internal(err)
 	}
@@ -200,6 +219,19 @@ func (s *Service) lastRun(ctx context.Context, kind string) (*agentv1.Run, error
 		return nil, internal(err)
 	}
 	return run, nil
+}
+
+// archiveSpace returns the archive volume's space, or FailedPrecondition when
+// the configured volume is missing or another volume is mounted in its place.
+func (s *Service) archiveSpace() (platform.Space, error) {
+	if err := s.agent.CheckArchive(); err != nil {
+		return platform.Space{}, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("archive drive not available: %w", err))
+	}
+	space, err := platform.DiskSpace(s.cfg.Storage.Root)
+	if err != nil {
+		return platform.Space{}, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("archive drive not available: %w", err))
+	}
+	return space, nil
 }
 
 // ListRuns implements AgentService.
@@ -284,7 +316,7 @@ func (s *Service) ListQuarantine(ctx context.Context, _ *connect.Request[agentv1
 			byAsset[key] = qa
 			res.Assets = append(res.Assets, qa)
 		}
-		if q.Version == "original" || qa.GetAsset().GetFilename() == "" {
+		if q.Version == ledger.VersionOriginal || qa.GetAsset().GetFilename() == "" {
 			qa.Asset.Filename = q.Filename
 		}
 		qa.Failures = append(qa.Failures, failureToProto(q.Version, q.Failure))
@@ -448,14 +480,17 @@ func (s *Service) libraryItem(a ledger.LibraryAsset) (*agentv1.LibraryItem, erro
 	if err != nil {
 		return nil, err
 	}
-	v := a.Display.Version
-	return &agentv1.LibraryItem{
-		Asset:          &agentv1.AssetRef{Library: a.Library, AssetId: a.AssetID, Filename: a.Filename},
-		Kind:           kind,
-		CreatedAt:      optionalTimePtr(a.CreatedAt),
-		State:          state,
-		ThumbnailUrl:   s.media.URL(thumbs.Thumb, a.Library, a.AssetID, v),
-		PreviewUrl:     s.media.URL(thumbs.Preview, a.Library, a.AssetID, v),
-		DisplayVersion: v,
-	}, nil
+	item := &agentv1.LibraryItem{
+		Asset:     &agentv1.AssetRef{Library: a.Library, AssetId: a.AssetID, Filename: a.Filename},
+		Kind:      kind,
+		CreatedAt: optionalTimePtr(a.CreatedAt),
+		State:     state,
+	}
+	if a.Display != nil {
+		v := a.Display.Version
+		item.ThumbnailUrl = s.media.URL(thumbs.Thumb, a.Library, a.AssetID, v)
+		item.PreviewUrl = s.media.URL(thumbs.Preview, a.Library, a.AssetID, v)
+		item.DisplayVersion = v
+	}
+	return item, nil
 }

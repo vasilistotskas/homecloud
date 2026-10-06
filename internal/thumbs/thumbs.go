@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -41,6 +42,9 @@ const (
 	webpQuality = "75"
 	// renderers bounds concurrent ffmpeg processes.
 	renderers = 4
+	// renderTimeout bounds rendering one image (ffprobe and ffmpeg). A render
+	// takes well under a second; one this long is hung and is retried later.
+	renderTimeout = 2 * time.Minute
 )
 
 // sizeFilters shape each size. Thumbnails fill and crop a square (small
@@ -173,7 +177,11 @@ func (r *Renderer) Ensure(ctx context.Context, src Source, size Size) (string, e
 	r.inflight[path] = c
 	r.mu.Unlock()
 
-	c.err = r.render(ctx, src, size, path)
+	// The render serves every waiter and fills the cache, so it does not end
+	// when the request that started it is cancelled; renderTimeout bounds it.
+	renderCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), renderTimeout)
+	c.err = r.render(renderCtx, src, size, path)
+	cancel()
 	r.mu.Lock()
 	delete(r.inflight, path)
 	r.mu.Unlock()

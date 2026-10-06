@@ -18,7 +18,6 @@ type Endpoint struct {
 	URL          string `json:"url"`
 	Token        string `json:"token"`
 	AgentVersion string `json:"agent_version"`
-	PID          int    `json:"pid"`
 }
 
 // EndpointPath returns the discovery file's location.

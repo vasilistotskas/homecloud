@@ -77,8 +77,9 @@ const (
 
 // AgentServiceClient is a client for the homecloud.agent.v1.AgentService service.
 type AgentServiceClient interface {
-	// GetInfo identifies the agent. Clients call it first and refuse to work
-	// with an agent whose api_version major differs from their own.
+	// GetInfo identifies the agent. Incompatible API changes get a new proto
+	// package (homecloud.agent.v2), so an outdated client fails with
+	// Unimplemented; api_version is informational, for display and support.
 	GetInfo(context.Context, *connect.Request[v1.GetInfoRequest]) (*connect.Response[v1.GetInfoResponse], error)
 	// GetOverview returns the current archive overview.
 	GetOverview(context.Context, *connect.Request[v1.GetOverviewRequest]) (*connect.Response[v1.GetOverviewResponse], error)
@@ -307,8 +308,9 @@ func (c *agentServiceClient) ExchangeLoginCode(ctx context.Context, req *connect
 
 // AgentServiceHandler is an implementation of the homecloud.agent.v1.AgentService service.
 type AgentServiceHandler interface {
-	// GetInfo identifies the agent. Clients call it first and refuse to work
-	// with an agent whose api_version major differs from their own.
+	// GetInfo identifies the agent. Incompatible API changes get a new proto
+	// package (homecloud.agent.v2), so an outdated client fails with
+	// Unimplemented; api_version is informational, for display and support.
 	GetInfo(context.Context, *connect.Request[v1.GetInfoRequest]) (*connect.Response[v1.GetInfoResponse], error)
 	// GetOverview returns the current archive overview.
 	GetOverview(context.Context, *connect.Request[v1.GetOverviewRequest]) (*connect.Response[v1.GetOverviewResponse], error)

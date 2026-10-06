@@ -44,7 +44,7 @@ func state(t *testing.T, db *DB, asset string) AssetState {
 
 func pendingFor(t *testing.T, db *DB, asset string) []PendingResource {
 	t.Helper()
-	all, err := db.PendingVerification(context.Background(), 1000)
+	all, err := db.PendingVerification(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,8 +157,17 @@ func TestChangedRenditionLosesEvidence(t *testing.T) {
 	}
 	var n int
 	if err := db.r.QueryRowContext(context.Background(),
-		`SELECT count(*) FROM events WHERE asset_id = 'C' AND kind = 'rendition_changed'`).Scan(&n); err != nil || n != 1 {
+		`SELECT count(*) FROM events WHERE asset_id = 'C' AND kind = ?`, EventRenditionChanged).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("rendition_changed events = %d, %v", n, err)
+	}
+	err := db.EachManifestRow(context.Background(), func(m ManifestRow) error {
+		if m.VerifiedAt != nil {
+			t.Fatalf("changed file still reported confirmed at %v", m.VerifiedAt)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -182,7 +191,7 @@ func TestMovedRenditionIsVerifiedAgain(t *testing.T) {
 	if p := pendingFor(t, db, "V"); len(p) != 1 || !p[0].NeedsContent || p[0].LocalPath != moved.LocalPath {
 		t.Fatalf("pending = %+v, want content check of the new path", p)
 	}
-	events, err := db.Events(context.Background(), []string{RenditionMovedEvent}, 0, 5)
+	events, err := db.Events(context.Background(), []string{EventRenditionMoved}, 0, 5)
 	if err != nil || len(events) != 1 || !strings.Contains(events[0].Detail, "album-copy") {
 		t.Fatalf("events = %+v, %v", events, err)
 	}
@@ -201,6 +210,14 @@ func TestQuarantineIsSticky(t *testing.T) {
 	ingest(t, db, rendition("Q", "original", "video", true))
 	if got := state(t, db, "Q"); got != StateQuarantined {
 		t.Fatalf("re-ingest cleared quarantine: state = %s", got)
+	}
+
+	// kei replacing the file keeps the asset in the quarantine list until released.
+	changed := rendition("Q", "original", "video", true)
+	changed.SHA256 = strings.Repeat("b", 64)
+	ingest(t, db, changed)
+	if q, err := db.Quarantined(ctx); err != nil || len(q) != 1 || q[0].Failure.Tier != TierStructure {
+		t.Fatalf("Quarantined after a changed file = %+v, %v; want the recorded failure", q, err)
 	}
 	if len(pendingFor(t, db, "Q")) != 0 {
 		t.Fatal("quarantined asset offered for verification")

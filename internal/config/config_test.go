@@ -131,7 +131,8 @@ func TestValidate(t *testing.T) {
 		{"loose kei version", func(c *Config) { c.Kei.Version = "0.24" }, "kei.version"},
 		{"loose ffmpeg version", func(c *Config) { c.FFmpeg.Version = "latest" }, "ffmpeg.version"},
 		{"relative ffmpeg", func(c *Config) { c.FFmpeg.FFmpeg = "ffmpeg.exe" }, "ffmpeg.ffmpeg"},
-		{"non-loopback listen", func(c *Config) { c.Web.Listen = "0.0.0.0:8790" }, "loopback"},
+		{"non-loopback listen", func(c *Config) { c.Web.Listen = "0.0.0.0:8790" }, "web.listen"},
+		{"ipv6 loopback listen", func(c *Config) { c.Web.Listen = "[::1]:8790" }, "127.0.0.1"},
 		{"listen without port", func(c *Config) { c.Web.Listen = "127.0.0.1" }, "web.listen"},
 		{"http ntfy", func(c *Config) { c.Notify.Server = "http://ntfy.sh" }, "notify.server"},
 		{"ntfy with path", func(c *Config) { c.Notify.Server = "https://ntfy.sh/topic" }, "notify.server"},
@@ -177,3 +178,21 @@ func TestDurationRejectsGarbage(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+func TestResolvePrecedence(t *testing.T) {
+	t.Setenv(EnvPath, "")
+	def, err := DefaultPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Resolve(""); err != nil || got != def {
+		t.Fatalf("Resolve(\"\") = %q, %v; want the default %q", got, err, def)
+	}
+	t.Setenv(EnvPath, "from-env.toml")
+	if got, _ := Resolve(""); got != "from-env.toml" {
+		t.Fatalf("Resolve with %s = %q", EnvPath, got)
+	}
+	if got, _ := Resolve("from-flag.toml"); got != "from-flag.toml" {
+		t.Fatalf("Resolve with a flag = %q; the flag must win", got)
+	}
+}

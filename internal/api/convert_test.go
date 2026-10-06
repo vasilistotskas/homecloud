@@ -36,7 +36,7 @@ func TestDriveToProto(t *testing.T) {
 
 func TestDriveHealthEventToProto(t *testing.T) {
 	e, err := eventToProto(ledger.Event{
-		ID: 1, Kind: ledger.DriveHealthEvent, Detail: `{"from":"","to":"warning","reasons":["3 media errors"]}`,
+		ID: 1, Kind: ledger.EventDriveHealthChanged, Detail: `{"from":"","to":"warning","reasons":["3 media errors"]}`,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +46,7 @@ func TestDriveHealthEventToProto(t *testing.T) {
 		c.GetTo() != agentv1.DriveHealthState_DRIVE_HEALTH_STATE_WARNING || c.GetReasons()[0] != "3 media errors" {
 		t.Fatalf("event = %v", e)
 	}
-	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.DriveHealthEvent, Detail: `{"to":"bogus"}`}); err == nil {
+	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.EventDriveHealthChanged, Detail: `{"to":"bogus"}`}); err == nil {
 		t.Fatal("an unknown state must be rejected")
 	}
 }

@@ -8,13 +8,13 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -36,8 +36,6 @@ import (
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
-const instanceName = "homecloud-agent"
-
 func main() {
 	if err := run(); err != nil {
 		reportStartupFailure(err)
@@ -46,13 +44,18 @@ func main() {
 }
 
 func run() (err error) {
-	lock, err := platform.AcquireInstance(instanceName)
+	lock, err := platform.AcquireInstance(app.LedgerWriterLock)
 	if err != nil {
 		return fmt.Errorf("acquire instance lock: %w", err)
 	}
 	defer func() { err = errors.Join(err, lock.Release()) }()
 
-	cfgPath, err := configPath()
+	flags := flag.NewFlagSet("homecloud-agent", flag.ContinueOnError)
+	configFlag := flags.String("config", "", "path to the homecloud TOML config (default: $"+config.EnvPath+", then the per-user config dir)")
+	if err = flags.Parse(os.Args[1:]); err != nil {
+		return fmt.Errorf("parse arguments: %w", err)
+	}
+	cfgPath, err := config.Resolve(*configFlag)
 	if err != nil {
 		return err
 	}
@@ -122,17 +125,6 @@ func run() (err error) {
 	return runErr
 }
 
-func configPath() (string, error) {
-	if p := os.Getenv("HOMECLOUD_CONFIG"); p != "" {
-		return p, nil
-	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("locate config dir: %w", err)
-	}
-	return filepath.Join(dir, "homecloud", "config.toml"), nil
-}
-
 // serveAPI serves the local API until ctx ends. Clients find it through the
 // discovery file, which is published only once the listener is bound and
 // removed again on shutdown.
@@ -172,7 +164,7 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 		return fmt.Errorf("listen on %s: %w", cfg.Web.Listen, err)
 	}
 	endpoint, err := auth.Publish(auth.Endpoint{
-		URL: "http://" + cfg.Web.Listen, Token: token, AgentVersion: version, PID: os.Getpid(),
+		URL: "http://" + cfg.Web.Listen, Token: token, AgentVersion: version,
 	})
 	if err != nil {
 		return errors.Join(err, ln.Close())

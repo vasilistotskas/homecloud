@@ -5,7 +5,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,8 +26,12 @@ const (
 // ledgerBackupTimeLayout names snapshots so that name order is time order.
 const ledgerBackupTimeLayout = "20060102T150405Z"
 
-// ledgerBackupName matches the snapshots the agent writes and may prune.
-var ledgerBackupName = regexp.MustCompile(`^homecloud-\d{8}T\d{6}Z\.db$`)
+// ledgerBackupName matches the snapshots the agent writes and may prune, and
+// ledgerBackupPartial a snapshot that was interrupted while being written.
+var (
+	ledgerBackupName    = regexp.MustCompile(`^homecloud-\d{8}T\d{6}Z\.db$`)
+	ledgerBackupPartial = regexp.MustCompile(`^homecloud-\d{8}T\d{6}Z\.db\.partial$`)
+)
 
 // ScrubReport is recorded as the detail of each scrub run.
 type ScrubReport struct {
@@ -80,8 +83,10 @@ func (a *Agent) maintain(ctx context.Context) error {
 // job does one maintenance task and returns its report and whether it succeeded.
 type job func(context.Context) (report any, ok bool)
 
+// runIfDue runs do when no run of kind has completed within every. A run that
+// could not do its work is retried at the next cycle.
 func (a *Agent) runIfDue(ctx context.Context, kind string, every time.Duration, p Phase, do job) error {
-	last, err := a.db.LastFinishedRun(ctx, kind)
+	last, err := a.db.LastCompletedRun(ctx, kind)
 	switch {
 	case errors.Is(err, ledger.ErrNotFound):
 	case err != nil:
@@ -122,6 +127,7 @@ func (a *Agent) scrub(ctx context.Context) (any, bool) {
 
 	var mu sync.Mutex
 	forEach(ctx, batch, verifyWorkers, func(t ledger.ScrubTarget) {
+		defer a.hub.Changed() // live views follow quarantines as they happen
 		outcome := a.scrubOne(ctx, t)
 		mu.Lock()
 		defer mu.Unlock()
@@ -157,9 +163,6 @@ func (a *Agent) scrub(ctx context.Context) (any, bool) {
 // after quarantining, or a transient error.
 func (a *Agent) scrubOne(ctx context.Context, t ledger.ScrubTarget) error {
 	err := verify.Content(t.LocalPath, t.SizeBytes, t.SHA256)
-	if errors.Is(err, fs.ErrNotExist) {
-		err = fmt.Errorf("%w: %s is missing", verify.ErrMismatch, t.LocalPath)
-	}
 	switch {
 	case err == nil:
 		return a.db.RecordScrub(ctx, t.Key, a.now())
@@ -180,9 +183,9 @@ func (a *Agent) backupLedger(ctx context.Context) (any, bool) {
 	if err := a.writeLedgerBackup(ctx, &rep); err != nil {
 		a.log.Error("ledger backup failed", "err", err)
 		rep.Error = err.Error()
-		a.alert(ctx, notify.Msg{
+		a.alertRepeated(ctx, alertBackup, notify.Msg{
 			Title:    "homecloud: ledger backup failed",
-			Body:     "The nightly copy of homecloud's ledger could not be written; see logs.",
+			Body:     "The daily copy of homecloud's ledger could not be written; it is retried every cycle. See logs.",
 			Priority: notify.PriorityHigh,
 			Tags:     []string{"warning"},
 		})
@@ -210,24 +213,29 @@ func (a *Agent) writeLedgerBackup(ctx context.Context, rep *LedgerBackupReport) 
 	return err
 }
 
-// pruneLedgerBackups removes all but the newest keep snapshots in dir and
-// returns how many it removed. Other files in dir are never touched.
+// pruneLedgerBackups removes all but the newest keep snapshots in dir, and any
+// partial snapshot an interrupted backup left (backups run one at a time and
+// pruning follows the current one's publication), and returns how many it
+// removed. Other files in dir are never touched.
 func pruneLedgerBackups(dir string, keep int) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0, fmt.Errorf("list %s: %w", dir, err)
 	}
-	var names []string
+	var names, old []string
 	for _, e := range entries {
-		if e.Type().IsRegular() && ledgerBackupName.MatchString(e.Name()) {
+		switch {
+		case !e.Type().IsRegular():
+		case ledgerBackupName.MatchString(e.Name()):
 			names = append(names, e.Name())
+		case ledgerBackupPartial.MatchString(e.Name()):
+			old = append(old, e.Name())
 		}
 	}
 	slices.Sort(names)
-	if len(names) <= keep {
-		return 0, nil
+	if len(names) > keep {
+		old = append(old, names[:len(names)-keep]...)
 	}
-	old := names[:len(names)-keep]
 	for _, name := range old {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil {
 			return 0, fmt.Errorf("prune %s: %w", name, err)

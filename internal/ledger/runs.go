@@ -70,6 +70,29 @@ func (db *DB) LastFinishedRun(ctx context.Context, kind string) (Run, error) {
 	return runs[0], nil
 }
 
+// UnfinishedRuns returns the runs that started but never finished, oldest first.
+func (db *DB) UnfinishedRuns(ctx context.Context) ([]Run, error) {
+	return db.queryRuns(ctx, `SELECT id, kind, started_at, finished_at, ok, detail FROM runs
+		WHERE finished_at IS NULL ORDER BY id`)
+}
+
+// LastCompletedRun returns the most recent finished run of kind that did its
+// work, or ErrNotFound. A run reports a failure to do its work in the "error"
+// field of its detail; findings such as mismatched files do not make it
+// incomplete.
+func (db *DB) LastCompletedRun(ctx context.Context, kind string) (Run, error) {
+	runs, err := db.queryRuns(ctx, `SELECT id, kind, started_at, finished_at, ok, detail FROM runs
+		WHERE kind = ? AND finished_at IS NOT NULL AND json_extract(detail, '$.error') IS NULL
+		ORDER BY id DESC LIMIT 1`, kind)
+	if err != nil {
+		return Run{}, err
+	}
+	if len(runs) == 0 {
+		return Run{}, fmt.Errorf("last completed %s run: %w", kind, ErrNotFound)
+	}
+	return runs[0], nil
+}
+
 func (db *DB) queryRuns(ctx context.Context, query string, args ...any) (out []Run, err error) {
 	rows, err := db.r.QueryContext(ctx, query, args...)
 	if err != nil {

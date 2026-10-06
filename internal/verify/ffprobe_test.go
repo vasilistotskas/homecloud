@@ -1,6 +1,13 @@
 package verify
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"testing"
+
+	"github.com/vasilistotskas/homecloud/internal/config"
+)
 
 func TestFFprobeVersionPattern(t *testing.T) {
 	tests := []struct {
@@ -21,5 +28,13 @@ func TestFFprobeVersionPattern(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("ffprobeVersionPattern(%q) = %q, want %q", tt.output, got, tt.want)
 		}
+	}
+}
+
+func TestProbeUnstartableFFprobeIsTransient(t *testing.T) {
+	cfg := config.FFmpeg{FFprobe: filepath.Join(t.TempDir(), "no-ffprobe")}
+	err := Probe(context.Background(), cfg, filepath.Join(t.TempDir(), "clip.mov"))
+	if err == nil || errors.Is(err, ErrMismatch) {
+		t.Fatalf("Probe with a missing ffprobe = %v; want a transient error, never a mismatch", err)
 	}
 }

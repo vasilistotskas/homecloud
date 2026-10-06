@@ -49,7 +49,8 @@ func (s Space) FreePercent() float64 {
 type AgentService struct {
 	Name        string // task / unit name, e.g. "homecloud-agent"
 	Description string
-	Executable  string // absolute path to homecloud-agent
+	Executable  string   // absolute path to homecloud-agent
+	Args        []string // arguments passed to the agent
 	WorkingDir  string
 }
 
@@ -65,14 +66,18 @@ func CheckVolume(path, want string) error {
 	return nil
 }
 
-// CheckFreeSpace returns the volume's space and an error when free space is below minPercent.
+// ErrLowSpace marks a volume whose free space is below the configured minimum.
+var ErrLowSpace = errors.New("free space below minimum")
+
+// CheckFreeSpace returns the volume's space, and an ErrLowSpace-wrapping error
+// when free space is below minPercent.
 func CheckFreeSpace(path string, minPercent float64) (Space, error) {
 	s, err := DiskSpace(path)
 	if err != nil {
 		return Space{}, err
 	}
 	if s.FreePercent() < minPercent {
-		return s, fmt.Errorf("volume of %q has %.1f%% free, minimum is %.1f%%", path, s.FreePercent(), minPercent)
+		return s, fmt.Errorf("%w: volume of %q has %.1f%% free, minimum is %.1f%%", ErrLowSpace, path, s.FreePercent(), minPercent)
 	}
 	return s, nil
 }

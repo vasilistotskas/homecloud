@@ -93,6 +93,9 @@ var downloadOutcomes = map[string]agentv1.DownloadOutcome{
 	kei.OutcomeAuthRequired.String(): agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED,
 	kei.OutcomeAuthTerminal.String(): agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_NEEDS_ATTENTION,
 	app.KeiOutcomeError:              agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ERROR,
+	app.KeiOutcomeLowSpace:           agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE,
+	app.KeiOutcomeArchiveUnavailable: agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE,
+	app.KeiOutcomeInterrupted:        agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_INTERRUPTED,
 }
 
 func runToProto(r ledger.Run) (*agentv1.Run, error) {
@@ -197,7 +200,9 @@ func appleState(d agentv1.DownloadOutcome) agentv1.AppleAccountState {
 		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_SIGN_IN_REQUIRED
 	case agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_NEEDS_ATTENTION:
 		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_NEEDS_ATTENTION
-	case agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_UNSPECIFIED, agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ERROR:
+	case agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_UNSPECIFIED, agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ERROR,
+		agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_SKIPPED_LOW_SPACE, agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_ARCHIVE_UNAVAILABLE,
+		agentv1.DownloadOutcome_DOWNLOAD_OUTCOME_INTERRUPTED:
 		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_UNSPECIFIED
 	default:
 		return agentv1.AppleAccountState_APPLE_ACCOUNT_STATE_UNSPECIFIED
@@ -206,12 +211,12 @@ func appleState(d agentv1.DownloadOutcome) agentv1.AppleAccountState {
 
 // eventKindNames maps API event kinds to the ledger's event kind names.
 var eventKindNames = map[agentv1.EventKind]string{
-	agentv1.EventKind_EVENT_KIND_RENDITION_CHANGED:    "rendition_changed",
-	agentv1.EventKind_EVENT_KIND_STATE_CHANGED:        "state_changed",
-	agentv1.EventKind_EVENT_KIND_QUARANTINED:          "quarantined",
-	agentv1.EventKind_EVENT_KIND_QUARANTINE_RELEASED:  "quarantine_released",
-	agentv1.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED: ledger.DriveHealthEvent,
-	agentv1.EventKind_EVENT_KIND_RENDITION_MOVED:      ledger.RenditionMovedEvent,
+	agentv1.EventKind_EVENT_KIND_RENDITION_CHANGED:    ledger.EventRenditionChanged,
+	agentv1.EventKind_EVENT_KIND_STATE_CHANGED:        ledger.EventStateChanged,
+	agentv1.EventKind_EVENT_KIND_QUARANTINED:          ledger.EventQuarantined,
+	agentv1.EventKind_EVENT_KIND_QUARANTINE_RELEASED:  ledger.EventQuarantineReleased,
+	agentv1.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED: ledger.EventDriveHealthChanged,
+	agentv1.EventKind_EVENT_KIND_RENDITION_MOVED:      ledger.EventRenditionMoved,
 }
 
 var assetStates = map[ledger.AssetState]agentv1.AssetState{
@@ -251,7 +256,7 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 	}
 	var err error
 	switch e.Kind {
-	case "rendition_changed":
+	case ledger.EventRenditionChanged:
 		var d struct {
 			Version string `json:"version"`
 			Size    int64  `json:"size"`
@@ -262,7 +267,7 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 				Version: d.Version, SizeBytes: d.Size, Sha256: d.SHA256,
 			}}
 		}
-	case "state_changed":
+	case ledger.EventStateChanged:
 		var d struct {
 			From ledger.AssetState `json:"from"`
 			To   ledger.AssetState `json:"to"`
@@ -274,7 +279,7 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			}
 			out.Detail = &agentv1.Event_StateChanged{StateChanged: sc}
 		}
-	case "quarantined":
+	case ledger.EventQuarantined:
 		var d struct {
 			Version string      `json:"version"`
 			Tier    ledger.Tier `json:"tier"`
@@ -285,14 +290,14 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 			q.Tier, err = lookup(tiers, d.Tier, "tier")
 			out.Detail = &agentv1.Event_Quarantined{Quarantined: q}
 		}
-	case "quarantine_released":
+	case ledger.EventQuarantineReleased:
 		var d struct {
 			Reason string `json:"reason"`
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
 			out.Detail = &agentv1.Event_QuarantineReleased{QuarantineReleased: &agentv1.QuarantineReleased{Reason: d.Reason}}
 		}
-	case ledger.RenditionMovedEvent:
+	case ledger.EventRenditionMoved:
 		var d struct {
 			Version string `json:"version"`
 			From    string `json:"from"`
@@ -301,7 +306,7 @@ func eventToProto(e ledger.Event) (*agentv1.Event, error) {
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
 			out.Detail = &agentv1.Event_RenditionMoved{RenditionMoved: &agentv1.RenditionMoved{Version: d.Version, From: d.From, To: d.To}}
 		}
-	case ledger.DriveHealthEvent:
+	case ledger.EventDriveHealthChanged:
 		var d struct {
 			From    health.State `json:"from"`
 			To      health.State `json:"to"`
@@ -341,7 +346,7 @@ func assetToProto(d ledger.AssetDetail) (*agentv1.Asset, error) {
 		LastSeenAt:     optionalTimePtr(d.LastSeenAt),
 	}
 	for _, r := range d.Renditions {
-		if r.Version == "original" {
+		if r.Version == ledger.VersionOriginal {
 			out.Ref.Filename = r.Filename
 		}
 		mt, err := lookup(mediaTypes, r.MediaType, "media type")

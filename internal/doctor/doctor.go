@@ -87,7 +87,12 @@ func checkPin(ctx context.Context, name string, check func(context.Context) erro
 // checkKeiConfig reports whether kei's configuration matches homecloud's
 // settings. Only the agent writes it (at startup), so doctor stays read-only.
 func checkKeiConfig(cfg *config.Config) Result {
-	if err := kei.ConfigCurrent(cfg); err != nil {
+	err := kei.ConfigCurrent(cfg)
+	if errors.Is(err, fs.ErrNotExist) {
+		// A fresh install: nothing is wrong, the agent writes it on its first start.
+		return Result{Name: "kei config", Detail: cfg.Kei.Config + " (not written yet; the agent writes it when it starts)"}
+	}
+	if err != nil {
 		return Result{Name: "kei config", Err: err}
 	}
 	return Result{Name: "kei config", Detail: cfg.Kei.Config}

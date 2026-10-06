@@ -38,9 +38,8 @@ func TestContent(t *testing.T) {
 	if err := Content(path, uint64(len(data)), bad); !errors.Is(err, ErrMismatch) {
 		t.Errorf("wrong hash: want ErrMismatch, got %v", err)
 	}
-	err := Content(filepath.Join(t.TempDir(), "missing"), 1, good)
-	if err == nil || errors.Is(err, ErrMismatch) {
-		t.Errorf("missing file: want I/O error that is not ErrMismatch, got %v", err)
+	if err := Content(filepath.Join(t.TempDir(), "missing"), 1, good); !errors.Is(err, ErrMismatch) {
+		t.Errorf("missing file: want ErrMismatch (the expected bytes are not there), got %v", err)
 	}
 }
 

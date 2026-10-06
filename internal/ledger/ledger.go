@@ -67,11 +67,8 @@ func (db *DB) Close() error {
 	return errors.Join(errs...)
 }
 
-// IntegrityCheck runs PRAGMA integrity_check and returns an error unless it reports "ok".
-func (db *DB) IntegrityCheck(ctx context.Context) error {
-	return integrityCheck(ctx, db.r)
-}
-
+// integrityCheck runs PRAGMA integrity_check on conn and returns an error
+// unless it reports "ok".
 func integrityCheck(ctx context.Context, conn *sql.DB) (err error) {
 	rows, err := conn.QueryContext(ctx, "PRAGMA integrity_check")
 	if err != nil {
@@ -96,15 +93,6 @@ func integrityCheck(ctx context.Context, conn *sql.DB) (err error) {
 		return fmt.Errorf("integrity_check failed: %s", strings.Join(problems, "; "))
 	}
 	return nil
-}
-
-// SchemaVersion returns PRAGMA user_version.
-func (db *DB) SchemaVersion(ctx context.Context) (int, error) {
-	var v int
-	if err := db.r.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
-		return 0, fmt.Errorf("read user_version: %w", err)
-	}
-	return v, nil
 }
 
 type migration struct {

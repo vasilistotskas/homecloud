@@ -22,6 +22,12 @@ const (
 	PhaseBackingUpLedger
 )
 
+// InCycle reports whether p is a phase of a sync cycle, as opposed to idle
+// time or a maintenance job (scrub, ledger backup).
+func (p Phase) InCycle() bool {
+	return p >= PhaseDownloading && p <= PhasePreparingPreviews
+}
+
 // Status is the agent's live, in-memory state. Everything durable lives in
 // the ledger.
 type Status struct {

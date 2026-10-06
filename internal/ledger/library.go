@@ -47,8 +47,9 @@ type LibraryAsset struct {
 	Filename string
 	State    AssetState
 	// Display is the rendition to show: the edited version when there is one,
-	// the picture of a Live Photo, the video of a video.
-	Display RenditionFile
+	// the picture of a Live Photo, the video of a video. It is nil while no such
+	// rendition is on disk yet, e.g. a Live Photo whose video arrived first.
+	Display *RenditionFile
 	Cursor  LibraryCursor
 }
 
@@ -70,7 +71,7 @@ func (db *DB) LibraryPage(ctx context.Context, q LibraryQuery) (out []LibraryAss
 	rows, err := db.r.QueryContext(ctx, `
 		WITH k AS (
 			SELECT a.library, a.asset_id, coalesce(a.created_at, '') AS created_at, a.state,
-			       max(r.media_type = 'live_photo_image') AS live,
+			       max(r.media_type IN ('live_photo_image', 'live_photo_video')) AS live,
 			       max(r.media_type = 'video') AS video,
 			       max(substr(r.local_path, 1, length(?1)) = ?1) AS hidden
 			FROM assets a JOIN resources r USING (library, asset_id)
@@ -115,7 +116,7 @@ func (db *DB) LibraryPage(ctx context.Context, q LibraryQuery) (out []LibraryAss
 	return out, nil
 }
 
-// fillDisplay picks the rendition to show and the original's file name.
+// fillDisplay picks the rendition to show, if any, and the original's file name.
 func (db *DB) fillDisplay(ctx context.Context, a *LibraryAsset) (err error) {
 	rows, err := db.r.QueryContext(ctx, `SELECT version, local_path, kei_sha256, media_type, filename
 		FROM resources WHERE library = ? AND asset_id = ?`, a.Library, a.AssetID)
@@ -130,7 +131,7 @@ func (db *DB) fillDisplay(ctx context.Context, a *LibraryAsset) (err error) {
 		if scanErr := rows.Scan(&f.Version, &f.LocalPath, &f.SHA256, &f.MediaType, &filename); scanErr != nil {
 			return fmt.Errorf("scan rendition: %w", scanErr)
 		}
-		if f.Version == "original" {
+		if f.Version == VersionOriginal {
 			a.Filename = filename
 		}
 		files = append(files, f)
@@ -138,11 +139,9 @@ func (db *DB) fillDisplay(ctx context.Context, a *LibraryAsset) (err error) {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate renditions: %w", err)
 	}
-	display, ok := pickDisplay(a.Kind, files)
-	if !ok {
-		return fmt.Errorf("asset %s/%s has no displayable rendition", a.Library, a.AssetID)
+	if display, ok := pickDisplay(a.Kind, files); ok {
+		a.Display = &display
 	}
-	a.Display = display
 	return nil
 }
 
@@ -150,7 +149,7 @@ func (db *DB) fillDisplay(ctx context.Context, a *LibraryAsset) (err error) {
 // represents the asset, then the original.
 func pickDisplay(kind AssetKind, files []RenditionFile) (RenditionFile, bool) {
 	wanted := map[AssetKind]string{KindPhoto: "photo", KindLivePhoto: "live_photo_image", KindVideo: "video"}[kind]
-	for _, version := range []string{"adjusted", "original"} {
+	for _, version := range []string{VersionAdjusted, VersionOriginal} {
 		for _, f := range files {
 			if f.MediaType == wanted && f.Version == version {
 				return f, true

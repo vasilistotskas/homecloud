@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 )
 
@@ -14,9 +15,14 @@ import (
 var ErrMismatch = errors.New("verification mismatch")
 
 // Content checks that the file at path has exactly wantSize bytes and the
-// lowercase hex SHA-256 wantSHA256 (tier 1).
+// lowercase hex SHA-256 wantSHA256 (tier 1). A missing file is a mismatch: the
+// expected bytes are not there. Callers confirm the archive volume is mounted
+// first, so a missing drive is never mistaken for missing files.
 func Content(path string, wantSize uint64, wantSHA256 string) error {
 	f, err := os.Open(path) //nolint:gosec // path comes from the ledger
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: %s is missing", ErrMismatch, path)
+	}
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}

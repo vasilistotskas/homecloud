@@ -49,15 +49,15 @@ func reportStartupFailure(err error) {
 	if errors.Is(err, platform.ErrAlreadyRunning) {
 		return
 	}
-	dir, dirErr := os.UserCacheDir()
+	dir, dirErr := platform.StateDir()
 	if dirErr != nil {
 		return
 	}
-	path := filepath.Join(dir, "homecloud", "agent-startup.log")
+	path := filepath.Join(dir, "agent-startup.log")
 	if mkErr := os.MkdirAll(filepath.Dir(path), 0o700); mkErr != nil {
 		return
 	}
-	f, openErr := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // fixed path under the user cache dir
+	f, openErr := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600) //nolint:gosec // fixed name in the per-user state dir
 	if openErr != nil {
 		return
 	}

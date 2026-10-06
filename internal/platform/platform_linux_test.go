@@ -7,33 +7,62 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
-const sampleMountinfo = `22 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw,errors=remount-ro
-41 22 259:1 / /mnt/archive\040disk rw,relatime shared:30 - btrfs /dev/nvme0n1p1 rw,ssd
+const sampleMountinfo = `22 1 8:2 / / rw,relatime shared:1 - ext4 /dev/root rw,errors=remount-ro
+41 22 0:45 / /mnt/archive\040disk rw,relatime shared:30 - btrfs /dev/nvme0n1p1 rw,ssd
 57 22 0:26 / /run/user/1000 rw,nosuid shared:5 - tmpfs tmpfs rw,size=1G
 `
 
-func TestMountSource(t *testing.T) {
+func TestParseMount(t *testing.T) {
 	tests := []struct {
 		id   uint64
-		want string
+		want mount
 	}{
-		{22, "/dev/sda2"},
-		{41, "/dev/nvme0n1p1"},
-		{57, "tmpfs"},
+		// /dev/root is not a device node: the device number identifies the volume.
+		{22, mount{dev: unix.Mkdev(8, 2), source: "/dev/root"}},
+		// btrfs reports an anonymous device number; its source names the device.
+		{41, mount{dev: unix.Mkdev(0, 45), source: "/dev/nvme0n1p1"}},
+		{57, mount{dev: unix.Mkdev(0, 26), source: "tmpfs"}},
 	}
 	for _, tt := range tests {
-		got, err := mountSource(strings.NewReader(sampleMountinfo), tt.id)
+		got, err := parseMount(strings.NewReader(sampleMountinfo), tt.id)
 		if err != nil || got != tt.want {
-			t.Errorf("mountSource(%d) = %q, %v; want %q", tt.id, got, err, tt.want)
+			t.Errorf("parseMount(%d) = %+v, %v; want %+v", tt.id, got, err, tt.want)
 		}
 	}
-	if _, err := mountSource(strings.NewReader(sampleMountinfo), 99); err == nil {
+	if _, err := parseMount(strings.NewReader(sampleMountinfo), 99); err == nil {
 		t.Error("unknown mount id accepted")
 	}
-	if _, err := mountSource(strings.NewReader("7 1 8:1 / / rw\n"), 7); err == nil {
+	if _, err := parseMount(strings.NewReader("7 1 8:1 / / rw\n"), 7); err == nil {
 		t.Error("line without separator accepted")
+	}
+	if _, err := parseMount(strings.NewReader("7 1 eight / / rw - ext4 /dev/sda1 rw\n"), 7); err == nil {
+		t.Error("malformed device number accepted")
+	}
+}
+
+func TestMountMatches(t *testing.T) {
+	root := mount{dev: unix.Mkdev(8, 2), source: "/dev/root"}
+	if !root.matches("/dev/sda2", unix.Mkdev(8, 2)) {
+		t.Error("a mount must match the block device with its device number, whatever its source is called")
+	}
+	if root.matches("/dev/sda3", unix.Mkdev(8, 3)) {
+		t.Error("a mount matched another device")
+	}
+	dir := t.TempDir()
+	device := filepath.Join(dir, "nvme0n1p1")
+	if err := os.WriteFile(device, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	anon := mount{dev: unix.Mkdev(0, 45), source: device}
+	if !anon.matches(device, unix.Mkdev(259, 1)) {
+		t.Error("a mount with an anonymous device number must match its source device")
+	}
+	if anon.matches(filepath.Join(dir, "other"), unix.Mkdev(0, 45)) {
+		t.Error("an anonymous device number must never match by number")
 	}
 }
 
@@ -55,6 +84,7 @@ func TestRenderUnit(t *testing.T) {
 		Name:        "homecloud-agent",
 		Description: "homecloud agent (100% local)",
 		Executable:  `/opt/home cloud/bin/homecloud-agent`,
+		Args:        []string{"--config", "/home/me/.config/homecloud/config.toml"},
 		WorkingDir:  `/opt/home cloud/bin`,
 	})
 	if err != nil {
@@ -63,7 +93,7 @@ func TestRenderUnit(t *testing.T) {
 	for _, want := range []string{
 		"Description=homecloud agent (100%% local)",
 		"Type=notify",
-		`ExecStart="/opt/home cloud/bin/homecloud-agent"`,
+		`ExecStart="/opt/home cloud/bin/homecloud-agent" --config /home/me/.config/homecloud/config.toml`,
 		"WorkingDirectory=/opt/home cloud/bin",
 		"Restart=on-failure",
 		"WantedBy=default.target",

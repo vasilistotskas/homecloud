@@ -125,6 +125,11 @@ func TestLedgerBackupKeepsNewestSnapshots(t *testing.T) {
 	if err := os.WriteFile(unrelated, []byte("mine"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Left by a backup that was interrupted while writing.
+	stale := filepath.Join(dir, "homecloud-20261001T000000Z.db.partial")
+	if err := os.WriteFile(stale, []byte("half"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	for range 3 {
 		if err := agent.maintain(ctx); err != nil {
@@ -157,5 +162,26 @@ func TestLedgerBackupKeepsNewestSnapshots(t *testing.T) {
 	defer func() { _ = snap.Close() }()
 	if counts, err := snap.StateCounts(ctx); err != nil || counts[ledger.StateVerified] != 1 {
 		t.Fatalf("snapshot state counts = %v, %v", counts, err)
+	}
+}
+
+func TestScrubThatCouldNotRunIsRetriedNextCycle(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, _, _ := verifiedAgent(t, &clock)
+	ctx := context.Background()
+	agent.checkArchive = func() error { return errors.New("volume not mounted") }
+	if err := agent.maintain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	failed := lastRun(t, agent, ScrubRunKind)
+
+	agent.checkArchive = func() error { return nil }
+	clock = clock.Add(time.Hour)
+	if err := agent.maintain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	retried := lastRun(t, agent, ScrubRunKind)
+	if retried.ID == failed.ID || !*retried.OK {
+		t.Fatalf("scrub after a failed run: id %d (failed %d), ok=%v; want a successful retry next cycle", retried.ID, failed.ID, *retried.OK)
 	}
 }

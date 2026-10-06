@@ -28,16 +28,22 @@ func TestOpenMigratesToLatest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := db.SchemaVersion(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != len(ms) {
+	if got := schemaVersion(t, db); got != len(ms) {
 		t.Fatalf("schema version = %d, want %d", got, len(ms))
 	}
-	if err := db.IntegrityCheck(context.Background()); err != nil {
+	if err := integrityCheck(context.Background(), db.r); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// schemaVersion reads PRAGMA user_version, which migrate maintains.
+func schemaVersion(t *testing.T, db *DB) int {
+	t.Helper()
+	var v int
+	if err := db.r.QueryRowContext(context.Background(), "PRAGMA user_version").Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	return v
 }
 
 func TestReopenIsIdempotent(t *testing.T) {
@@ -56,8 +62,8 @@ func TestReopenIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, versionErr := db2.SchemaVersion(ctx); versionErr != nil || v != len(ms) {
-		t.Fatalf("schema version after reopen = %d, %v; want %d", v, versionErr, len(ms))
+	if v := schemaVersion(t, db2); v != len(ms) {
+		t.Fatalf("schema version after reopen = %d; want %d", v, len(ms))
 	}
 }
 

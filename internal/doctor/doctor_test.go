@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -38,6 +39,9 @@ func TestCheckDir(t *testing.T) {
 func TestCheckBackupVolume(t *testing.T) {
 	dir := t.TempDir()
 	here, err := platform.VolumeID(dir)
+	if errors.Is(err, platform.ErrNoVolumeIdentity) {
+		t.Skipf("the temp dir has no volume identity here (e.g. a container without /dev/disk/by-uuid): %v", err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,5 +54,27 @@ func TestCheckBackupVolume(t *testing.T) {
 	cfg.Storage.VolumeID = "another-volume"
 	if r := checkBackupVolume(cfg); !r.OK() {
 		t.Errorf("backups off the archive volume rejected: %v", r.Err)
+	}
+}
+
+func TestCheckKeiConfigOnAFreshInstall(t *testing.T) {
+	include := true
+	dir := t.TempDir()
+	cfg := &config.Config{
+		Storage: config.Storage{Root: dir},
+		ICloud:  config.ICloud{AppleID: "someone@example.com", IncludeHidden: &include},
+		Kei:     config.Kei{Config: filepath.Join(dir, "kei", "config.toml")},
+	}
+	if r := checkKeiConfig(cfg); !r.OK() || !strings.Contains(r.Detail, "not written yet") {
+		t.Fatalf("fresh install = %+v; want OK, explaining the agent writes it", r)
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.Kei.Config), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfg.Kei.Config, []byte("edited by hand"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r := checkKeiConfig(cfg); r.OK() {
+		t.Fatal("a kei config that differs from homecloud's settings must fail")
 	}
 }

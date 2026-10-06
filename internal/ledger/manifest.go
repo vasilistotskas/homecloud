@@ -17,7 +17,8 @@ type ManifestRow struct {
 	SHA256                    string
 	State                     AssetState
 	CreatedAt, AddedAt        *time.Time
-	// VerifiedAt is when the checksum tier passed; nil while unverified.
+	// VerifiedAt is when the file's checksum was last confirmed (first
+	// verification or a later scrub); nil while the current file is unconfirmed.
 	VerifiedAt *time.Time
 }
 
@@ -26,7 +27,7 @@ type ManifestRow struct {
 func (db *DB) EachManifestRow(ctx context.Context, fn func(ManifestRow) error) (err error) {
 	rows, err := db.r.QueryContext(ctx, `
 		SELECT r.library, r.asset_id, r.version, r.filename, r.local_path, r.media_type, r.size_bytes, r.kei_sha256,
-		       a.state, a.created_at, a.added_at, r.verified_content_at
+		       a.state, a.created_at, a.added_at, r.last_scrub_at
 		FROM resources r JOIN assets a USING (library, asset_id)
 		ORDER BY a.created_at, r.library, r.asset_id, r.version`)
 	if err != nil {

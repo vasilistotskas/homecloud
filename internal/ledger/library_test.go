@@ -26,6 +26,8 @@ func seedLibrary(t *testing.T, db *DB) {
 		at(rendition("L", "adjusted", "live_photo_image", true), 3*time.Hour),
 		at(rendition("L", "live_original", "live_photo_video", true), 3*time.Hour),
 		at(hidden, 4*time.Hour),
+		// A Live Photo whose video arrived before its picture: nothing to display yet.
+		at(rendition("M", "live_original", "live_photo_video", true), 30*time.Minute),
 	)
 }
 
@@ -46,11 +48,15 @@ func TestLibraryPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := ids(page), []string{"L:live", "V:video", "P:photo"}; !slices.Equal(got, want) {
+	if got, want := ids(page), []string{"L:live", "V:video", "P:photo", "M:live"}; !slices.Equal(got, want) {
 		t.Fatalf("page = %v, want %v (newest first, hidden excluded)", got, want)
 	}
 	if page[0].Display.Version != "adjusted" || page[0].Filename == "" {
 		t.Fatalf("live display = %+v filename %q, want the adjusted image", page[0].Display, page[0].Filename)
+	}
+
+	if page[3].Display != nil {
+		t.Fatalf("asset without a picture yet: display = %+v, want none", page[3].Display)
 	}
 
 	first, err := db.LibraryPage(ctx, LibraryQuery{HiddenDir: hiddenDir, Limit: 1})
@@ -58,7 +64,7 @@ func TestLibraryPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	rest, err := db.LibraryPage(ctx, LibraryQuery{HiddenDir: hiddenDir, Limit: 10, After: &first[0].Cursor})
-	if err != nil || !slices.Equal(ids(rest), []string{"V:video", "P:photo"}) {
+	if err != nil || !slices.Equal(ids(rest), []string{"V:video", "P:photo", "M:live"}) {
 		t.Fatalf("second page = %v, %v", ids(rest), err)
 	}
 

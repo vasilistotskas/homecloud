@@ -29,8 +29,17 @@ type Notifier interface {
 	Send(ctx context.Context, m notify.Msg) error
 }
 
-// authAlertEvery throttles repeated "sign-in needed" alerts.
-const authAlertEvery = 24 * time.Hour
+// repeatAlertEvery throttles alerts about a condition that persists across
+// cycles (sign-in needed, archive drive missing, low space).
+const repeatAlertEvery = 24 * time.Hour
+
+// Alert keys of throttled alerts.
+const (
+	alertSignIn  = "sign-in"
+	alertVolume  = "archive-volume"
+	alertLowDisk = "low-space"
+	alertBackup  = "ledger-backup"
+)
 
 // CycleRunKind is the ledger run kind of a sync cycle.
 const CycleRunKind = "cycle"
@@ -47,14 +56,17 @@ type Agent struct {
 	readDrive func(context.Context) (platform.DriveHealth, error)
 	// checkArchive confirms the archive volume is the configured one.
 	checkArchive func() error
+	// checkSpace reports the archive volume's space, wrapping
+	// platform.ErrLowSpace below storage.min_free_percent.
+	checkSpace func() (platform.Space, error)
 	// renderer makes the library browser's thumbnails.
 	renderer *thumbs.Renderer
 
 	hub     *Hub
 	trigger chan struct{}
 
-	mu            sync.Mutex
-	lastAuthAlert time.Time
+	mu         sync.Mutex
+	lastAlerts map[string]time.Time
 }
 
 // NewAgent returns an idle agent. keiLog receives kei's own output.
@@ -67,18 +79,27 @@ func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, k
 			return platform.DriveHealthOf(ctx, cfg.Storage.Root)
 		},
 		checkArchive: func() error { return platform.CheckVolume(cfg.Storage.Root, cfg.Storage.VolumeID) },
-		hub:          NewHub(),
-		trigger:      make(chan struct{}, 1),
+		checkSpace: func() (platform.Space, error) {
+			return platform.CheckFreeSpace(cfg.Storage.Root, cfg.Storage.MinFreePercent)
+		},
+		hub:        NewHub(),
+		trigger:    make(chan struct{}, 1),
+		lastAlerts: map[string]time.Time{},
 	}
 }
+
+// CheckArchive reports whether the configured archive volume is mounted at
+// storage.root. Every cycle and scrub checks it first.
+func (a *Agent) CheckArchive() error { return a.checkArchive() }
 
 // Hub exposes the agent's live status.
 func (a *Agent) Hub() *Hub { return a.hub }
 
-// RequestCycle asks for a cycle to start now. It reports false, and does
+// RequestCycle asks for a cycle as soon as possible: now when idle, or right
+// after the maintenance job that is running. It reports false, and does
 // nothing, when a cycle is already running or requested.
 func (a *Agent) RequestCycle() bool {
-	if st, _ := a.hub.Snapshot(); st.Phase != PhaseIdle {
+	if st, _ := a.hub.Snapshot(); st.Phase.InCycle() {
 		return false
 	}
 	select {
@@ -89,10 +110,42 @@ func (a *Agent) RequestCycle() bool {
 	}
 }
 
+// closeInterrupted records every run left unfinished by a previous agent
+// process as failed. Only one agent runs at a time (platform.AcquireInstance),
+// so a run still open at startup was interrupted: on Windows the agent is
+// ended without notice at logoff or shutdown.
+func (a *Agent) closeInterrupted(ctx context.Context) error {
+	runs, err := a.db.UnfinishedRuns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range runs {
+		var detail any
+		switch r.Kind {
+		case CycleRunKind:
+			detail = CycleReport{KeiOutcome: KeiOutcomeInterrupted, Error: interruptedError}
+		case ScrubRunKind:
+			detail = ScrubReport{Error: interruptedError}
+		case LedgerBackupRunKind:
+			detail = LedgerBackupReport{Error: interruptedError}
+		default:
+			return fmt.Errorf("run %d has unknown kind %q", r.ID, r.Kind)
+		}
+		if err := a.db.FinishRun(ctx, r.ID, false, detail, a.now()); err != nil {
+			return err
+		}
+		a.log.Warn("closed interrupted run", "run", r.ID, "kind", r.Kind, "started", r.StartedAt)
+	}
+	return nil
+}
+
 // Run executes a cycle immediately, followed by any maintenance that is due
 // (scrub, ledger backup), then again schedule.sync_interval later or as soon
 // as one is requested, until ctx ends.
 func (a *Agent) Run(ctx context.Context) error {
+	if err := a.closeInterrupted(ctx); err != nil {
+		return fmt.Errorf("close interrupted runs: %w", err)
+	}
 	interval := a.cfg.Schedule.SyncInterval.Std()
 	for {
 		if err := a.Cycle(ctx); err != nil {
@@ -129,9 +182,22 @@ type CycleReport struct {
 	Error      string             `json:"error,omitempty"`
 }
 
-// KeiOutcomeError is CycleReport.KeiOutcome when kei could not run or exited
-// with an unexpected code.
-const KeiOutcomeError = "error"
+// CycleReport.KeiOutcome values for cycles in which kei did not report one.
+const (
+	// KeiOutcomeError: kei could not run or exited with an unexpected code.
+	KeiOutcomeError = "error"
+	// KeiOutcomeLowSpace: the download was skipped because the archive volume
+	// is below storage.min_free_percent.
+	KeiOutcomeLowSpace = "skipped_low_space"
+	// KeiOutcomeArchiveUnavailable: the cycle stopped before downloading
+	// because the configured archive volume was missing or replaced.
+	KeiOutcomeArchiveUnavailable = "archive_unavailable"
+	// KeiOutcomeInterrupted: the agent stopped before the cycle finished.
+	KeiOutcomeInterrupted = "interrupted"
+)
+
+// interruptedError is the error recorded on runs the agent never finished.
+const interruptedError = "interrupted: the agent stopped before this run finished"
 
 // Cycle performs one kei sync followed by ingest and verification and records
 // the run in the ledger.
@@ -145,7 +211,9 @@ func (a *Agent) Cycle(ctx context.Context) error {
 	if cycleErr != nil {
 		rep.Error = cycleErr.Error()
 	}
-	ok := cycleErr == nil && rep.Verified.Mismatched == 0
+	// Files that could not be checked (rep.Verified.Errored) are retried next
+	// cycle, but this cycle did not verify everything it should have.
+	ok := cycleErr == nil && rep.Verified.Mismatched == 0 && rep.Verified.Errored == 0
 	// Record the outcome even when ctx was cancelled mid-cycle.
 	finishErr := a.db.FinishRun(context.WithoutCancel(ctx), runID, ok, rep, a.now())
 	return errors.Join(cycleErr, finishErr)
@@ -167,9 +235,30 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 		rep  CycleReport
 	)
 
+	// Fail closed: nothing runs against a missing or different archive volume.
+	if err := a.checkArchive(); err != nil {
+		a.alertRepeated(ctx, alertVolume, notify.Msg{
+			Title:    "homecloud: archive drive not available",
+			Body:     "The configured archive drive is missing or a different drive is mounted there. Nothing is downloaded, checked or deleted until it is back.",
+			Priority: notify.PriorityUrgent,
+			Tags:     []string{"rotating_light"},
+		})
+		rep.KeiOutcome = KeiOutcomeArchiveUnavailable
+		return rep, fmt.Errorf("archive volume: %w", err)
+	}
+
 	a.setPhase(PhaseDownloading)
-	outcome, err := kei.Sync(ctx, a.cfg.Kei, a.keiLog)
+	outcome, err := a.download(ctx)
 	switch {
+	case errors.Is(err, platform.ErrLowSpace):
+		// Below storage.min_free_percent: archive what is on disk, download nothing new.
+		a.alertRepeated(ctx, alertLowDisk, notify.Msg{
+			Title:    "homecloud: archive drive almost full",
+			Body:     "Free space is below the configured minimum, so new photos are not downloaded. Existing files are still checked.",
+			Priority: notify.PriorityHigh,
+			Tags:     []string{"warning"},
+		})
+		a.log.Warn("download skipped", "err", err)
 	case err != nil:
 		errs = append(errs, fmt.Errorf("kei sync: %w", err))
 		a.alert(ctx, notify.Msg{Title: "homecloud: download failed", Body: "kei sync exited unexpectedly; see logs.", Priority: notify.PriorityHigh, Tags: []string{"warning"}})
@@ -181,9 +270,12 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 		a.log.Warn("kei sync partially failed; failed assets retry next cycle")
 	case outcome == kei.OutcomeOK:
 	}
-	if err == nil {
+	switch {
+	case err == nil:
 		rep.KeiOutcome = outcome.String()
-	} else {
+	case errors.Is(err, platform.ErrLowSpace):
+		rep.KeiOutcome = KeiOutcomeLowSpace
+	default:
 		rep.KeiOutcome = KeiOutcomeError
 	}
 	a.log.Info("kei sync finished", "outcome", rep.KeiOutcome)
@@ -197,7 +289,7 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	a.log.Info("ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
 
 	a.setPhase(PhaseVerifying)
-	verified, err := Verify(ctx, a.cfg, a.db, a.log, a.now)
+	verified, err := Verify(ctx, a.cfg, a.db, a.log, a.now, a.hub.Changed)
 	rep.Verified = verified
 	if err != nil {
 		errs = append(errs, err)
@@ -227,21 +319,37 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 }
 
 func (a *Agent) alertAuth(ctx context.Context) {
+	a.log.Warn("kei needs Apple sign-in (2FA)")
+	a.alertRepeated(ctx, alertSignIn, notify.Msg{
+		Title:    "homecloud: Apple sign-in needed",
+		Body:     "New photos are not being downloaded. Run: kei login --config <kei config> and approve the code on your iPhone.",
+		Priority: notify.PriorityHigh,
+		Tags:     []string{"key"},
+	})
+}
+
+// alertRepeated sends m at most once per repeatAlertEvery for key, so a
+// condition that persists across hourly cycles alerts once a day.
+func (a *Agent) alertRepeated(ctx context.Context, key string, m notify.Msg) {
 	a.mu.Lock()
-	due := a.lastAuthAlert.IsZero() || a.now().Sub(a.lastAuthAlert) >= authAlertEvery
+	last, seen := a.lastAlerts[key]
+	due := !seen || a.now().Sub(last) >= repeatAlertEvery
 	if due {
-		a.lastAuthAlert = a.now()
+		a.lastAlerts[key] = a.now()
 	}
 	a.mu.Unlock()
-	a.log.Warn("kei needs Apple sign-in (2FA)")
 	if due {
-		a.alert(ctx, notify.Msg{
-			Title:    "homecloud: Apple sign-in needed",
-			Body:     "New photos are not being downloaded. Run: kei login --config <kei config> and approve the code on your iPhone.",
-			Priority: notify.PriorityHigh,
-			Tags:     []string{"key"},
-		})
+		a.alert(ctx, m)
 	}
+}
+
+// download runs kei unless the archive volume is below its free-space
+// minimum, in which case it returns an ErrLowSpace-wrapping error.
+func (a *Agent) download(ctx context.Context) (kei.Outcome, error) {
+	if _, err := a.checkSpace(); err != nil {
+		return 0, err
+	}
+	return kei.Sync(ctx, a.cfg.Kei, a.keiLog)
 }
 
 func (a *Agent) alert(ctx context.Context, m notify.Msg) {
@@ -329,6 +437,9 @@ func (a *Agent) preparePreviews(ctx context.Context) {
 				return
 			}
 			for _, asset := range page {
+				if asset.Display == nil {
+					continue // nothing displayable on disk yet
+				}
 				cached := a.renderer.CachePath(asset.Display.SHA256, thumbs.Thumb)
 				if _, statErr := os.Stat(cached); statErr == nil {
 					continue

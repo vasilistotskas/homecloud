@@ -24,6 +24,7 @@ func TestRenderTask(t *testing.T) {
 		Name:        "homecloud-agent",
 		Description: "homecloud <agent> & friends",
 		Executable:  `C:\Users\me\AppData\Local\Programs\homecloud\homecloud-agent.exe`,
+		Args:        []string{"--config", `C:\Users\me\App Data\homecloud\config.toml`},
 		WorkingDir:  `C:\Users\me\AppData\Local\Programs\homecloud`,
 	}, "S-1-5-21-1-2-3-1001", `HOST\me`)
 	if err != nil {
@@ -44,6 +45,8 @@ func TestRenderTask(t *testing.T) {
 		`<UserId>HOST\me</UserId>`,
 		`<Actions Context="Author">`,
 		`<Command>C:\Users\me\AppData\Local\Programs\homecloud\homecloud-agent.exe</Command>`,
+		// Each argument is quoted the way Windows parses a command line.
+		`<Arguments>--config &#34;C:\Users\me\App Data\homecloud\config.toml&#34;</Arguments>`,
 	} {
 		if !strings.Contains(xml, want) {
 			t.Errorf("task xml missing %s\n%s", want, xml)
