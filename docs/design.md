@@ -29,23 +29,18 @@ Make a local drive (E:) the single, verified home of the owner's iCloud data —
 
 ## 4. Architecture
 
-```
-            ┌────────────── homecloud (Go, per-user logon process) ──────────────┐
- iCloud ──► │ kei (pinned) ──► manifest ──► ledger (SQLite) ◄── verify tiers     │
-            │                                   │                                │
-            │                       policy (pure) ──► deleter ──► pyicloud sidecar ├──► iCloud
-            │ health · scrub · drive mirror · backup monitor · ntfy · status UI  │
-            └────────────────────────────────────────────────────────────────────┘
-```
+The component and cycle diagrams are in the [README](../README.md#how-it-works) (Mermaid, kept
+current with the code). Planned parts not drawn there: the P3 deleter (policy → journal →
+pyicloud sidecar → iCloud), the P2 iCloud Drive mirror and iPhone backup monitor.
 
 Packages:
 
 | Package | Responsibility |
 |---|---|
-| `cmd/homecloud` | CLI wiring (urfave/cli v3): `config`, `doctor`, `verify`, `status`, `quarantine list` / `quarantine release`, `open`, `notify-test`, `install`, `uninstall`. *(planned: `scrub`, `report`, `delete`)* |
+| `cmd/homecloud` | CLI wiring (urfave/cli v3): `doctor`, `verify`, `status`, `quarantine list` / `quarantine release`, `open`, `notify-test`, `install`, `uninstall`. *(planned: `report`, `delete`)* |
 | `cmd/homecloud-agent` | The headless agent (scheduler loop); see Spike C |
 | `internal/config` | Strict TOML load + validation |
-| `internal/ledger` | SQLite (WAL), embedded migrations (`PRAGMA user_version`), queries, `integrity_check` |
+| `internal/ledger` | SQLite (WAL), embedded migrations (`PRAGMA user_version`), queries, checked snapshots (`VACUUM INTO` + `integrity_check`) |
 | `internal/kei` | kei process wrapper: version pin, sync, manifest parsing, exit-code mapping |
 | `internal/verify` | Verification tiers (`RequiredTiers`, content, box structure, ffprobe). |
 | `internal/doctor` | Read-only environment checks behind `homecloud doctor` |
@@ -57,16 +52,19 @@ Packages:
 | `internal/drive` | *(planned, P2)* iCloud Drive mirror |
 | `internal/backup` | *(planned, P2)* Local iPhone backup monitor |
 | `internal/notify` | ntfy client |
+| `internal/export` | `manifest.csv` and `README.txt` at the archive root, rewritten atomically after every cycle |
+| `internal/thumbs` | Thumbnail and preview rendering and cache (§8c) |
+| `internal/media` | Signed, expiring `/media` URLs and their handler (§8c) |
 | `internal/api` | `homecloud.agent.v1.AgentService` implementation (Connect) |
 | `internal/auth` | Bearer token + discovery file, browser login codes and sessions |
 | `internal/web` | Loopback HTTP server: Host/Origin checks, CORS for the desktop app, authentication, embedded web app |
 | `ui/` | Web app: React 19 + Fluent UI v9 + TanStack Router (hash) + Connect-Query, built with Vite, embedded via `ui/embed.go` |
-| `internal/app` | Scheduler loop + single global job lock |
+| `internal/app` | Scheduler loop: a cycle, then whichever maintenance job is due (§8d); the ledger-writer lock it shares with the CLI |
 | `sidecar/icloud_delete.py` | *(planned, P3)* PEP 723 script (`uv run --script`), pinned `pyicloud==2.7.0` |
 
 Process model: a **per-user process launched at logon** by a Task Scheduler user task (`homecloud install`). Not a Windows service: services run in Session 0, which cannot interact with the user's session.
 
-Data layout (root is the required `storage.root`, e.g. `E:\HomeCloud`; no default): `Photos\` (kei-owned), `kei\` (kei state), `homecloud.db`, `logs\` (Windows only). *(planned: `Drive\`, `manifest.csv`, `deletions.jsonl`, and a nightly `VACUUM INTO` snapshot of the ledger to `%LOCALAPPDATA%\homecloud\snapshots` (14 kept).)*
+Data layout (root is the required `storage.root`, e.g. `E:\HomeCloud`; no default): `Photos\` (kei-owned; `Photos\Hidden\` for photos hidden in iCloud), `kei\` (the generated kei config and its sync report; kei's own state lives in `%USERPROFILE%\.config\kei`, §10), `homecloud.db`, `manifest.csv`, `README.txt`, `.cache\thumbnails\` (hidden, derived) and `logs\` (Windows only). Ledger snapshots go to `backup.dir` on another drive (§6). *(planned: `Drive\`, `deletions.jsonl`.)*
 
 ## 5. Ledger
 
@@ -76,17 +74,17 @@ Schema as of migration 0002 (`internal/ledger/migrations`; STRICT tables, RFC 33
 - `resources(library, asset_id, version, filename, local_path, media_type, size_bytes, kei_sha256, verified_content_at, verified_structure_at, verified_probe_at, last_scrub_at, failure, requires_structure, requires_probe)` — one row per rendition (kei manifest grain)
 - `runs`, and append-only `events` (triggers reject UPDATE/DELETE). *(planned, P3: `deletion_batches`)*
 
-State machine (implemented): `discovered → downloaded → verified`; any state → `quarantined` (mismatch); `quarantine release` returns an asset with an audited reason. *(planned, P3: `→ eligible → delete_requested → delete_confirmed → purged_expected (+30 d)`; quarantine on failed scrub or unconfirmed delete; remote change → `changed_remote → discovered`.)*
+State machine (implemented): `discovered → downloaded → verified`; any state → `quarantined` (mismatch); `quarantine release` returns an asset with an audited reason. A file kei replaces or moves keeps its recorded failure, so a quarantine lasts until it is released. *(planned, P3: `→ eligible → delete_requested → delete_confirmed → purged_expected (+30 d)`; quarantine on an unconfirmed delete; remote change → `changed_remote → discovered`.)*
 
 ## 6. Verification tiers
 
-1. **Content:** SHA-256 of the file on E: equals kei's recorded download SHA-256; size equals the manifest size.
+1. **Content:** SHA-256 of the file on E: equals kei's recorded download SHA-256; size equals the manifest size. A missing file is a mismatch (the expected bytes are not there); every cycle first confirms the archive volume is mounted, so a missing drive is never mistaken for missing files.
 2. **Structure (`.mov`/`.mp4`/`.m4v` video only, per `verify.RequiredTiers`):** MP4/QuickTime top-level box walk — contiguous chain ending exactly at EOF, containing `moov` and `mdat`; `ftyp` first only for ISO-BMFF extensions (see §10) — catches truncation.
-3. **Probe (video):** `ffprobe` reports streams and a positive duration consistent across container and streams.
+3. **Probe (video):** `ffprobe` reports streams and a positive duration consistent across container and streams. Only ffprobe exiting non-zero counts against the file; failing to start ffprobe is retried, never quarantined. Each run is bounded (5 min).
 
-Scrub (implemented): after a cycle, when `schedule.scrub_interval` has passed since the last scrub run, the agent re-hashes `schedule.scrub_fraction` of verified renditions (rounded up, at least one), those whose content was confirmed longest ago first (`resources.last_scrub_at`, which every content pass also sets). With 5 % weekly the whole archive is re-read every 20 weeks. A changed **or missing** file is a mismatch: the content tier's pass is cleared, the asset is quarantined (so P3 never deletes it from iCloud) and an urgent alert is sent. Missing files only count when the configured archive volume is mounted; otherwise the run fails without touching anything. Unreadable files are retried first next run. Each scrub is a `scrub` run with a `ScrubReport`.
+Scrub (implemented): after a cycle, when `schedule.scrub_interval` has passed since the last *completed* scrub, the agent re-hashes `schedule.scrub_fraction` of verified renditions (rounded up, at least one), those whose content was confirmed longest ago first (`resources.last_scrub_at`: set by every content pass, cleared when the file changes or fails; exported as `verified_at` in `manifest.csv`). With 5 % weekly the whole archive is re-read every 20 weeks. A changed **or missing** file is a mismatch: the content tier's pass is cleared, the asset is quarantined (so P3 never deletes it from iCloud) and an urgent alert is sent. Missing files only count when the configured archive volume is mounted; otherwise the run fails without touching anything and is retried at the next cycle. Unreadable files are retried first next run. Each scrub is a `scrub` run with a `ScrubReport`; a run that could not do its work records an `error` in its report, and only runs without one count for the schedule.
 
-Ledger backup (implemented): every `backup.interval` the agent writes `homecloud-<UTC time>.db` to `backup.dir` with `VACUUM INTO` (one consistent view of the live ledger), runs `PRAGMA integrity_check` on the copy, and only then renames it into place; the newest `backup.keep` snapshots are kept and nothing else in the directory is touched. Doctor requires `backup.dir` to be on a different volume than `storage.root`. A failure sends an alert. Each backup is a `ledger_backup` run. Restoring is copying a snapshot over `<root>/homecloud.db` while the agent is stopped.
+Ledger backup (implemented): every `backup.interval` the agent writes `homecloud-<UTC time>.db` to `backup.dir` with `VACUUM INTO` (one consistent view of the live ledger), runs `PRAGMA integrity_check` on the copy, and only then renames it into place; the newest `backup.keep` snapshots are kept and nothing else in the directory is touched. Partial snapshots left by an interrupted backup are pruned too. Doctor requires `backup.dir` to be on a different volume than `storage.root`. A failure is retried every cycle and alerts at most once a day. Each backup is a `ledger_backup` run. Restoring: stop the agent, delete `homecloud.db-wal` and `homecloud.db-shm` (a stale write-ahead log would be replayed onto the restored file), then copy a snapshot over `<root>/homecloud.db`.
 
 ## 7. Deletion *(planned, P3; nothing below is implemented)*
 
@@ -117,7 +115,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 
   | Concern | Windows | Linux |
   |---|---|---|
-  | Archive volume identity (`storage.volume_id`) | volume GUID name `\\?\Volume{…}\` | filesystem UUID, resolved via `statx(STATX_MNT_ID)` → `/proc/self/mountinfo` → `/dev/disk/by-uuid` (no root) |
+  | Archive volume identity (`storage.volume_id`) | volume GUID name `\\?\Volume{…}\` | filesystem UUID: `statx(STATX_MNT_ID)` → the mount's `major:minor` in `/proc/self/mountinfo` → the `/dev/disk/by-uuid` entry whose device number matches (so a root mounted as `/dev/root` resolves); filesystems with an anonymous device number (major 0, e.g. btrfs) match by their source device. No root needed |
   | Free space | `GetDiskFreeSpaceEx` | `statfs` `Bavail × Frsize` |
   | Single instance | `Local\` named mutex | `flock(LOCK_EX\|LOCK_NB)` on `$XDG_RUNTIME_DIR/homecloud/agent.lock` |
   | Start at logon | Task Scheduler logon task (`schtasks /XML`) | systemd `--user` unit, `Type=notify`, `Restart=on-failure` (linger for headless hosts) |
@@ -130,7 +128,8 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
   - Transport: plain HTTP/1.1 on the loopback `web.listen` (Connect unary + server streaming work over HTTP/1.1; browsers never use h2c). No server-wide write timeout because `WatchOverview` streams; read timeouts stay.
   - Request pipeline: exact Host allow-list (`web.listen`, `localhost:port`) → Origin allow-list (own origins + the Tauri webview origins `http://tauri.localhost` on Windows and `tauri://localhost` on Linux) → CORS (rs/cors, desktop origins only, `Authorization` added to connect-cors' header lists) → security headers → authentication.
   - Credentials: a 256-bit bearer token generated at every agent start and published in `agent.json` (per-user state dir) — created on Windows with a protected owner-only DACL `D:P(A;;FA;;;<user SID>)` via `CreateFile` (Go's file mode bits do not set ACLs on Windows), mode 0600 on Linux, written atomically. Browsers get an in-memory session cookie (`HttpOnly`, `SameSite=Strict`, 7 days) by exchanging a single-use 8-character login code (2 min, issued only to bearer holders; 5 wrong guesses revoke all codes); cookie calls also pass `http.CrossOriginProtection`. No `Secure` attribute: plain HTTP on loopback.
-  - `GetInfo` returns `api_version` (MAJOR.MINOR); clients refuse a different major. Destructive actions (P3) will require a per-request confirmation nonce recorded in the ledger.
+  - Versioning: an incompatible API change gets a new proto package (`homecloud.agent.v2`), which `buf breaking` enforces, so an outdated client fails with `Unimplemented`; `GetInfo`'s `api_version` is informational. The agent and the desktop app ship from the same commit. Destructive actions (P3) will require a per-request confirmation nonce recorded in the ledger.
+  - `web.listen` must be `127.0.0.1:<port>`: it is the address the desktop app's CSP allows. A missing archive drive is answered with `FailedPrecondition`, which the app shows as such instead of "agent unreachable"; only transient errors (`Unavailable`, `DeadlineExceeded`, `Aborted`, `ResourceExhausted`) are retried by the app.
   - Rejected: Tauri `plugin-http` (Rust-side fetch; server-streaming support undocumented), cookie-only auth inside Tauri (third-party cookie context), h2c (no browser support, not needed).
 - **GUI (implemented, M2–M3):** one React 19 + Fluent UI v9 single-page app (`ui/`), hosted (a) by the agent itself (embedded with `go:embed`) for browsers and Linux/headless hosts, and (b) in a Tauri 2.12 desktop shell (`desktop/`). The design reference is the canvas linked from the plan; Fluent's `webLightTheme`/`webDarkTheme` follow the OS setting unless the user picks light or dark (Fluent ships no separate Windows 11 theme).
   - Routing is hash-based (TanStack Router) so both hosts work without server rewrites. Data: Connect-Query for unary calls; one app-wide `WatchOverview` stream with exponential backoff, which also refetches all queries after a reconnect.
@@ -145,7 +144,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 The archive is the only copy (no second copy, by decision), so the agent reads the archive drive's own SMART data every cycle (`internal/platform` `DriveHealthOf`, judged by `internal/health`).
 
 - **Windows:** `IOCTL_STORAGE_QUERY_PROPERTY` with `StorageDeviceProtocolSpecificProperty` reads the NVMe SMART / Health log (log page 02h) through a handle opened with no access rights, so it works from the non-elevated agent (verified on this PC at Medium integrity). The disk is found from the volume with `IOCTL_STORAGE_GET_DEVICE_NUMBER`; the model and bus type come from `STORAGE_DEVICE_DESCRIPTOR`. Non-NVMe drives report "unavailable": reading ATA SMART on Windows needs administrator rights. Rejected: WMI `MSFT_PhysicalDisk.HealthStatus` through `microsoft/wmi` (the library panics on COM initialisation failure and sets process-wide COM security; the native query also gives richer data), and `Get-StorageReliabilityCounter` (needs elevation).
-- **Linux:** udisks2 over D-Bus (`godbus/dbus/v5`): `Manager.ResolveDevice` maps the mounted block device to its `Drive`; NVMe drives use `NVMe.Controller` (udisks ≥ 2.10) properties plus `SmartGetAttributes`, ATA drives `Drive.Ata`. Reading needs no polkit authorization; udisks refreshes SMART every 10 minutes. Interfaces are detected by introspection.
+- **Linux:** udisks2 over D-Bus (`godbus/dbus/v5`): `Manager.ResolveDevice` with the archive's filesystem UUID (`uuid`, udisks ≥ 2.7.3, matched against `Block.IdUUID`) finds its block device and `Drive`; NVMe drives use `NVMe.Controller` (udisks ≥ 2.10) properties plus `SmartGetAttributes`, ATA drives `Drive.Ata`. Reading needs no polkit authorization; udisks refreshes SMART every 10 minutes. Interfaces are detected by introspection.
 - **Verdict** (only thresholds the standards define): any critical warning (NVMe critical-warning bits, ATA failure prediction) = failing; media/data-integrity errors or NVMe "percentage used" ≥ 100 = warning; unreadable = unavailable, never treated as healthy. A state change is appended once to the event log (`drive_health_changed`) and warning/failing sends an urgent ntfy alert. P3's deletion gates will require state OK.
 
 ## 8c. Library browser (implemented, M4)
@@ -153,6 +152,15 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 - **Thumbnails** (`internal/thumbs`): the pinned FFmpeg build (`[ffmpeg]` in the config pins `ffprobe` and `ffmpeg` together) renders WebP: a 320 px square for the grid, a fit within 1600 px for the detail view (never enlarged). Verified on the archive (ffmpeg 9.0.2): tiled iPhone HEIC must be stitched from stream group 0 (`-filter_complex [0:g:0]…`, detected with `ffprobe -show_entries stream_group=index`), everything else uses the first frame; ffmpeg applies HEIF/container rotation and JPEG EXIF orientation itself (a −90° JPEG rendered portrait). Camera raws are rendered from their largest embedded JPEG preview, fed to ffmpeg on stdin (`-f jpeg_pipe`): ffmpeg cannot develop raw sensor data, and its TIFF decoder renders the JPEG-compressed preview IFD of an Apple ProRAW DNG (DNG 1.6: IFD0 = 4032×3024 baseline JPEG, raw in a SubIFD) as a blank frame. `github.com/evanoberholster/imagemeta` sniffs the file, recognises a DNG by its `DNGVersion` tag, and extracts the preview; the preview's own EXIF orientation is applied by ffmpeg. Ordinary TIFFs and every other format still go to ffmpeg directly. 50–160 ms per image. Files are named by the source's SHA-256, so kei moving a file keeps its thumbnail. The cache lives in `<root>/.cache/thumbnails` (hidden), is derived data, and is never consulted for verification. Each size's directory is named after a fingerprint of the ffmpeg arguments that shape it (`thumb-<8 hex>`), so changing a filter, codec or quality re-renders instead of serving stale images; at startup the agent deletes every other entry of the cache directory (`Renderer.Prune`). Each cycle ends with a "preparing previews" phase rendering missing grid thumbnails (4 ffmpeg processes at most); failures are logged, never fatal.
 - **Media URLs** (`internal/media`): `GET /media/{size}/{library}/{asset}/{version}?exp=…&sig=…` with an HMAC-SHA256 over path and expiry, keyed per agent start. Image elements cannot send the bearer token, and cookie-free desktop requests need no session; only ledger entries can be addressed, never arbitrary paths. Expiry is rounded to 6-hour windows (valid ≥ 12 h) so repeated listings return identical URLs and browsers cache the images.
 - **API/UI**: `ListAssets` pages assets newest first (keyset on capture time and asset id), filtered by kind and by Hidden (assets under `Photos/Hidden`), showing the edited version when there is one and the picture of a Live Photo. The web app groups by month, loads more on scroll, and shows the preview, renditions and path; the desktop app adds "Show in folder" and allows `http://127.0.0.1:*` images in its CSP.
+
+## 8d. Agent cycle and maintenance (implemented)
+
+- **Preflight, every cycle:** the configured archive volume must be mounted at `storage.root`; otherwise the cycle stops before kei, ingest or verification runs, records a failed run (`archive_unavailable`) and alerts. Below `storage.min_free_percent` the download is skipped (`skipped_low_space`) while ingest and verification still run. Repeated conditions (sign-in needed, drive missing, low space, backup failure) alert at most once a day.
+- **Maintenance:** after each cycle the agent runs the scrub and the ledger backup when no *completed* run of that kind falls within its interval (`runs.detail` carries `error` only when a run could not do its work).
+- **Interrupted runs:** on Windows the agent is a GUI-subsystem process that receives no console events, so logoff or shutdown ends it without notice. Every write is crash-safe (SQLite WAL, atomic renames, kei's own journal), and at startup the agent closes every run left unfinished as failed with `interrupted`. Only one agent runs at a time, so an open run at startup was interrupted.
+- **One ledger writer:** the agent holds the `homecloud-ledger-writer` lock for its whole life; `homecloud verify` and `homecloud quarantine release` take the same lock and refuse while the agent runs (the app offers both actions).
+- **Live status:** verification and scrub wake the status hub after every file; each overview stream sends at most one update per second, so live counts never turn into ledger load. A sync requested during maintenance runs right after it.
+- **Child processes:** `platform.Command` starts every program (kei, ffprobe, ffmpeg, system tools) with its output captured and, on Windows, `CREATE_NO_WINDOW`. Per-file tools are bounded (ffprobe 5 min, a render 2 min); a shared thumbnail render is detached from the request that started it.
 
 ## 9. Dependencies (verified 2026-10-05)
 
@@ -185,11 +193,13 @@ The archive is the only copy (no second copy, by decision), so the agent reads t
 | Tauri plugins: single-instance / window-state / opener / log | 2.5.2 / 2.5.0 / 2.7.0 / 2.10.0 | https://crates.io/crates/tauri-plugin-opener |
 | Rust | 1.98.1 | https://blog.rust-lang.org/releases/ |
 | github.com/godbus/dbus/v5 | v5.2.2 | https://github.com/godbus/dbus/releases |
+| github.com/evanoberholster/imagemeta | v1.1.0 | https://github.com/evanoberholster/imagemeta/releases |
+| dorny/paths-filter (CI) | v4.0.3 | https://github.com/dorny/paths-filter/releases |
 | FFmpeg (ffprobe + ffmpeg, one pin) | 9.0.2 (Gyan build) | https://www.gyan.dev/ffmpeg/builds/ |
 | golangci-lint | v2.14.0 | https://github.com/golangci/golangci-lint/releases |
 | kei | 0.24.1 | https://github.com/rhoopr/kei/releases/tag/v0.24.1 |
-| pyicloud | 2.7.0 | https://pypi.org/project/pyicloud/ |
-| uv | 0.12.9 | https://github.com/astral-sh/uv |
+| pyicloud *(planned, P3 sidecar)* | 2.7.0 | https://pypi.org/project/pyicloud/ |
+| uv *(planned, P3 sidecar)* | 0.12.9 | https://github.com/astral-sh/uv |
 | ntfy | 2.28.0 (server) | https://github.com/binwiederhier/ntfy/releases |
 
 ## 10. Spike findings

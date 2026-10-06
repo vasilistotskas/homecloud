@@ -14,7 +14,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # CI minutes are limited: each job runs only when something it checks
+  # changed. A change to this workflow runs everything.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      web: ${{ steps.filter.outputs.web }}
+      proto: ${{ steps.filter.outputs.proto }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dorny/paths-filter@v4.0.3
+        id: filter
+        with:
+          filters: |
+            workflow: &workflow
+              - '.github/workflows/ci.yml'
+            proto:
+              - *workflow
+              - 'proto/**'
+              - 'buf.yaml'
+              - 'buf.gen.yaml'
+              - 'gen/**'
+              - 'ui/src/gen/**'
+              - 'ui/package.json'
+              - 'ui/pnpm-lock.yaml'
+            web:
+              - *workflow
+              - 'ui/**'
+            go:
+              - *workflow
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - '.golangci.yml'
+              - 'internal/**'
+              - 'gen/**'
+              # The Go build embeds the web app (ui/embed.go).
+              - 'ui/**'
+            desktop:
+              - *workflow
+              - 'desktop/**'
+              # The shell packages the built web app.
+              - 'ui/**'
+
   web:
+    needs: changes
+    # Also builds the app that the Go and desktop jobs embed.
+    if: needs.changes.outputs.web == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.desktop == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -46,6 +97,8 @@ jobs:
           if-no-files-found: error
 
   proto:
+    needs: changes
+    if: needs.changes.outputs.proto == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -83,7 +136,9 @@ jobs:
           fi
 
   check:
-    needs: [web, proto]
+    needs: [changes, web, proto]
+    # proto may be skipped; check needs only web's artifact and a passing contract.
+    if: always() && needs.changes.outputs.go == 'true' && needs.web.result == 'success' && needs.proto.result != 'failure' && needs.proto.result != 'cancelled'
     strategy:
       fail-fast: false
       matrix:
@@ -126,7 +181,8 @@ jobs:
           done
 
   desktop:
-    needs: web
+    needs: [changes, web]
+    if: always() && needs.changes.outputs.desktop == 'true' && needs.web.result == 'success'
     strategy:
       fail-fast: false
       matrix:

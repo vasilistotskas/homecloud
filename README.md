@@ -4,25 +4,103 @@ Personal, private service that makes a local drive the verified home of my iClou
 (Photos, Drive, iPhone backups) and keeps iCloud itself down to the most recent 30 days.
 
 - Design, decisions, sources and spike findings: [`docs/design.md`](docs/design.md)
-- Status: **P1 done; local API, web app and desktop app live**. No deletion capability exists yet.
+- Status: **P1 done, M1–M4 live**: iCloud Photos archive with verification, weekly integrity
+  re-checks, daily ledger backups, drive health, library browser, local API, web and desktop
+  apps. No deletion capability exists yet (P3).
 
 ## How it works
 
-`homecloud-agent` runs at logon. Every `schedule.sync_interval` it runs
-[kei](https://github.com/rhoopr/kei) to download new iCloud Photos to the archive, ingests kei's
-manifest into a SQLite ledger, and verifies every file (exact size + SHA-256, MP4/QuickTime box
-structure, `ffprobe`). A mismatch quarantines the asset and sends an ntfy alert.
+`homecloud-agent` runs at logon and owns everything. Every `schedule.sync_interval` it runs one
+cycle; after a cycle it runs whichever maintenance job is due. Every step is recorded in a SQLite
+ledger (`homecloud.db`) with an append-only audit log, and every problem sends an
+[ntfy](https://ntfy.sh) alert.
+
+```mermaid
+flowchart TB
+    icloud[("iCloud Photos")]
+    subgraph apps["Your apps"]
+        browser["Browser"]
+        desktop["Desktop app (Tauri 2)"]
+    end
+    cli["homecloud CLI"]
+
+    subgraph agent["homecloud-agent · per-user, starts at logon"]
+        api["Local API · 127.0.0.1<br/>Connect-RPC, signed /media,<br/>embedded web app"]
+        cycle["Cycle<br/>preflight → download → ingest → verify<br/>→ drive health → export → previews"]
+        maint["Maintenance<br/>weekly scrub · daily ledger backup"]
+    end
+
+    kei["kei (pinned downloader)"]
+    ffmpeg["ffprobe / ffmpeg (pinned)"]
+
+    subgraph archive["Archive drive · storage.root"]
+        photos[("Photos/ + *.xmp")]
+        ledger[("homecloud.db<br/>ledger + audit log")]
+        exports[("manifest.csv<br/>README.txt")]
+        thumbs[(".cache/thumbnails")]
+    end
+
+    backups[("backup.dir · ledger snapshots<br/>(another drive)")]
+    phone["Phone (ntfy app)"]
+
+    browser -- "session cookie" --> api
+    desktop -- "bearer token" --> api
+    icloud --> kei
+    cycle -- "runs" --> kei
+    cycle -- "runs" --> ffmpeg
+    kei --> photos
+    cycle --> ledger
+    cycle --> exports
+    ffmpeg --> thumbs
+    api --> ledger
+    api --> thumbs
+    maint -- "re-hash" --> photos
+    maint -- "checked snapshot" --> backups
+    cli -- "one ledger writer at a time" --> ledger
+    agent -. "alerts" .-> phone
+```
+
+A cycle never touches a drive it cannot confirm, and quarantine is the only reaction to a file
+that fails a check:
+
+```mermaid
+flowchart TD
+    start(["Every sync_interval, or Sync now"]) --> vol{"Archive volume<br/>is the configured one?"}
+    vol -- no --> stop["Stop the cycle, alert<br/>(nothing downloaded, checked or deleted)"]
+    vol -- yes --> space{"Free space ≥<br/>min_free_percent?"}
+    space -- no --> skip["Skip the download, alert once a day"]
+    space -- yes --> kei["kei sync"]
+    skip --> ingest
+    kei --> ingest["Ingest kei's manifest into the ledger<br/>(changed or moved files lose their checks)"]
+    ingest --> verify["Verify every unverified file:<br/>size + SHA-256, MP4/MOV box walk, ffprobe"]
+    verify --> bad{"Mismatch or<br/>missing file?"}
+    bad -- yes --> q["Quarantine the asset, urgent alert<br/>(never deleted from iCloud)"]
+    bad -- no --> ok["Verified"]
+    q --> after
+    ok --> after["Drive health (SMART) · manifest.csv · thumbnails"]
+    after --> due{"Maintenance due?"}
+    due -- "scrub (weekly)" --> scrub["Re-hash the files confirmed longest ago<br/>(5 %, all within 20 weeks)"]
+    due -- "backup (daily)" --> snap["Checked ledger snapshot to backup.dir"]
+    due -- no --> wait(["Wait for the next cycle"])
+    scrub --> wait
+    snap --> wait
+```
 
 The agent serves a local API ([Connect](https://connectrpc.com), contract in
-`proto/homecloud/agent/v1`) on the loopback address `web.listen`. Same-user clients read the
+`proto/homecloud/agent/v1`) on `web.listen` (always `127.0.0.1`). Same-user clients read the
 bearer token from the owner-only discovery file `agent.json` in the per-user state directory
-(`%LOCALAPPDATA%homecloud` on Windows, `$XDG_STATE_HOME/homecloud` on Linux); the token changes
-every time the agent starts.
+(`%LOCALAPPDATA%\homecloud` on Windows, `$XDG_STATE_HOME/homecloud` on Linux); the token changes
+every time the agent starts. Browsers sign in with a one-time code from `homecloud open`.
 
 ## Requirements
 
-- Windows 11 amd64 or Linux, Go 1.27.1, Node.js 24 with pnpm (version pinned in `ui/package.json`)
-- kei 0.24.1, FFmpeg 9.0.2 (`ffprobe`), uv — exact versions are pinned in the config and checked by `homecloud doctor`
+- Windows 11 amd64, or Linux (amd64/arm64) with glibc ≥ 2.39 (Ubuntu 24.04, Debian 13) and
+  Linux ≥ 5.8
+- Go 1.27.1; Node.js 24 with pnpm (version pinned in `ui/package.json`)
+- [kei](https://github.com/rhoopr/kei) 0.24.1 and FFmpeg 9.0.2 (`ffprobe` and `ffmpeg`), pinned
+  in the config and checked by `homecloud doctor`
+- The desktop app additionally needs Rust (pinned in `desktop/src-tauri/rust-toolchain.toml`)
+  and, on Linux, the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
 
 ## Build and install
 
@@ -35,15 +113,17 @@ $dest = "$env:LOCALAPPDATA\Programs\homecloud"
 go build -trimpath -o "$dest\homecloud.exe" ./cmd/homecloud
 go build -trimpath -ldflags=-H=windowsgui -o "$dest\homecloud-agent.exe" ./cmd/homecloud-agent
 & "$dest\homecloud.exe" doctor
-& "$dest\homecloud.exe" install     # logon task + start now
+& "$dest\homecloud.exe" install     # logon task with --config <this config>, started now
 ```
+
+On Linux build both commands without `-ldflags`; `homecloud install` writes a systemd `--user`
+unit (`loginctl enable-linger` keeps it running on a headless host).
 
 ### Desktop app
 
 The desktop app (Tauri 2, `desktop/`) shows the same web app in a native window and talks to
 the running agent with the token from its discovery file; the agent stays installed and running
-on its own. It needs Rust (pinned in `desktop/src-tauri/rust-toolchain.toml`) and, on Linux, the
-[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+on its own. The app and the agent are built from the same commit: install both together.
 
 ```powershell
 pnpm --dir desktop install --frozen-lockfile
@@ -52,43 +132,71 @@ pnpm --dir desktop tauri build --bundles nsis   # per-user installer, no admin r
 & "desktop\src-tauri\target\release\bundle\nsis\homecloud Desktop_0.1.0_x64-setup.exe"
 ```
 
-Configuration lives at `%APPDATA%\homecloud\config.toml` (override with `--config` or
-`HOMECLOUD_CONFIG`); its schema is `internal/config`. The agent generates kei's configuration
-from it into `kei.config`; don't edit that file by hand.
+## Configuration
+
+`config.toml` is found in this order: `--config`, then `HOMECLOUD_CONFIG`, then
+`%APPDATA%\homecloud\config.toml` (Linux: `$XDG_CONFIG_HOME/homecloud/config.toml`). The CLI and
+the agent resolve it the same way, and `homecloud install` registers the agent with the exact
+path it validated. Every key is required; the schema is `internal/config`.
+
+| Section | Keys |
+|---|---|
+| `[storage]` | `root`, `volume_id` (the archive volume's identity), `min_free_percent` |
+| `[icloud]` | `apple_id`, `include_hidden` |
+| `[kei]` | `binary`, `version`, `config` (generated by the agent; don't edit by hand) |
+| `[ffmpeg]` | `ffprobe`, `ffmpeg`, `version` |
+| `[web]` | `listen` (`127.0.0.1:<port>`) |
+| `[notify]` | `server`, `topic` |
+| `[schedule]` | `sync_interval`, `scrub_interval`, `scrub_fraction` |
+| `[backup]` | `dir` (must be on another drive than `storage.root`), `interval`, `keep` |
 
 ## Operating
 
 | Command | Purpose |
 |---|---|
-| `homecloud doctor` | Read-only environment checks (volume identity, free space, pinned tool versions) |
-| `homecloud verify` | Ingest kei's manifest and run all outstanding verification (no iCloud contact) |
+| `homecloud doctor` | Read-only checks: archive root and volume identity, free space, backup dir on another drive, generated kei config, pinned tool versions |
 | `homecloud open` | Open the web app in the browser, signed in through a one-time code |
 | `homecloud status` | Asset counts by state |
+| `homecloud quarantine list` | Files that failed a check, with the reason |
+| `homecloud quarantine release --library L --asset A --reason R` | Lift a quarantine (audited); the asset's files are checked again |
+| `homecloud verify` | Ingest kei's manifest and run all outstanding verification, without iCloud |
 | `homecloud notify-test` | Send a test push notification |
-| `homecloud install` / `uninstall` | Register / remove the logon task |
+| `homecloud install` / `uninstall` | Register / remove the logon task (Windows) or systemd user unit (Linux) |
 
-When kei's Apple session expires the agent sends an ntfy alert; re-authenticate with
+`verify` and `quarantine release` write the ledger, which the running agent owns: while it runs
+they refuse, and the same actions are in the app (Sync now, Quarantine → Release).
+
+When kei's Apple session expires the agent alerts once a day; re-authenticate with
 `kei login --config <kei config>` and approve the code on a trusted device.
 
-Weekly, a share of archived files is re-hashed against its download checksum (the `[schedule]`
-scrub keys); daily, a checked snapshot of the ledger goes to `backup.dir`, which must be on another
-drive. To restore the ledger, stop the agent and copy the newest `homecloud-*.db` snapshot over
-`<storage.root>\homecloud.db`.
+**Restore the ledger** from a snapshot: stop the agent, delete `homecloud.db-wal` and
+`homecloud.db-shm` next to `<storage.root>\homecloud.db` if they exist, copy the newest
+`homecloud-*.db` from `backup.dir` over `homecloud.db`, and start the agent again.
 
-Logs: `<storage.root>\logs\homecloud-agent.log` and `kei.log`; failures before the config is
-loaded go to `%LOCALAPPDATA%\homecloud\agent-startup.log`.
+**Logs:** Windows: `<storage.root>\logs\homecloud-agent.log` and `kei.log` (rotated); failures
+before the config is loaded go to `%LOCALAPPDATA%\homecloud\agent-startup.log`. Linux: the
+journal (`journalctl --user -u homecloud-agent`).
 
 ## Development
 
 ```powershell
 go vet ./...           # needs ui/dist (see Build)
-go test ./...          # CI also runs -race
-golangci-lint run
+go test ./...          # CI also runs -race on Windows and Linux
+golangci-lint run      # and with GOOS=linux
 pnpm --dir ui lint; pnpm --dir ui typecheck; pnpm --dir ui test
 ```
 
-- API contract: edit `proto/homecloud/agent/v1/agent.proto`, then `go tool buf lint` and
-  `go tool buf generate` (needs `pnpm install` in `ui/`, which pins `protoc-gen-es`). Generated code
-  under `gen/` and `ui/src/gen/` is committed; CI fails if it is stale or breaks the API.
-- Web app: `pnpm --dir ui dev` serves it with hot reload and proxies the API to the running agent,
-  found through its discovery file; sign in with the code printed by `homecloud open`.
+- **API contract:** edit `proto/homecloud/agent/v1/agent.proto`, then `go tool buf lint` and
+  `go tool buf generate` (needs `pnpm install` in `ui/`, which pins `protoc-gen-es`). Generated
+  code under `gen/` and `ui/src/gen/` is committed; CI fails if it is stale or breaks the API.
+- **Web app:** `pnpm --dir ui dev` serves it with hot reload and proxies the API and `/media` to
+  the running agent, found through its discovery file; sign in with the code printed by
+  `homecloud open`. `pnpm --dir desktop tauri dev` uses the same dev server and proxy.
+- **Linux tests on Windows:** Docker's container file system has no volume identity, so give
+  `/tmp` a named volume:
+  `docker run --rm -v ${PWD}:/src:ro -v hc-tmp:/tmp -w /src -e GOFLAGS=-buildvcs=false golang:1.27 sh -c "cp -r /src /work && cd /work && go test -race ./..."`
+  (`ui/dist` must exist).
+- **CI** runs only the jobs whose inputs changed (Go, web, contract, desktop); a change to the
+  workflow runs everything.
+- **Keep this README and its diagrams current** with every change to commands, configuration,
+  the cycle, or the components they show; `docs/design.md` holds the reasons.
