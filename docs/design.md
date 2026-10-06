@@ -37,7 +37,7 @@ Packages:
 
 | Package | Responsibility |
 |---|---|
-| `cmd/homecloud` | CLI wiring (urfave/cli v3): `doctor`, `verify`, `status`, `quarantine list` / `quarantine release`, `open`, `notify-test`, `install`, `uninstall`, `icloud login` / `icloud status`, `drive ls`. *(planned: `report`, `delete`)* |
+| `cmd/homecloud` | CLI on the standard `flag` package with a small command dispatcher (`dispatch.go`: `--config` before or after the command, help, usage errors exit 2): `archive init`, `doctor`, `verify`, `status`, `quarantine list` / `quarantine release`, `open`, `notify-test`, `install`, `uninstall`, `icloud login` / `icloud status`, `drive ls`. *(planned: `report`, `delete`)* |
 | `cmd/homecloud-agent` | The headless agent (scheduler loop); see Spike C |
 | `internal/config` | Strict TOML load + validation |
 | `internal/ledger` | SQLite (WAL), embedded migrations (`PRAGMA user_version`), queries, checked snapshots (`VACUUM INTO` + `integrity_check`) |

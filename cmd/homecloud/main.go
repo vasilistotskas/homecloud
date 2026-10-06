@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"github.com/urfave/cli/v3"
 
 	agentv2 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2"
 	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2/agentv2connect"
@@ -39,102 +38,76 @@ func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := newApp().Run(ctx, os.Args); err != nil {
+	err := newApp().execute(ctx, &call{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}, os.Args[1:])
+	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "homecloud:", err)
-		return 1
 	}
-	return 0
+	return exitStatus(err)
 }
 
-func newApp() *cli.Command {
-	return &cli.Command{
-		Name:    "homecloud",
-		Usage:   "keep a local drive as the verified home of iCloud data",
-		Version: version,
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "config",
-				Usage:   "path to the homecloud TOML config (default: the per-user config dir)",
-				Sources: cli.EnvVars(config.EnvPath),
-			},
-		},
-		Commands: append([]*cli.Command{
+// leaf is a command without flags of its own.
+func leaf(name, usage string, run action) *command {
+	return &command{name: name, usage: usage, define: func(*flags) action { return run }}
+}
+
+func newApp() *program {
+	return &program{
+		name:    "homecloud",
+		summary: "keep a local drive as the verified home of iCloud data",
+		version: version,
+		root: append([]*command{
+			leaf("doctor", "run read-only environment checks", runDoctor),
 			{
-				Name:   "doctor",
-				Usage:  "run read-only environment checks",
-				Action: runDoctor,
+				name:  "archive",
+				usage: "manage the archive's identity",
+				subs: []*command{{
+					name:  "init",
+					usage: "mark a folder as a new homecloud archive and print its id for storage.archive_id (once per archive)",
+					define: func(f *flags) action {
+						root := f.requiredString("root", "the archive root folder (storage.root)")
+						return func(ctx context.Context, c *call) error { return runArchiveInit(ctx, c, *root) }
+					},
+				}},
 			},
+			leaf("verify", "ingest kei's manifest and run all outstanding verification (does not contact iCloud)", runVerify),
+			leaf("status", "show asset counts by state", runStatus),
 			{
-				Name:  "archive",
-				Usage: "manage the archive's identity",
-				Commands: []*cli.Command{
+				name:  "quarantine",
+				usage: "review quarantined assets",
+				subs: []*command{
+					leaf("list", "list failing renditions of quarantined assets", runQuarantineList),
 					{
-						Name:  "init",
-						Usage: "mark a folder as a new homecloud archive and print its id for storage.archive_id (once per archive)",
-						Flags: []cli.Flag{
-							&cli.StringFlag{Name: "root", Required: true, Usage: "the archive root folder (storage.root)"},
+						name:  "release",
+						usage: "lift a quarantine after review; the asset is fully re-verified",
+						define: func(f *flags) action {
+							library := f.requiredString("library", "library of the asset (see quarantine list)")
+							asset := f.requiredString("asset", "asset id")
+							reason := f.requiredString("reason", "why the quarantine is lifted (audited)")
+							return func(ctx context.Context, c *call) error {
+								return runQuarantineRelease(ctx, c, *library, *asset, *reason)
+							}
 						},
-						Action: runArchiveInit,
 					},
 				},
 			},
 			{
-				Name:   "verify",
-				Usage:  "ingest kei's manifest and run all outstanding verification (does not contact iCloud)",
-				Action: runVerify,
-			},
-			{
-				Name:   "status",
-				Usage:  "show asset counts by state",
-				Action: runStatus,
-			},
-			{
-				Name:  "quarantine",
-				Usage: "review quarantined assets",
-				Commands: []*cli.Command{
-					{Name: "list", Usage: "list failing renditions of quarantined assets", Action: runQuarantineList},
-					{
-						Name:  "release",
-						Usage: "lift a quarantine after review; the asset is fully re-verified",
-						Flags: []cli.Flag{
-							&cli.StringFlag{Name: "library", Required: true, Usage: "library of the asset (see quarantine list)"},
-							&cli.StringFlag{Name: "asset", Required: true, Usage: "asset id"},
-							&cli.StringFlag{Name: "reason", Required: true, Usage: "why the quarantine is lifted (audited)"},
-						},
-						Action: runQuarantineRelease,
-					},
+				name:  "open",
+				usage: "open the web app in your browser, signed in to the running agent",
+				define: func(f *flags) action {
+					printLink := f.Bool("print", false, "print the one-time sign-in link instead of opening a browser (for another device, or a headless host)")
+					return func(ctx context.Context, c *call) error { return runOpen(ctx, c, *printLink) }
 				},
 			},
-			{
-				Name:  "open",
-				Usage: "open the web app in your browser, signed in to the running agent",
-				Flags: []cli.Flag{
-					&cli.BoolFlag{Name: "print", Usage: "print the one-time sign-in link instead of opening a browser (for another device, or a headless host)"},
-				},
-				Action: runOpen,
-			},
-			{
-				Name:   "notify-test",
-				Usage:  "send a test push notification through ntfy",
-				Action: runNotifyTest,
-			},
-			{
-				Name:   "install",
-				Usage:  "start homecloud-agent (next to this binary) at logon and now (Task Scheduler / systemd user unit)",
-				Action: runInstall,
-			},
-			{
-				Name:   "uninstall",
-				Usage:  "stop starting homecloud-agent at logon",
-				Action: runUninstall,
-			},
+			leaf("notify-test", "send a test push notification through ntfy", runNotifyTest),
+			leaf("install", "start homecloud-agent (next to this binary) at logon and now (Task Scheduler / systemd user unit)", runInstall),
+			leaf("uninstall", "stop starting homecloud-agent at logon", runUninstall),
 		}, icloudCommands()...),
 	}
 }
 
 // configPath resolves the configuration path like the agent does.
-func configPath(cmd *cli.Command) (string, error) {
-	path, err := config.Resolve(cmd.String("config"))
+func configPath(c *call) (string, error) {
+	path, err := config.Resolve(c.config)
 	if err != nil {
 		return "", err
 	}
@@ -145,8 +118,8 @@ func configPath(cmd *cli.Command) (string, error) {
 	return abs, nil
 }
 
-func loadConfig(cmd *cli.Command) (*config.Config, error) {
-	path, err := configPath(cmd)
+func loadConfig(c *call) (*config.Config, error) {
+	path, err := configPath(c)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +143,7 @@ func openLedger(ctx context.Context, cfg *config.Config) (*ledger.DB, error) {
 func acquireLedgerWriter(use string) (*platform.Lock, error) {
 	lock, err := platform.AcquireInstance(app.LedgerWriterLock)
 	if errors.Is(err, platform.ErrAlreadyRunning) {
-		return nil, cli.Exit("the homecloud agent is running and owns the ledger: "+use, 1)
+		return nil, errors.New("the homecloud agent is running and owns the ledger: " + use)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("ledger writer lock: %w", err)
@@ -178,8 +151,8 @@ func acquireLedgerWriter(use string) (*platform.Lock, error) {
 	return lock, nil
 }
 
-func runVerify(ctx context.Context, cmd *cli.Command) (err error) {
-	cfg, err := loadConfig(cmd)
+func runVerify(ctx context.Context, c *call) (err error) {
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return err
 	}
@@ -194,7 +167,7 @@ func runVerify(ctx context.Context, cmd *cli.Command) (err error) {
 	}
 	defer func() { err = errors.Join(err, db.Close()) }()
 
-	log := slog.New(slog.NewTextHandler(cmd.Root().ErrWriter, nil))
+	log := slog.New(slog.NewTextHandler(c.stderr, nil))
 	ingested, err := app.Ingest(ctx, cfg, db, time.Now())
 	if err != nil {
 		return err
@@ -210,13 +183,13 @@ func runVerify(ctx context.Context, cmd *cli.Command) (err error) {
 		return err
 	}
 	if verified.Mismatched > 0 || verified.Errored > 0 {
-		return cli.Exit("verify: some renditions did not pass", 1)
+		return errors.New("verify: some renditions did not pass")
 	}
 	return nil
 }
 
-func runStatus(ctx context.Context, cmd *cli.Command) (err error) {
-	cfg, err := loadConfig(cmd)
+func runStatus(ctx context.Context, c *call) (err error) {
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return err
 	}
@@ -230,10 +203,9 @@ func runStatus(ctx context.Context, cmd *cli.Command) (err error) {
 	if err != nil {
 		return fmt.Errorf("status: %w", err)
 	}
-	w := cmd.Root().Writer
 	for _, s := range []ledger.AssetState{ledger.StateDiscovered, ledger.StateDownloaded, ledger.StateVerified, ledger.StateQuarantined} {
-		if _, err := fmt.Fprintf(w, "%-12s %d\n", s, counts[s]); err != nil {
-			return fmt.Errorf("write status: %w", err)
+		if err := printf(c, "%-12s %d\n", s, counts[s]); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -242,11 +214,10 @@ func runStatus(ctx context.Context, cmd *cli.Command) (err error) {
 // agentName names the agent executable and its logon task / systemd unit.
 const agentName = "homecloud-agent"
 
-// printf writes command output, wrapping write failures.
 // runArchiveInit marks a folder as a new archive. It needs no configuration:
 // the id it prints goes into the configuration.
-func runArchiveInit(_ context.Context, cmd *cli.Command) error {
-	root, err := filepath.Abs(cmd.String("root"))
+func runArchiveInit(_ context.Context, c *call, rootFlag string) error {
+	root, err := filepath.Abs(rootFlag)
 	if err != nil {
 		return fmt.Errorf("archive root: %w", err)
 	}
@@ -254,18 +225,19 @@ func runArchiveInit(_ context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return err
 	}
-	return printf(cmd, "%s is homecloud archive %s.\nSet it in config.toml:\n\n[storage]\narchive_id = %q\n", root, id, id)
+	return printf(c, "%s is homecloud archive %s.\nSet it in config.toml:\n\n[storage]\narchive_id = %q\n", root, id, id)
 }
 
-func printf(cmd *cli.Command, format string, args ...any) error {
-	if _, err := fmt.Fprintf(cmd.Root().Writer, format, args...); err != nil {
+// printf writes command output, wrapping write failures.
+func printf(c *call, format string, args ...any) error {
+	if _, err := fmt.Fprintf(c.stdout, format, args...); err != nil {
 		return fmt.Errorf("write output: %w", err)
 	}
 	return nil
 }
 
-func runQuarantineList(ctx context.Context, cmd *cli.Command) (err error) {
-	cfg, err := loadConfig(cmd)
+func runQuarantineList(ctx context.Context, c *call) (err error) {
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return err
 	}
@@ -280,18 +252,18 @@ func runQuarantineList(ctx context.Context, cmd *cli.Command) (err error) {
 		return fmt.Errorf("quarantine list: %w", err)
 	}
 	if len(items) == 0 {
-		return printf(cmd, "no quarantined assets\n")
+		return printf(c, "no quarantined assets\n")
 	}
 	for _, q := range items {
-		if err := printf(cmd, "%s  %s  %s\n    %s\n    %s\n", q.Library, q.AssetID, q.Version, q.LocalPath, q.Failure); err != nil {
+		if err := printf(c, "%s  %s  %s\n    %s\n    %s\n", q.Library, q.AssetID, q.Version, q.LocalPath, q.Failure); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func runQuarantineRelease(ctx context.Context, cmd *cli.Command) (err error) {
-	cfg, err := loadConfig(cmd)
+func runQuarantineRelease(ctx context.Context, c *call, library, asset, reason string) (err error) {
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return err
 	}
@@ -306,15 +278,14 @@ func runQuarantineRelease(ctx context.Context, cmd *cli.Command) (err error) {
 	}
 	defer func() { err = errors.Join(err, db.Close()) }()
 
-	library, asset := cmd.String("library"), cmd.String("asset")
-	if err := db.ReleaseQuarantine(ctx, library, asset, cmd.String("reason"), time.Now()); err != nil {
+	if err := db.ReleaseQuarantine(ctx, library, asset, reason, time.Now()); err != nil {
 		return fmt.Errorf("quarantine release: %w", err)
 	}
-	return printf(cmd, "released %s/%s; it will be re-verified on the next verify run\n", library, asset)
+	return printf(c, "released %s/%s; it will be re-verified on the next verify run\n", library, asset)
 }
 
-func runNotifyTest(ctx context.Context, cmd *cli.Command) error {
-	cfg, err := loadConfig(cmd)
+func runNotifyTest(ctx context.Context, c *call) error {
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return err
 	}
@@ -322,14 +293,14 @@ func runNotifyTest(ctx context.Context, cmd *cli.Command) error {
 	if sendErr := notify.New(cfg.Notify).Send(ctx, msg); sendErr != nil {
 		return fmt.Errorf("notify-test: %w", sendErr)
 	}
-	return printf(cmd, "sent\n")
+	return printf(c, "sent\n")
 }
 
-func runInstall(ctx context.Context, cmd *cli.Command) error {
-	if _, err := loadConfig(cmd); err != nil {
+func runInstall(ctx context.Context, c *call) error {
+	if _, err := loadConfig(c); err != nil {
 		return err
 	}
-	cfgPath, err := configPath(cmd)
+	cfgPath, err := configPath(c)
 	if err != nil {
 		return err
 	}
@@ -342,7 +313,7 @@ func runInstall(ctx context.Context, cmd *cli.Command) error {
 	if installErr := platform.InstallAgent(ctx, svc); installErr != nil {
 		return fmt.Errorf("install: %w", installErr)
 	}
-	return printf(cmd, "registered and started %q -> %s\n", agentName, svc.Executable)
+	return printf(c, "registered and started %q -> %s\n", agentName, svc.Executable)
 }
 
 // agentService describes the homecloud-agent executable that sits next to this binary.
@@ -364,39 +335,38 @@ func agentService() (platform.AgentService, error) {
 	}, nil
 }
 
-func runUninstall(ctx context.Context, cmd *cli.Command) error {
+func runUninstall(ctx context.Context, c *call) error {
 	if err := platform.UninstallAgent(ctx, agentName); err != nil {
 		return fmt.Errorf("uninstall: %w", err)
 	}
-	return printf(cmd, "removed %q\n", agentName)
+	return printf(c, "removed %q\n", agentName)
 }
 
-func runDoctor(ctx context.Context, cmd *cli.Command) error {
-	cfg, err := loadConfig(cmd)
+func runDoctor(ctx context.Context, c *call) error {
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return err
 	}
 	results := doctor.Run(ctx, cfg)
-	w := cmd.Root().Writer
 	for _, r := range results {
 		status, detail := "ok  ", r.Detail
 		if !r.OK() {
 			status, detail = "FAIL", r.Err.Error()
 		}
-		if _, err := fmt.Fprintf(w, "[%s] %-16s %s\n", status, r.Name, detail); err != nil {
-			return fmt.Errorf("write doctor report: %w", err)
+		if err := printf(c, "[%s] %-16s %s\n", status, r.Name, detail); err != nil {
+			return err
 		}
 	}
-	if err := doctor.Err(results); err != nil {
-		return cli.Exit("doctor: one or more checks failed", 1)
+	if doctor.Err(results) != nil {
+		return errors.New("doctor: one or more checks failed")
 	}
 	return nil
 }
 
 // runOpen asks the running agent for a one-time login code and opens the web
 // app with it, so the browser gets its own session without seeing the token.
-func runOpen(ctx context.Context, cmd *cli.Command) error {
-	cfg, err := loadConfig(cmd)
+func runOpen(ctx context.Context, c *call, printLink bool) error {
+	cfg, err := loadConfig(c)
 	if err != nil {
 		return err
 	}
@@ -417,10 +387,10 @@ func runOpen(ctx context.Context, cmd *cli.Command) error {
 	}
 	code, until := res.Msg.GetCode(), res.Msg.GetExpiresAt().AsTime().Local().Format(time.TimeOnly)
 	link := base + "/#/connect?code=" + url.QueryEscape(code)
-	if cmd.Bool("print") {
-		return printf(cmd, "Sign in at %s\n(or enter code %s at %s; valid until %s, works once)\n", link, code, base, until)
+	if printLink {
+		return printf(c, "Sign in at %s\n(or enter code %s at %s; valid until %s, works once)\n", link, code, base, until)
 	}
-	if err := printf(cmd, "Opening %s\nIf the browser does not open, enter code %s on that page (valid until %s, works once).\n",
+	if err := printf(c, "Opening %s\nIf the browser does not open, enter code %s on that page (valid until %s, works once).\n",
 		base, code, until); err != nil {
 		return err
 	}
