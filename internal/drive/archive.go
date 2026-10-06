@@ -70,9 +70,13 @@ type Report struct {
 	Restored int `json:"restored"`
 	// Bytes is how much was downloaded.
 	Bytes int64 `json:"bytes"`
-	// Failed counts files that could not be archived this time.
+	// Failed counts files that could not be archived this time, and app
+	// folders with archived files that could not be listed.
 	Failed   int      `json:"failed"`
 	Failures []string `json:"failures,omitempty"`
+	// UnlistedApps counts app folders that could not be listed and hold
+	// nothing archived: apps that keep no documents in iCloud Drive.
+	UnlistedApps int `json:"unlisted_apps"`
 }
 
 func (r *Report) fail(mu *sync.Mutex, format string, args ...any) {
@@ -99,10 +103,11 @@ func (a *Archive) Sync(ctx context.Context) (Report, error) {
 	if err := a.clearPartial(); err != nil {
 		return rep, err
 	}
-	files, err := Walk(ctx, a.Client)
+	listing, err := Walk(ctx, a.Client)
 	if err != nil {
 		return rep, err
 	}
+	files := listing.Files
 	rep.Listed = len(files)
 	known, err := a.DB.DriveFiles(ctx)
 	if err != nil {
@@ -159,10 +164,22 @@ func (a *Archive) Sync(ctx context.Context) (Report, error) {
 		return rep, fmt.Errorf("drive sync: %w", err)
 	}
 
+	// Only a scope listed in full can show a deletion; an unlisted scope that
+	// holds archived files is a failure to look into.
 	var gone []string
+	archivedIn := map[string]bool{}
 	for id, k := range known {
-		if !seen[id] && k.DeletedAt == nil {
+		scope := Scope(k.ICloudPath)
+		archivedIn[scope] = true
+		if !seen[id] && k.DeletedAt == nil && listing.Complete[scope] {
 			gone = append(gone, id)
+		}
+	}
+	for scope, why := range listing.Unlisted {
+		if archivedIn[scope] {
+			rep.fail(&mu, "%s could not be listed: %s", scope, why)
+		} else {
+			rep.UnlistedApps++
 		}
 	}
 	if err := a.DB.MarkDriveFilesDeleted(ctx, gone, a.Now()); err != nil {

@@ -291,6 +291,9 @@ message DriveSyncReport {
   int64 manifest_rows = 12;
   // Set when the sync could not run.
   string error = 13;
+  // App folders that could not be listed and hold nothing archived: apps
+  // that keep no documents in iCloud Drive (Messages, Notes, ...).
+  int64 unlisted_apps = 14;
 }
 
 enum DriveSyncOutcome {

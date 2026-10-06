@@ -53,7 +53,16 @@ type Item struct {
 	Items []Item `json:"items"`
 	// NumberOfItems counts a folder's children.
 	NumberOfItems int64 `json:"numberOfItems"`
+	// Status is set on a listed folder: statusOK, or statusMissing for a
+	// folder that does not exist (an app library nothing was ever saved to).
+	Status string `json:"status"`
 }
+
+// Folder statuses drivews reports.
+const (
+	statusOK      = "OK"
+	statusMissing = "ID_INVALID"
+)
 
 // FullName is the name with its extension, as iCloud Drive shows it.
 func (i Item) FullName() string {
@@ -63,8 +72,9 @@ func (i Item) FullName() string {
 	return i.Name + "." + i.Extension
 }
 
-// Folders returns the given folders with their children. An item type
-// homecloud does not know is an error: it would otherwise be skipped silently.
+// Folders returns the given folders with their children; a folder that does
+// not exist comes back empty. An item type or folder status homecloud does
+// not know is an error: it would otherwise be skipped silently.
 func Folders(ctx context.Context, c *icloud.Client, ids ...string) ([]Item, error) {
 	svc, err := c.Service(icloud.ServiceDrive)
 	if err != nil {
@@ -81,7 +91,16 @@ func Folders(ctx context.Context, c *icloud.Client, ids ...string) ([]Item, erro
 	if len(folders) != len(ids) {
 		return nil, fmt.Errorf("list iCloud Drive folders: asked for %d, got %d", len(ids), len(folders))
 	}
-	for _, f := range folders {
+	for i, id := range ids {
+		f := folders[i] // same length, checked above
+		switch f.Status {
+		case statusMissing:
+			folders[i] = Item{DriveWSID: id, Type: TypeFolder, Status: statusMissing}
+			continue
+		case statusOK:
+		default:
+			return nil, fmt.Errorf("iCloud Drive folder %s has unknown status %q", id, f.Status)
+		}
 		for _, it := range append([]Item{f}, f.Items...) {
 			if !it.Type.valid() {
 				return nil, fmt.Errorf("iCloud Drive item %s has unknown type %q", it.DriveWSID, it.Type)

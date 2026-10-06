@@ -17,7 +17,8 @@ func driveClient(t *testing.T, handler http.HandlerFunc) *icloud.Client {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	c, err := icloud.New(icloud.AppleEndpoints, icloud.Session{
+	local := icloud.Endpoints{Auth: srv.URL + "/auth", Setup: srv.URL + "/setup", Home: srv.URL}
+	c, err := icloud.New(local, icloud.Session{
 		Services: map[string]icloud.Service{icloud.ServiceDrive: {URL: srv.URL}},
 	}, time.Now)
 	if err != nil {
@@ -35,7 +36,7 @@ func TestFoldersListsChildren(t *testing.T) {
 		if !strings.Contains(string(body), RootID) {
 			t.Errorf("request %s does not name the root", body)
 		}
-		_, _ = io.WriteString(w, `[{"drivewsid":"`+RootID+`","type":"FOLDER","name":"root","items":[
+		_, _ = io.WriteString(w, `[{"drivewsid":"`+RootID+`","type":"FOLDER","name":"root","status":"OK","items":[
 			{"drivewsid":"FILE::com.apple.CloudDocs::A","docwsid":"A","type":"FILE","name":"tax","extension":"pdf","size":1024,"dateModified":"2026-09-01T10:00:00Z","etag":"e1"},
 			{"drivewsid":"FOLDER::com.apple.Pages::documents","type":"APP_LIBRARY","name":"Pages"}]}]`)
 	})
@@ -52,7 +53,7 @@ func TestFoldersListsChildren(t *testing.T) {
 
 func TestFoldersRejectsUnknownTypes(t *testing.T) {
 	c := driveClient(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, `[{"drivewsid":"`+RootID+`","type":"FOLDER","items":[{"drivewsid":"X","type":"SYMLINK"}]}]`)
+		_, _ = io.WriteString(w, `[{"drivewsid":"`+RootID+`","type":"FOLDER","status":"OK","items":[{"drivewsid":"X","type":"SYMLINK"}]}]`)
 	})
 	if _, err := Folders(context.Background(), c, RootID); err == nil || !strings.Contains(err.Error(), "SYMLINK") {
 		t.Fatalf("unknown type: %v", err)

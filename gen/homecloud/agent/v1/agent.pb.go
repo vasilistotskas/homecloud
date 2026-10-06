@@ -1971,7 +1971,10 @@ type DriveSyncReport struct {
 	// Files listed in Drive/manifest.csv.
 	ManifestRows int64 `protobuf:"varint,12,opt,name=manifest_rows,json=manifestRows,proto3" json:"manifest_rows,omitempty"`
 	// Set when the sync could not run.
-	Error         string `protobuf:"bytes,13,opt,name=error,proto3" json:"error,omitempty"`
+	Error string `protobuf:"bytes,13,opt,name=error,proto3" json:"error,omitempty"`
+	// App folders that could not be listed and hold nothing archived: apps
+	// that keep no documents in iCloud Drive (Messages, Notes, ...).
+	UnlistedApps  int64 `protobuf:"varint,14,opt,name=unlisted_apps,json=unlistedApps,proto3" json:"unlisted_apps,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2095,6 +2098,13 @@ func (x *DriveSyncReport) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *DriveSyncReport) GetUnlistedApps() int64 {
+	if x != nil {
+		return x.UnlistedApps
+	}
+	return 0
 }
 
 // LedgerBackupReport is one snapshot of the ledger.
@@ -5043,7 +5053,7 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	"\achecked\x18\x02 \x01(\x03R\achecked\x12\x16\n" +
 	"\x06passed\x18\x03 \x01(\x03R\x06passed\x12\x18\n" +
 	"\adamaged\x18\x04 \x01(\x03R\adamaged\x12\x18\n" +
-	"\aerrored\x18\x05 \x01(\x03R\aerrored\"\xa1\x03\n" +
+	"\aerrored\x18\x05 \x01(\x03R\aerrored\"\xc6\x03\n" +
 	"\x0fDriveSyncReport\x12>\n" +
 	"\aoutcome\x18\x01 \x01(\x0e2$.homecloud.agent.v1.DriveSyncOutcomeR\aoutcome\x12\x16\n" +
 	"\x06listed\x18\x02 \x01(\x03R\x06listed\x12\x1a\n" +
@@ -5058,7 +5068,8 @@ const file_homecloud_agent_v1_agent_proto_rawDesc = "" +
 	" \x01(\x03R\x06failed\x12\x1a\n" +
 	"\bfailures\x18\v \x03(\tR\bfailures\x12#\n" +
 	"\rmanifest_rows\x18\f \x01(\x03R\fmanifestRows\x12\x14\n" +
-	"\x05error\x18\r \x01(\tR\x05error\"u\n" +
+	"\x05error\x18\r \x01(\tR\x05error\x12#\n" +
+	"\runlisted_apps\x18\x0e \x01(\x03R\funlistedApps\"u\n" +
 	"\x12LedgerBackupReport\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1d\n" +
 	"\n" +

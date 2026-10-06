@@ -25,7 +25,8 @@ func names(cookies []*http.Cookie) map[string]string {
 }
 
 func TestJarSurvivesSaveAndRestore(t *testing.T) {
-	now := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	// The standard jar judges expiry by the real clock, so the test does too.
+	now := time.Now().UTC().Truncate(time.Second)
 	clock := func() time.Time { return now }
 	j, err := newJar(clock)
 	if err != nil {

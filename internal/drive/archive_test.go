@@ -38,6 +38,8 @@ type fakeDrive struct {
 	badSig   map[string]bool
 	failList bool
 	signOut  bool
+	// unlistable folders answer 502, as apps without documents do.
+	unlistable map[string]bool
 }
 
 func appleSignature(data []byte) string {
@@ -49,10 +51,14 @@ func appleSignature(data []byte) string {
 
 func newFakeDrive(t *testing.T) *fakeDrive {
 	t.Helper()
-	f := &fakeDrive{t: t, children: map[string][]Item{}, content: map[string][]byte{}, packages: map[string]bool{}, badSig: map[string]bool{}}
+	f := &fakeDrive{t: t, children: map[string][]Item{}, content: map[string][]byte{}, packages: map[string]bool{}, badSig: map[string]bool{}, unlistable: map[string]bool{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /drive/retrieveAppLibraries", func(w http.ResponseWriter, _ *http.Request) {
-		f.write(w, map[string]any{"items": []Item{{DriveWSID: "FOLDER::com.apple.Pages::documents", Type: TypeAppLibrary, Name: "Pages"}}})
+		f.write(w, map[string]any{"items": []Item{
+			{DriveWSID: "FOLDER::com.apple.Pages::documents", Type: TypeAppLibrary, Name: "Pages"},
+			{DriveWSID: "FOLDER::com.apple.Numbers::documents", Type: TypeAppLibrary, Name: "Numbers"},
+			{DriveWSID: "FOLDER::iCloud.com.apple.MobileSMS::documents", Type: TypeAppLibrary, Name: "Messages"},
+		}})
 	})
 	mux.HandleFunc("POST /drive/retrieveItemDetailsInFolders", func(w http.ResponseWriter, r *http.Request) {
 		var req []struct {
@@ -70,11 +76,15 @@ func newFakeDrive(t *testing.T) *fakeDrive {
 		}
 		out := make([]Item, len(req))
 		for i, q := range req {
-			if f.failList && q.ID != RootID {
-				w.WriteHeader(http.StatusInternalServerError)
+			if (f.failList && q.ID != RootID) || f.unlistable[q.ID] {
+				w.WriteHeader(http.StatusBadGateway)
 				return
 			}
-			out[i] = Item{DriveWSID: q.ID, Type: TypeFolder, Items: f.children[q.ID]}
+			if _, exists := f.children[q.ID]; !exists && q.ID != RootID && !strings.HasPrefix(q.ID, "FOLDER::com.apple.CloudDocs::") {
+				out[i] = Item{Status: statusMissing}
+				continue
+			}
+			out[i] = Item{DriveWSID: q.ID, Type: TypeFolder, Status: statusOK, Items: f.children[q.ID]}
 		}
 		f.write(w, out)
 	})
@@ -170,7 +180,9 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	c, err := icloud.New(icloud.AppleEndpoints, icloud.Session{Services: map[string]icloud.Service{
+	// The fake answers Apple's sign-in services too: tests never reach Apple.
+	local := icloud.Endpoints{Auth: f.srv.URL + "/auth", Setup: f.srv.URL + "/setup", Home: f.srv.URL}
+	c, err := icloud.New(local, icloud.Session{Services: map[string]icloud.Service{
 		icloud.ServiceDrive: {URL: f.srv.URL + "/drive"},
 		icloud.ServiceDocs:  {URL: f.srv.URL + "/docs"},
 	}}, time.Now)
@@ -317,6 +329,26 @@ func TestArchiveRejectsBadDownloads(t *testing.T) {
 	}
 	if left, _ := os.ReadDir(filepath.Join(h.a.Root, partialDir)); len(left) != 0 {
 		t.Fatalf("partial downloads left behind: %v", left)
+	}
+}
+
+func TestArchiveScopesAppFolders(t *testing.T) {
+	h := newHarness(t)
+	// Messages keeps no documents in iCloud Drive: it cannot be listed.
+	h.drive.unlistable["FOLDER::iCloud.com.apple.MobileSMS::documents"] = true
+	h.drive.packages["P"] = true
+	h.drive.put("FOLDER::com.apple.Pages::documents", "P", "Essay", "pages", zipOf(t, map[string]string{"a": "b"}), "e1")
+	// Numbers was never used: its folder does not exist, which is not an error.
+	rep := h.sync()
+	if rep.Archived != 1 || rep.Failed != 0 || rep.UnlistedApps != 1 {
+		t.Fatalf("first sync = %+v", rep)
+	}
+	// Pages becomes unlistable: its archived file is not taken as deleted, and
+	// the run reports the folder it could not check.
+	h.drive.unlistable["FOLDER::com.apple.Pages::documents"] = true
+	rep = h.sync()
+	if rep.Deleted != 0 || rep.Failed != 1 || !strings.Contains(rep.Failures[0], "Pages (com.apple.Pages)") {
+		t.Fatalf("sync with Pages unlistable = %+v", rep)
 	}
 }
 

@@ -245,7 +245,7 @@ func driveSyncToProto(detail string) (*agentv1.DriveSyncReport, error) {
 		Outcome: outcome, Listed: int64(rep.Listed), Archived: int64(rep.Archived), Changed: int64(rep.Changed),
 		Repaired: int64(rep.Repaired), Moved: int64(rep.Moved), Deleted: int64(rep.Deleted), Restored: int64(rep.Restored),
 		DownloadedBytes: rep.Bytes, Failed: int64(rep.Failed), Failures: rep.Failures,
-		ManifestRows: int64(rep.ManifestRows), Error: rep.Error,
+		ManifestRows: int64(rep.ManifestRows), Error: rep.Error, UnlistedApps: int64(rep.UnlistedApps),
 	}, nil
 }
 

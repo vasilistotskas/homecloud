@@ -36,7 +36,7 @@ func fakeICloudDrive(t *testing.T, expired *atomic.Bool) *httptest.Server {
 			w.WriteHeader(http.StatusMisdirectedRequest)
 			return
 		}
-		_, _ = w.Write([]byte(`[{"drivewsid":"` + drive.RootID + `","type":"FOLDER","items":[
+		_, _ = w.Write([]byte(`[{"drivewsid":"` + drive.RootID + `","type":"FOLDER","status":"OK","items":[
 			{"drivewsid":"FILE::com.apple.CloudDocs::DOC1","type":"FILE","name":"tax","extension":"pdf","size":` +
 			strconv.Itoa(len(driveFileBody)) + `,"etag":"e1","dateModified":"2026-09-01T10:00:00Z"}]}]`))
 	})

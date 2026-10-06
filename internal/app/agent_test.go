@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/health"
+	"github.com/vasilistotskas/homecloud/internal/icloud"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
@@ -150,6 +153,17 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 		func() time.Time { return *clock })
 	// Tests have no configured volume; the archive counts as present.
 	agent.checkArchive = func() error { return nil }
+	// Tests never touch a real iCloud account: no saved session, and Apple's
+	// endpoints fail the test if anything calls them. Drive tests install a
+	// fake service with withICloudDrive.
+	session := filepath.Join(t.TempDir(), "icloud-session.json")
+	agent.icloudSession = func() (string, error) { return session, nil }
+	apple := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("a test called Apple: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	t.Cleanup(apple.Close)
+	agent.icloudEndpoints = icloud.Endpoints{Auth: apple.URL, Setup: apple.URL, Home: apple.URL}
 	// Tests judge a healthy drive unless they say otherwise.
 	agent.readDrive = func(context.Context) (platform.DriveHealth, error) {
 		return platform.DriveHealth{Protocol: "NVMe"}, nil
