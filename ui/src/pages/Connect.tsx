@@ -13,15 +13,13 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { CloudRegular } from "@fluentui/react-icons";
-import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
+import { navigate, useLocation } from "../app/router";
 import { PairForm } from "../components/PairForm";
 import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
-
-const route = getRouteApi("/connect");
 
 const useStyles = makeStyles({
   root: {
@@ -113,14 +111,14 @@ function PairAgain({
 /** Pairs this browser with the agent using a one-time code from `homecloud open`. */
 function ConnectBrowser() {
   const styles = useStyles();
-  const navigate = useNavigate();
   const { reconnect } = useOverview();
-  const search = route.useSearch();
-  const [code, setCode] = useState(search.code ?? "");
+  // The code from the link `homecloud open` opens, if any.
+  const linkCode = useLocation().search.get("code") ?? undefined;
+  const [code, setCode] = useState(linkCode ?? "");
   const exchange = useMutation(AgentService.method.exchangeLoginCode, {
     onSuccess: () => {
       reconnect();
-      void navigate({ to: "/", search: {} });
+      navigate("/");
     },
   });
   const ready = normalize(code).length === codeLength;
@@ -129,11 +127,11 @@ function ConnectBrowser() {
   const autoSubmitted = useRef(false);
   const { mutate } = exchange;
   useEffect(() => {
-    if (search.code !== undefined && normalize(search.code).length === codeLength && !autoSubmitted.current) {
+    if (linkCode !== undefined && normalize(linkCode).length === codeLength && !autoSubmitted.current) {
       autoSubmitted.current = true;
-      mutate({ code: search.code });
+      mutate({ code: linkCode });
     }
-  }, [search.code, mutate]);
+  }, [linkCode, mutate]);
 
   const failed = exchange.isError
     ? ConnectError.from(exchange.error).code === Code.PermissionDenied

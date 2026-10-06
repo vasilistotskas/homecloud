@@ -71,6 +71,27 @@ describe("App", () => {
     expect(screen.getByText("Agent connected")).toBeInTheDocument();
   });
 
+  it("shows the overview for an address that names no page, without a history entry", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { assets: { verified: 1n } }) };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    window.location.hash = "#/no-such-page";
+    const before = window.history.length;
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();
+    expect(window.location.hash).toBe("#/");
+    expect(window.history.length).toBe(before);
+    // A real link: keyboard, middle-click and "open in new tab" work.
+    expect(screen.getByRole("link", { name: "View all activity" })).toHaveAttribute("href", "#/activity");
+  });
+
   it("puts a failing archive drive first", async () => {
     const transport = createRouterTransport(({ service }) => {
       service(AgentService, {

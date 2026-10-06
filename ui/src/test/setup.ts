@@ -28,6 +28,10 @@ window.ResizeObserver = class {
   }
 };
 
+// jsdom does not implement scrolling (the shell scrolls each new page to its
+// top); nothing is laid out, so there is nothing to scroll.
+window.scrollTo = () => undefined;
+
 beforeEach(() => {
   window.location.hash = "#/";
 });

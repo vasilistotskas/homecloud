@@ -1,49 +1,82 @@
-import { createHashHistory, createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
+import { useSyncExternalStore } from "react";
 
-import { ActivityPage } from "../pages/Activity";
-import { ConnectPage } from "../pages/Connect";
-import { LibraryPage } from "../pages/Library";
-import { OverviewPage } from "../pages/Overview";
-import { QuarantinePage } from "../pages/Quarantine";
-import { SettingsPage } from "../pages/Settings";
-import { Shell } from "./Shell";
+/**
+ * The app's routes. Routing is hash-based (#/library, #/connect?code=…), so it
+ * works the same when the agent serves the app and inside the desktop shell,
+ * with no server rewrites.
+ */
+export const paths = ["/", "/library", "/activity", "/quarantine", "/settings", "/connect"] as const;
+export type Path = (typeof paths)[number];
 
-const rootRoute = createRootRoute({ component: Outlet });
-
-const shellRoute = createRoute({ getParentRoute: () => rootRoute, id: "shell", component: Shell });
-
-const overviewRoute = createRoute({ getParentRoute: () => shellRoute, path: "/", component: OverviewPage });
-const libraryRoute = createRoute({ getParentRoute: () => shellRoute, path: "library", component: LibraryPage });
-const activityRoute = createRoute({ getParentRoute: () => shellRoute, path: "activity", component: ActivityPage });
-const quarantineRoute = createRoute({
-  getParentRoute: () => shellRoute,
-  path: "quarantine",
-  component: QuarantinePage,
-});
-const settingsRoute = createRoute({ getParentRoute: () => shellRoute, path: "settings", component: SettingsPage });
-
-export const connectRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "connect",
-  component: ConnectPage,
-  validateSearch: (search: Record<string, unknown>): { code?: string } =>
-    typeof search.code === "string" ? { code: search.code } : {},
-});
-
-const routeTree = rootRoute.addChildren([
-  shellRoute.addChildren([overviewRoute, libraryRoute, activityRoute, quarantineRoute, settingsRoute]),
-  connectRoute,
-]);
-
-// createAppRouter builds the app's router. Hash history works the same when the
-// agent serves the app and inside the desktop shell, without server-side rewrites.
-export function createAppRouter() {
-  // scrollRestoration: new pages start at the top; back/forward restore the position.
-  return createRouter({ routeTree, history: createHashHistory(), scrollRestoration: true });
+/** Where the app is: a known path (undefined when the hash names no page) and its search parameters. */
+export interface Location {
+  path: Path | undefined;
+  search: URLSearchParams;
 }
 
-declare module "@tanstack/react-router" {
-  interface Register {
-    router: ReturnType<typeof createAppRouter>;
+export function isPath(p: string): p is Path {
+  return (paths as readonly string[]).includes(p);
+}
+
+/**
+ * Parses a location hash. No hash, "#" and "#/" are the overview; anything
+ * else must name a page exactly.
+ */
+export function parseHash(hash: string): Location {
+  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
+  const q = raw.indexOf("?");
+  const pathname = (q < 0 ? raw : raw.slice(0, q)) || "/";
+  const search = new URLSearchParams(q < 0 ? "" : raw.slice(q + 1));
+  return { path: isPath(pathname) ? pathname : undefined, search };
+}
+
+/** The hash for a path and its search parameters. */
+export function href(path: Path, search?: Record<string, string>): string {
+  const query = search === undefined ? "" : new URLSearchParams(search).toString();
+  return `#${path}${query === "" ? "" : `?${query}`}`;
+}
+
+// Subscribers to location changes: the browser's hashchange covers links, the
+// back and forward buttons and pushes; a replace does not fire it, so
+// navigate notifies them itself.
+const listeners = new Set<() => void>();
+
+function notify(): void {
+  for (const l of listeners) {
+    l();
   }
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  window.addEventListener("hashchange", listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("hashchange", listener);
+  };
+}
+
+/**
+ * Goes to path. A push adds a history entry (back returns here); a replace
+ * swaps the current one, for locations that should not be returned to.
+ */
+export function navigate(path: Path, opts: { replace?: boolean; search?: Record<string, string> } = {}): void {
+  const target = href(path, opts.search);
+  if (window.location.hash === target) {
+    return;
+  }
+  if (opts.replace === true) {
+    window.history.replaceState(window.history.state, "", target);
+    notify();
+    return;
+  }
+  // Setting the hash adds a history entry and fires hashchange.
+  window.location.hash = target;
+}
+
+/** The current location; components re-render when it changes. */
+export function useLocation(): Location {
+  // URLSearchParams is not comparable, so the snapshot is the hash string,
+  // parsed on each render (a few string operations).
+  return parseHash(useSyncExternalStore(subscribe, () => window.location.hash));
 }

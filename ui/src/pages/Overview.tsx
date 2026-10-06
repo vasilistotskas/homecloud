@@ -36,11 +36,11 @@ import {
   ShieldCheckmarkRegular,
   ShieldErrorRegular,
 } from "@fluentui/react-icons";
-import { Link as RouterLink, useNavigate } from "@tanstack/react-router";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
+import { href, navigate } from "../app/router";
 import { CommandDialog, type CommandState } from "../components/CommandDialog";
 import { LoadError } from "../components/LoadError";
 import {
@@ -730,11 +730,7 @@ function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
     <Card>
       <CardHeader
         header={<Subtitle2 as="h2">Recent syncs</Subtitle2>}
-        action={
-          <RouterLink to="/activity">
-            <Link as="span">View all activity</Link>
-          </RouterLink>
-        }
+        action={<Link href={href("/activity")}>View all activity</Link>}
       />
       <div className={styles.tableBox}>
         <Table size="small" aria-label="Recent syncs" className={styles.table}>
@@ -769,12 +765,11 @@ function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
 }
 
 function ReviewButton() {
-  const navigate = useNavigate();
   return (
     <Button
       appearance="primary"
       onClick={() => {
-        void navigate({ to: "/quarantine" });
+        navigate("/quarantine");
       }}
     >
       Review

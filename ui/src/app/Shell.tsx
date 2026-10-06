@@ -18,11 +18,11 @@ import {
   SettingsRegular,
   ShieldErrorRegular,
 } from "@fluentui/react-icons";
-import { Outlet, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { useOverview, type Connection } from "../api/overviewContext";
 import { toasterId } from "../components/toast";
+import { isPath, navigate, useLocation } from "./router";
 
 const useStyles = makeStyles({
   // Narrow windows stack the navigation above the content and scroll as a page.
@@ -69,25 +69,33 @@ const pages = [
   { path: "/settings", label: "Settings", icon: <SettingsRegular /> },
 ] as const;
 
-export function Shell() {
+/** The app layout: navigation, connection status and the page. */
+export function Shell({ children }: { children: ReactNode }) {
   const styles = useStyles();
-  const navigate = useNavigate();
-  const { pathname } = useLocation();
-  // The content pane is the scroller in the app layout: each page starts at its top.
+  const { path } = useLocation();
+  // Every page starts at its top, also after back or forward: pages are
+  // dashboards and lists that reload their data, so a restored offset would
+  // point at different content. Wide windows scroll the content pane, narrow
+  // ones the document; the browser's own restoration is turned off so it
+  // does not restore one of them in between.
   const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    window.history.scrollRestoration = "manual";
+  }, []);
   useEffect(() => {
     if (mainRef.current !== null) {
       mainRef.current.scrollTop = 0;
     }
-  }, [pathname]);
+    window.scrollTo(0, 0);
+  }, [path]);
   const { overview, connection } = useOverview();
 
   // A browser without a session is sent to pair once, when the agent rejects it.
   useEffect(() => {
     if (connection === "unauthenticated") {
-      void navigate({ to: "/connect" });
+      navigate("/connect");
     }
-  }, [connection, navigate]);
+  }, [connection]);
 
   const quarantined = Number(overview?.assets?.quarantined ?? 0n);
   const status = connectionStatus[connection];
@@ -98,9 +106,11 @@ export function Shell() {
         open
         type="inline"
         className={styles.nav}
-        selectedValue={pathname}
+        selectedValue={path}
         onNavItemSelect={(_, data) => {
-          void navigate({ to: data.value });
+          if (isPath(data.value)) {
+            navigate(data.value);
+          }
         }}
       >
         <NavDrawerHeader>
@@ -135,7 +145,7 @@ export function Shell() {
         </NavDrawerFooter>
       </NavDrawer>
       <main ref={mainRef} className={styles.main}>
-        <Outlet />
+        {children}
       </main>
       <Toaster toasterId={toasterId} position="bottom-end" />
     </div>

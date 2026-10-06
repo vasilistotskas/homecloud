@@ -2,12 +2,11 @@ import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { FluentProvider, makeStaticStyles, makeStyles, tokens } from "@fluentui/react-components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { RouterProvider } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { OverviewProvider } from "../api/overview";
 import { PlatformContext, type Platform } from "./platformContext";
-import { createAppRouter } from "./router";
+import { AppRoutes } from "./AppRoutes";
 import { ThemeStateProvider } from "./theme";
 
 // The browser's default 8 px body margin would make the page taller than the
@@ -34,7 +33,6 @@ const useStyles = makeStyles({
 export function App({ transport, platform }: { transport: Transport; platform: Platform }) {
   useGlobalStyles();
   const styles = useStyles();
-  const [router] = useState(createAppRouter);
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: retryTransient, refetchOnWindowFocus: true } } }),
   );
@@ -48,7 +46,7 @@ export function App({ transport, platform }: { transport: Transport; platform: P
             <TransportProvider transport={transport}>
               <QueryClientProvider client={queryClient}>
                 <OverviewProvider>
-                  <RouterProvider router={router} />
+                  <AppRoutes />
                 </OverviewProvider>
               </QueryClientProvider>
             </TransportProvider>
