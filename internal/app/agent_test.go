@@ -141,7 +141,7 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 			ScrubFraction: 1,
 		},
 		Backup: config.Backup{Dir: filepath.Join(t.TempDir(), "ledger-backups"), Interval: config.Duration(24 * time.Hour), Keep: 2},
-		Drive:  config.Drive{SyncInterval: config.Duration(6 * time.Hour), Workers: 2},
+		Drive:  config.Drive{SyncInterval: config.Duration(6 * time.Hour), Workers: 2, StallTimeout: config.Duration(time.Minute)},
 		IPhoneBackup: config.IPhoneBackup{
 			Dirs: []string{filepath.Join(t.TempDir(), "MobileSync", "Backup")}, MaxAge: config.Duration(7 * 24 * time.Hour),
 			CheckInterval: config.Duration(24 * time.Hour), MaxShrinkPercent: 50,

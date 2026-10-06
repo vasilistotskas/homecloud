@@ -99,6 +99,9 @@ type Drive struct {
 	SyncInterval Duration `toml:"sync_interval"`
 	// Workers is how many files download at once.
 	Workers int `toml:"workers"`
+	// StallTimeout abandons a download that receives no data for this long;
+	// it is retried at the next sync.
+	StallTimeout Duration `toml:"stall_timeout"`
 }
 
 // IPhoneBackup configures the monitor of local iPhone backups, which Apple's
@@ -273,6 +276,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Drive.Workers < 1 || c.Drive.Workers > 16 {
 		add("drive.workers must be between 1 and 16, got %d", c.Drive.Workers)
+	}
+	if st := c.Drive.StallTimeout.Std(); st < 30*time.Second || st > 10*time.Minute {
+		add("drive.stall_timeout must be between 30s and 10m, got %s", st)
 	}
 
 	ib := c.IPhoneBackup

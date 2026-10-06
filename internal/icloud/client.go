@@ -294,28 +294,68 @@ func (c *Client) Refresh(ctx context.Context) error {
 	return c.accountLogin(ctx)
 }
 
-// Fetch streams the body of a signed content URL (a file download). The
-// caller closes it.
-func (c *Client) Fetch(ctx context.Context, rawURL string) (io.ReadCloser, error) {
+// ErrStalled means a download received no data for its stall timeout.
+var ErrStalled = errors.New("download stalled")
+
+// Fetch streams the body of a signed content URL (a file download). A
+// download has no overall deadline, since it lasts as long as the file needs;
+// it is abandoned when no data arrives for stall. The caller closes the body.
+func (c *Client) Fetch(ctx context.Context, rawURL string, stall time.Duration) (io.ReadCloser, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	watchdog := time.AfterFunc(stall, func() { cancel(ErrStalled) })
+	fail := func(err error) (io.ReadCloser, error) {
+		watchdog.Stop()
+		cancel(nil)
+		if errors.Is(context.Cause(ctx), ErrStalled) {
+			err = fmt.Errorf("%w: no response for %s", ErrStalled, stall)
+		}
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build download request: %w", err)
+		return fail(fmt.Errorf("build download request: %w", err))
 	}
 	req.Header = c.webHeaders()
 	req.Header.Del("Content-Type")
 	req.Header.Set("Accept", "*/*")
-	// A download has no overall deadline: it lasts as long as the file needs.
 	download := *c.http
 	download.Timeout = 0
 	resp, err := download.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", endpointName(rawURL), err)
+		return fail(fmt.Errorf("GET %s: %w", endpointName(rawURL), err))
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close() //nolint:errcheck,gosec // the status is the error
-		return nil, fmt.Errorf("GET %s: unexpected status %d", endpointName(rawURL), resp.StatusCode)
+		return fail(fmt.Errorf("GET %s: unexpected status %d", endpointName(rawURL), resp.StatusCode))
 	}
-	return resp.Body, nil
+	return &watchedBody{body: resp.Body, ctx: ctx, cancel: cancel, watchdog: watchdog, stall: stall}, nil
+}
+
+// watchedBody is a download whose watchdog is reset by every read that
+// returns data.
+type watchedBody struct {
+	body     io.ReadCloser
+	ctx      context.Context //nolint:containedctx // the download's own context, for its cause
+	cancel   context.CancelCauseFunc
+	watchdog *time.Timer
+	stall    time.Duration
+}
+
+func (b *watchedBody) Read(p []byte) (int, error) {
+	n, err := b.body.Read(p)
+	if n > 0 {
+		b.watchdog.Reset(b.stall)
+	}
+	if err != nil && !errors.Is(err, io.EOF) && errors.Is(context.Cause(b.ctx), ErrStalled) {
+		return n, fmt.Errorf("%w: no data for %s", ErrStalled, b.stall)
+	}
+	return n, err //nolint:wrapcheck // io.Reader contract: io.EOF must stay unwrapped
+}
+
+func (b *watchedBody) Close() error {
+	b.watchdog.Stop()
+	b.cancel(nil)
+	return b.body.Close() //nolint:wrapcheck // io.Closer of the response body
 }
 
 // Call sends a JSON request to a web service and decodes a 200 answer into

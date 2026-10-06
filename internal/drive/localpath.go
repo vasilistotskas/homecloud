@@ -3,6 +3,7 @@ package drive
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"path"
 	"strings"
 	"unicode/utf16"
@@ -76,24 +77,150 @@ func localPath(icloud []string) string {
 	return strings.Join(parts, "/")
 }
 
-// disambiguate gives a local path that another file already uses (names
-// differing only in case, or mapping to the same safe name) a suffix taken
-// from the file's own id, before its extension: "a (1A2B3C4D).pdf".
-func disambiguate(local, drivewsid string) string {
-	_, document, err := zoneAndDocument(drivewsid)
-	if err != nil {
-		document = drivewsid
-	}
-	id := document[:min(8, len(document))]
-	dir, file := path.Split(local)
-	ext := path.Ext(file)
-	if ext == file {
+// withSuffix inserts suffix before the extension of a file name and keeps
+// the result within maxNameUnits, shortening the base when needed.
+func withSuffix(name, suffix string) string {
+	ext := path.Ext(name)
+	if ext == name {
 		ext = ""
 	}
-	return dir + strings.TrimSuffix(file, ext) + " (" + id + ")" + ext
+	base := []rune(strings.TrimSuffix(name, ext))
+	budget := maxNameUnits - len(utf16.Encode([]rune(suffix+ext)))
+	for len(base) > 0 && len(utf16.Encode(base)) > budget {
+		base = base[:len(base)-1]
+	}
+	return string(base) + suffix + ext
 }
 
 // pathKey compares local paths the way Windows does: without case.
 func pathKey(local string) string {
 	return strings.ToLower(local)
+}
+
+// parents returns the folders containing local ('/'-separated), outermost
+// first: "a/b/c.txt" has "a" and "a/b".
+func parents(local string) []string {
+	var out []string
+	for i, r := range local {
+		if r == '/' {
+			out = append(out, local[:i])
+		}
+	}
+	return out
+}
+
+// planner hands out local paths so that no two files share one and no file
+// takes the place of a folder another file needs, or the reverse. Paths
+// compare without case, as on Windows.
+type planner struct {
+	files   map[string]string // path key -> drivewsid
+	folders map[string]int    // folder path key -> files below it
+}
+
+func newPlanner() *planner {
+	return &planner{files: map[string]string{}, folders: map[string]int{}}
+}
+
+// hold records that drivewsid uses local.
+func (p *planner) hold(local, drivewsid string) {
+	p.files[pathKey(local)] = drivewsid
+	for _, dir := range parents(local) {
+		p.folders[pathKey(dir)]++
+	}
+}
+
+// release records that local is no longer used.
+func (p *planner) release(local string) {
+	delete(p.files, pathKey(local))
+	for _, dir := range parents(local) {
+		key := pathKey(dir)
+		if p.folders[key]--; p.folders[key] <= 0 {
+			delete(p.folders, key)
+		}
+	}
+}
+
+// free reports whether drivewsid may use local.
+func (p *planner) free(local, drivewsid string) bool {
+	key := pathKey(local)
+	if owner, taken := p.files[key]; taken && owner != drivewsid {
+		return false
+	}
+	if p.folders[key] > 0 {
+		return false
+	}
+	for _, dir := range parents(local) {
+		if _, isFile := p.files[pathKey(dir)]; isFile {
+			return false
+		}
+	}
+	return true
+}
+
+// assign returns a free local path for f: the safe form of its iCloud path
+// or, where that clashes, the clashing name with " (<first 8 of its document
+// id>)" and then its whole document id. A folder whose name a file holds takes
+// the suffix of its own id, so every file of that folder lands in the same
+// place; otherwise the file takes its own.
+func (p *planner) assign(f File) (string, error) {
+	parts := strings.Split(localPath(f.Path), "/")
+	if len(f.IDs) != len(parts) {
+		return "", fmt.Errorf("%s: %d ids for %d path parts", f.DriveWSID, len(f.IDs), len(parts))
+	}
+	for _, length := range []int{0, idSuffixLen, -1} {
+		candidate := append([]string{}, parts...)
+		if length != 0 {
+			i, suffixed := p.fileAmongFolders(candidate), folderWithSuffix
+			if i < 0 {
+				i, suffixed = len(candidate)-1, withSuffix
+			}
+			id, err := idSuffix(f.IDs[i], length)
+			if err != nil {
+				return "", err
+			}
+			candidate[i] = suffixed(candidate[i], id)
+		}
+		local := strings.Join(candidate, "/")
+		if p.free(local, f.DriveWSID) {
+			p.hold(local, f.DriveWSID)
+			return local, nil
+		}
+	}
+	return "", fmt.Errorf("no free local name for %s", strings.Join(f.Path, "/"))
+}
+
+// idSuffixLen is how much of a document id disambiguates a name first.
+const idSuffixLen = 8
+
+// idSuffix is " (<document id>)" for a drivewsid, cut to length (-1: whole).
+func idSuffix(drivewsid string, length int) (string, error) {
+	_, document, err := zoneAndDocument(drivewsid)
+	if err != nil {
+		return "", err
+	}
+	if length >= 0 {
+		document = document[:min(length, len(document))]
+	}
+	return " (" + document + ")", nil
+}
+
+// fileAmongFolders returns the index of the first folder of a path that
+// another file holds as its own path, or -1.
+func (p *planner) fileAmongFolders(parts []string) int {
+	for i := 1; i < len(parts); i++ {
+		if _, isFile := p.files[pathKey(strings.Join(parts[:i], "/"))]; isFile {
+			return i - 1
+		}
+	}
+	return -1
+}
+
+// folderWithSuffix appends suffix to a folder name within maxNameUnits.
+func folderWithSuffix(name, suffix string) string {
+	base := []rune(name)
+	budget := maxNameUnits - len(utf16.Encode([]rune(suffix)))
+	for len(base) > 0 && len(utf16.Encode(base)) > budget {
+		base = base[:len(base)-1]
+	}
+	return string(base) + suffix
 }

@@ -49,6 +49,8 @@ type Archive struct {
 	Now     func() time.Time
 	Log     *slog.Logger
 	Workers int
+	// Stall abandons a download that receives no data for this long.
+	Stall time.Duration
 }
 
 // Report is what one sync did.
@@ -92,12 +94,16 @@ func (r *Report) fail(mu *sync.Mutex, format string, args ...any) {
 type job struct {
 	file  File
 	local string
-	prev  *ledger.DriveFile
+	// prev is the file's row when it was archived before.
+	prev *ledger.DriveFile
+	// repair is set when the archived copy is missing or damaged: download
+	// again even if the bytes did not change in iCloud.
+	repair bool
 }
 
 // Sync lists iCloud Drive and brings the archive up to date. An error means
-// the sync could not run (listing failed, sign-in needed); single files that
-// fail are counted in the report and retried next time.
+// the sync could not run or had to stop (listing failed, sign-in needed);
+// single files that fail are counted in the report and retried next time.
 func (a *Archive) Sync(ctx context.Context) (Report, error) {
 	var rep Report
 	if err := a.clearPartial(); err != nil {
@@ -107,79 +113,70 @@ func (a *Archive) Sync(ctx context.Context) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
-	files := listing.Files
-	rep.Listed = len(files)
+	rep.Listed = len(listing.Files)
 	known, err := a.DB.DriveFiles(ctx)
 	if err != nil {
 		return rep, err
 	}
-	used := map[string]string{} // path key -> drivewsid
+	paths := newPlanner()
 	for id, k := range known {
-		used[pathKey(k.LocalPath)] = id
-	}
-	assign := func(f File) string {
-		local := localPath(f.Path)
-		if owner, taken := used[pathKey(local)]; taken && owner != f.DriveWSID {
-			local = disambiguate(local, f.DriveWSID)
-		}
-		used[pathKey(local)] = f.DriveWSID
-		return local
+		paths.hold(k.LocalPath, id)
 	}
 
-	var jobs []job
+	var (
+		jobs []job
+		mu   sync.Mutex
+	)
 	seen := map[string]bool{}
-	var mu sync.Mutex
-	for _, f := range files {
+	for _, f := range listing.Files {
 		seen[f.DriveWSID] = true
-		icloudPath := strings.Join(f.Path, "/")
 		k, ok := known[f.DriveWSID]
 		if !ok {
-			jobs = append(jobs, job{file: f, local: assign(f)})
-			continue
-		}
-		local := k.LocalPath
-		if k.ICloudPath != icloudPath {
-			if local, err = a.move(k, assign(f)); err != nil {
-				rep.fail(&mu, "%s: %v", icloudPath, err)
+			local, err := paths.assign(f)
+			if err != nil {
+				rep.fail(&mu, "%s: %v", strings.Join(f.Path, "/"), err)
 				continue
 			}
-			rep.Moved++
-		}
-		if k.Etag != f.Etag || k.DamagedAt != nil {
-			jobs = append(jobs, job{file: f, local: local, prev: &k})
+			jobs = append(jobs, job{file: f, local: local})
 			continue
 		}
-		if local != k.LocalPath || k.ICloudPath != icloudPath || k.DeletedAt != nil || !sameTime(k.ModifiedAt, f.DateModified) {
-			if k.DeletedAt != nil {
-				rep.Restored++
-			}
-			if err := a.DB.UpdateDriveFile(ctx, a.metadata(k, f, local), a.Now()); err != nil {
-				return rep, err
-			}
+		j, err := a.reconcile(ctx, k, f, paths, &rep)
+		switch {
+		case err != nil:
+			rep.fail(&mu, "%s: %v", strings.Join(f.Path, "/"), err)
+		case j != nil:
+			jobs = append(jobs, *j)
 		}
 	}
 
-	a.download(ctx, jobs, &rep, &mu)
-	if err := ctx.Err(); err != nil {
-		return rep, fmt.Errorf("drive sync: %w", err)
+	if err := a.download(ctx, jobs, &rep, &mu); err != nil {
+		return rep, err
 	}
 
-	// Only a scope listed in full can show a deletion; an unlisted scope that
-	// holds archived files is a failure to look into.
-	var gone []string
+	// Only a scope listed in full can show a deletion. A scope that holds
+	// archived files but could not be listed is a failure, and while there is
+	// one, files that left a listed scope may have moved into it: no deletion
+	// is recorded this time.
 	archivedIn := map[string]bool{}
-	for id, k := range known {
-		scope := Scope(k.ICloudPath)
-		archivedIn[scope] = true
-		if !seen[id] && k.DeletedAt == nil && listing.Complete[scope] {
-			gone = append(gone, id)
-		}
+	for _, k := range known {
+		archivedIn[Scope(k.ICloudPath)] = true
 	}
+	blocked := false
 	for scope, why := range listing.Unlisted {
 		if archivedIn[scope] {
 			rep.fail(&mu, "%s could not be listed: %s", scope, why)
+			blocked = true
 		} else {
 			rep.UnlistedApps++
+		}
+	}
+	if blocked {
+		return rep, nil
+	}
+	var gone []string
+	for id, k := range known {
+		if !seen[id] && k.DeletedAt == nil && listing.Complete[Scope(k.ICloudPath)] {
+			gone = append(gone, id)
 		}
 	}
 	if err := a.DB.MarkDriveFilesDeleted(ctx, gone, a.Now()); err != nil {
@@ -187,6 +184,51 @@ func (a *Archive) Sync(ctx context.Context) (Report, error) {
 	}
 	rep.Deleted = len(gone)
 	return rep, nil
+}
+
+// reconcile brings an archived file in line with its listing: it follows a
+// move or rename at once (and records it, so the ledger always names where
+// the copy is), records metadata-only changes, and returns a download job when
+// the bytes changed in iCloud or the copy is missing or damaged.
+func (a *Archive) reconcile(ctx context.Context, k ledger.DriveFile, f File, paths *planner, rep *Report) (*job, error) {
+	icloudPath := strings.Join(f.Path, "/")
+	present := true
+	if k.ICloudPath != icloudPath {
+		paths.release(k.LocalPath)
+		local, err := paths.assign(f)
+		if err != nil {
+			paths.hold(k.LocalPath, f.DriveWSID)
+			return nil, err
+		}
+		if present, err = a.move(k.LocalPath, local); err != nil {
+			paths.release(local)
+			paths.hold(k.LocalPath, f.DriveWSID)
+			return nil, err
+		}
+		// Record the new place now, with the old etag: a later failure leaves
+		// the ledger naming where the copy really is.
+		k.ICloudPath, k.LocalPath = icloudPath, local
+		if err := a.DB.UpdateDriveFile(ctx, k, a.Now()); err != nil {
+			return nil, err
+		}
+		rep.Moved++
+		if k.DeletedAt != nil {
+			rep.Restored++
+			k.DeletedAt = nil
+		}
+	}
+	if k.Etag != f.Etag || k.DamagedAt != nil || !present {
+		return &job{file: f, local: k.LocalPath, prev: &k, repair: k.DamagedAt != nil || !present}, nil
+	}
+	if k.DeletedAt != nil || !sameTime(k.ModifiedAt, f.DateModified) {
+		if k.DeletedAt != nil {
+			rep.Restored++
+		}
+		if err := a.DB.UpdateDriveFile(ctx, a.metadata(k, f, k.LocalPath), a.Now()); err != nil {
+			return nil, err
+		}
+	}
+	return nil, nil //nolint:nilnil // nothing to download
 }
 
 // metadata is k with the iCloud metadata of f and its archived copy at local.
@@ -210,13 +252,14 @@ func sameTime(a *time.Time, b time.Time) bool {
 	return a.Equal(b)
 }
 
-// download runs the jobs on a few workers. A sign-in failure stops the rest.
-func (a *Archive) download(ctx context.Context, jobs []job, rep *Report, mu *sync.Mutex) {
+// download runs the jobs on a few workers. A sign-in failure stops the rest
+// and is returned: the sync cannot go on.
+func (a *Archive) download(ctx context.Context, jobs []job, rep *Report, mu *sync.Mutex) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	work := make(chan job)
 	var wg sync.WaitGroup
-	for range max(1, a.Workers) {
+	for range a.Workers {
 		wg.Go(func() {
 			for j := range work {
 				if ctx.Err() != nil {
@@ -226,7 +269,7 @@ func (a *Archive) download(ctx context.Context, jobs []job, rep *Report, mu *syn
 				switch {
 				case errors.Is(err, icloud.ErrSignInRequired):
 					cancel(err)
-				case err != nil:
+				case err != nil && ctx.Err() == nil:
 					rep.fail(mu, "%s: %v", strings.Join(j.file.Path, "/"), err)
 				}
 			}
@@ -237,6 +280,10 @@ func (a *Archive) download(ctx context.Context, jobs []job, rep *Report, mu *syn
 	}
 	close(work)
 	wg.Wait()
+	if err := context.Cause(ctx); err != nil {
+		return fmt.Errorf("drive sync: %w", err)
+	}
+	return nil
 }
 
 // archive downloads, verifies and places one file.
@@ -247,9 +294,17 @@ func (a *Archive) archive(ctx context.Context, j job, rep *Report, mu *sync.Mute
 	}
 	defer os.Remove(partial) //nolint:errcheck // gone after a successful rename; a temp file otherwise
 
-	if j.prev != nil && j.prev.DamagedAt == nil && j.prev.SHA256 == sum {
+	if j.prev != nil && !j.repair && j.prev.SHA256 == sum {
 		// Only metadata changed: the archived copy already has these bytes.
-		return a.DB.UpdateDriveFile(ctx, a.metadata(*j.prev, j.file, j.local), a.Now())
+		if err = a.DB.UpdateDriveFile(ctx, a.metadata(*j.prev, j.file, j.local), a.Now()); err != nil {
+			return err
+		}
+		if j.prev.DeletedAt != nil {
+			mu.Lock()
+			rep.Restored++
+			mu.Unlock()
+		}
+		return nil
 	}
 	keptAs, err := a.place(partial, j.local)
 	if err != nil {
@@ -269,12 +324,22 @@ func (a *Archive) archive(ctx context.Context, j job, rep *Report, mu *sync.Mute
 	switch {
 	case j.prev == nil:
 		rep.Archived++
-	case j.prev.DamagedAt != nil:
+	case j.repair:
 		rep.Repaired++
 	default:
 		rep.Changed++
 	}
+	if j.prev != nil && j.prev.DeletedAt != nil {
+		rep.Restored++
+	}
 	return nil
+}
+
+// partialName names a download in progress after the file's whole drivewsid
+// (zone and document), so that no two files share one.
+func partialName(drivewsid string) string {
+	sum := sha256.Sum256([]byte(drivewsid))
+	return hex.EncodeToString(sum[:16]) + ".part"
 }
 
 // fetch downloads a file into the partial folder and verifies it: a plain
@@ -282,11 +347,7 @@ func (a *Archive) archive(ctx context.Context, j job, rep *Report, mu *sync.Mute
 // ZIP. It returns the partial file, its SHA-256, Apple's signature (hex, plain
 // files) and its size.
 func (a *Archive) fetch(ctx context.Context, f File) (partial, sum, sig string, pkg bool, n int64, err error) {
-	_, document, err := zoneAndDocument(f.DriveWSID)
-	if err != nil {
-		return "", "", "", false, 0, err
-	}
-	tmp := filepath.Join(a.Root, partialDir, document+".part")
+	tmp := filepath.Join(a.Root, partialDir, partialName(f.DriveWSID))
 	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // inside the archive
 	if err != nil {
 		return "", "", "", false, 0, fmt.Errorf("create download file: %w", err)
@@ -300,16 +361,15 @@ func (a *Archive) fetch(ctx context.Context, f File) (partial, sum, sig string, 
 	contentHash := sha256.New()
 	var signature hash.Hash
 	var apple string
-	if f.Size == 0 {
-		// iCloud refuses to serve empty files; there is nothing to fetch.
-		n = 0
-	} else {
+	// iCloud lists packages with their size and refuses to serve empty files:
+	// an empty listed file has nothing to fetch.
+	if f.Size > 0 {
 		var tok downloadToken
 		tok, pkg, err = download(ctx, a.Client, f.Item)
 		if err != nil {
 			return "", "", "", false, 0, errors.Join(err, out.Close())
 		}
-		body, fetchErr := a.Client.Fetch(ctx, tok.URL)
+		body, fetchErr := a.Client.Fetch(ctx, tok.URL, a.Stall)
 		if fetchErr != nil {
 			return "", "", "", false, 0, errors.Join(fetchErr, out.Close())
 		}
@@ -338,8 +398,8 @@ func (a *Archive) fetch(ctx context.Context, f File) (partial, sum, sig string, 
 	return tmp, hex.EncodeToString(contentHash.Sum(nil)), sig, pkg, n, nil
 }
 
-// place moves a verified download to local. Whatever is there already is
-// moved under .versions first; keptAs names it (archive-relative, '/').
+// place moves a verified download to local. A file already there is moved
+// under .versions first; keptAs names it (archive-relative, '/').
 func (a *Archive) place(partial, local string) (keptAs string, err error) {
 	dest := a.abs(local)
 	keptAs, err = a.keep(local)
@@ -355,50 +415,97 @@ func (a *Archive) place(partial, local string) (keptAs string, err error) {
 	return keptAs, nil
 }
 
-// keep moves the file at local, if any, to .versions/<now>/local.
+// maxVersionSuffix bounds the search for an unused .versions name.
+const maxVersionSuffix = 1000
+
+// keep moves the file at local, if any, to .versions/<now>/local (adding
+// "-2", "-3", ... to the time folder when that name is taken). It never moves
+// a folder: a folder where a file belongs is an error to look into.
 func (a *Archive) keep(local string) (string, error) {
 	src := a.abs(local)
-	if _, err := os.Lstat(src); errors.Is(err, fs.ErrNotExist) {
+	info, err := os.Lstat(src)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
 		return "", nil
-	} else if err != nil {
+	case err != nil:
 		return "", fmt.Errorf("check %s: %w", local, err)
+	case !info.Mode().IsRegular():
+		return "", fmt.Errorf("%s is not a file (%s); it is left in place", local, info.Mode().Type())
 	}
-	kept := path.Join(VersionsDir, a.Now().UTC().Format(versionStamp), local)
-	dest := a.abs(kept)
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { //nolint:gosec // archive folders are the owner's to read
-		return "", fmt.Errorf("create version folder: %w", err)
+	stamp := a.Now().UTC().Format(versionStamp)
+	for n := 1; n <= maxVersionSuffix; n++ {
+		folder := stamp
+		if n > 1 {
+			folder = fmt.Sprintf("%s-%d", stamp, n)
+		}
+		kept := path.Join(VersionsDir, folder, local)
+		dest := a.abs(kept)
+		if _, err := os.Lstat(dest); err == nil {
+			continue
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("check %s: %w", kept, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { //nolint:gosec // archive folders are the owner's to read
+			return "", fmt.Errorf("create version folder: %w", err)
+		}
+		if err := os.Rename(src, dest); err != nil {
+			return "", fmt.Errorf("keep previous %s: %w", local, err)
+		}
+		return kept, nil
 	}
-	if _, err := os.Lstat(dest); err == nil {
-		return "", fmt.Errorf("version %s already exists", kept)
-	}
-	if err := os.Rename(src, dest); err != nil {
-		return "", fmt.Errorf("keep previous %s: %w", local, err)
-	}
-	return kept, nil
+	return "", fmt.Errorf("no free .versions name for %s", local)
 }
 
-// move follows a file moved or renamed in iCloud: its archived copy moves to
-// local, and folders the move left empty are removed.
-func (a *Archive) move(k ledger.DriveFile, local string) (string, error) {
-	if local == k.LocalPath {
-		return local, nil
+// move follows a file moved or renamed in iCloud: its archived copy moves
+// from local to target, and folders the move left empty are removed. It is
+// safe to repeat after a crash at any point. present reports whether the copy
+// exists at target afterwards; a missing copy is downloaded again.
+func (a *Archive) move(from, target string) (present bool, err error) {
+	src, dest := a.abs(from), a.abs(target)
+	srcInfo, srcExists, err := stat(src)
+	if err != nil {
+		return false, err
 	}
-	src, dest := a.abs(k.LocalPath), a.abs(local)
-	if _, err := a.keep(local); err != nil {
-		return "", err
+	destInfo, destExists, err := stat(dest)
+	if err != nil {
+		return false, err
+	}
+	switch {
+	case !srcExists:
+		// Already moved by an interrupted sync, or the copy is gone.
+		return destExists, nil
+	case destExists && os.SameFile(srcInfo, destInfo):
+		// The same file under another case: a rename in place.
+		if err := os.Rename(src, dest); err != nil {
+			return false, fmt.Errorf("rename %s to %s: %w", from, target, err)
+		}
+		return true, nil
+	case destExists:
+		// Another file stands where this one goes: keep it.
+		if _, err := a.keep(target); err != nil {
+			return false, err
+		}
 	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { //nolint:gosec // archive folders are the owner's to read
-		return "", fmt.Errorf("create folder for %s: %w", local, err)
+		return false, fmt.Errorf("create folder for %s: %w", target, err)
 	}
-	switch err := os.Rename(src, dest); {
-	case errors.Is(err, fs.ErrNotExist):
-		// The copy is missing; the scrub reports that. Record the new place so
-		// the next download lands there.
-	case err != nil:
-		return "", fmt.Errorf("move %s to %s: %w", k.LocalPath, local, err)
+	if err := os.Rename(src, dest); err != nil {
+		return false, fmt.Errorf("move %s to %s: %w", from, target, err)
 	}
 	a.removeEmptyParents(filepath.Dir(src))
-	return local, nil
+	return true, nil
+}
+
+// stat reports whether a path exists; any error but "not there" is returned.
+func stat(file string) (fs.FileInfo, bool, error) {
+	info, err := os.Lstat(file)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return nil, false, nil
+	case err != nil:
+		return nil, false, fmt.Errorf("check %s: %w", file, err)
+	}
+	return info, true, nil
 }
 
 // removeEmptyParents removes dir and its parents while they are empty, up to

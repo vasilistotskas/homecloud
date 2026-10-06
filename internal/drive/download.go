@@ -3,7 +3,6 @@ package drive
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -59,17 +58,4 @@ func download(ctx context.Context, c *icloud.Client, it Item) (tok downloadToken
 	default:
 		return downloadToken{}, false, fmt.Errorf("download token for %s: no URL", it.DriveWSID)
 	}
-}
-
-// Open streams a file's bytes. The caller closes the reader.
-func Open(ctx context.Context, c *icloud.Client, it Item) (io.ReadCloser, bool, error) {
-	tok, pkg, err := download(ctx, c, it)
-	if err != nil {
-		return nil, false, err
-	}
-	body, err := c.Fetch(ctx, tok.URL)
-	if err != nil {
-		return nil, false, fmt.Errorf("download %s: %w", it.DriveWSID, err)
-	}
-	return body, pkg, nil
 }

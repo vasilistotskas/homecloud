@@ -29,6 +29,9 @@ const (
 	// EventDriveFileDamaged: an archived copy no longer matched its checksum;
 	// the next sync downloads it again.
 	EventDriveFileDamaged = "drive_file_damaged"
+	// EventDriveFileRepaired: a damaged or missing copy was replaced by a fresh
+	// download (detail "kept_as" names the damaged copy, when there was one).
+	EventDriveFileRepaired = "drive_file_repaired"
 )
 
 // DriveFile is one archived iCloud Drive file.
@@ -105,9 +108,11 @@ func (db *DB) DriveFiles(ctx context.Context) (_ map[string]DriveFile, err error
 	return out, nil
 }
 
-// RecordDriveFile records a newly downloaded copy of f, as first archived or,
-// when keptAs is set, replacing a previous copy that was moved to keptAs.
-// A file seen again after its deletion in iCloud is restored.
+// RecordDriveFile records a newly downloaded copy of f. The events follow
+// from the file's previous row: archived (first copy), changed (new bytes in
+// iCloud) or repaired (the previous copy was damaged or missing), plus
+// restored when the file had been deleted in iCloud. keptAs names where the
+// previous copy was kept, when there was one.
 func (db *DB) RecordDriveFile(ctx context.Context, f DriveFile, keptAs string, now time.Time) (err error) {
 	tx, err := db.w.BeginTx(ctx, nil)
 	if err != nil {
@@ -118,9 +123,13 @@ func (db *DB) RecordDriveFile(ctx context.Context, f DriveFile, keptAs string, n
 			err = errors.Join(err, tx.Rollback())
 		}
 	}()
-	var existed bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM icloud_drive_files WHERE drivewsid = ?)`, f.DriveWSID).Scan(&existed); err != nil {
-		return fmt.Errorf("record drive file: %w", err)
+	prev, err := scanDriveFile(tx.QueryRowContext(ctx, `SELECT `+driveFileColumns+` FROM icloud_drive_files WHERE drivewsid = ?`, f.DriveWSID))
+	existed := err == nil
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		err = nil
+	case err != nil:
+		return fmt.Errorf("record drive file %s: %w", f.DriveWSID, err)
 	}
 	ts := formatTime(now)
 	if _, err = tx.ExecContext(ctx, `
@@ -137,14 +146,23 @@ func (db *DB) RecordDriveFile(ctx context.Context, f DriveFile, keptAs string, n
 		return fmt.Errorf("record drive file %s: %w", f.DriveWSID, err)
 	}
 	kind, detail := EventDriveFileArchived, map[string]any{"path": f.ICloudPath, "size": f.Size, "sha256": f.SHA256}
-	if existed {
+	switch {
+	case existed && prev.DamagedAt != nil:
+		kind = EventDriveFileRepaired
+	case existed:
 		kind = EventDriveFileChanged
-		if keptAs != "" {
-			detail["kept_as"] = keptAs
-		}
+	}
+	if keptAs != "" {
+		detail["kept_as"] = keptAs
 	}
 	if err = appendEvent(ctx, tx, ts, DriveLibrary, f.DriveWSID, kind, detail); err != nil {
 		return err
+	}
+	if existed && prev.DeletedAt != nil {
+		if err = appendEvent(ctx, tx, ts, DriveLibrary, f.DriveWSID, EventDriveFileRestored,
+			map[string]any{"path": f.ICloudPath}); err != nil {
+			return err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("record drive file: commit: %w", err)

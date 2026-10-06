@@ -40,6 +40,12 @@ type fakeDrive struct {
 	signOut  bool
 	// unlistable folders answer 502, as apps without documents do.
 	unlistable map[string]bool
+	// vanished folders answer ID_INVALID.
+	vanished map[string]bool
+	// signOutDownloads refuses download tokens as an expired session does.
+	signOutDownloads bool
+	// stall holds a document's bytes back until the request is abandoned.
+	stall map[string]bool
 }
 
 func appleSignature(data []byte) string {
@@ -51,7 +57,7 @@ func appleSignature(data []byte) string {
 
 func newFakeDrive(t *testing.T) *fakeDrive {
 	t.Helper()
-	f := &fakeDrive{t: t, children: map[string][]Item{}, content: map[string][]byte{}, packages: map[string]bool{}, badSig: map[string]bool{}, unlistable: map[string]bool{}}
+	f := &fakeDrive{t: t, children: map[string][]Item{}, content: map[string][]byte{}, packages: map[string]bool{}, badSig: map[string]bool{}, unlistable: map[string]bool{}, vanished: map[string]bool{}, stall: map[string]bool{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /drive/retrieveAppLibraries", func(w http.ResponseWriter, _ *http.Request) {
 		f.write(w, map[string]any{"items": []Item{
@@ -80,6 +86,10 @@ func newFakeDrive(t *testing.T) *fakeDrive {
 				w.WriteHeader(http.StatusBadGateway)
 				return
 			}
+			if f.vanished[q.ID] {
+				out[i] = Item{Status: statusMissing}
+				continue
+			}
 			if _, exists := f.children[q.ID]; !exists && q.ID != RootID && !strings.HasPrefix(q.ID, "FOLDER::com.apple.CloudDocs::") {
 				out[i] = Item{Status: statusMissing}
 				continue
@@ -91,6 +101,11 @@ func newFakeDrive(t *testing.T) *fakeDrive {
 	mux.HandleFunc("GET /docs/ws/{zone}/download/by_id", func(w http.ResponseWriter, r *http.Request) {
 		doc := r.URL.Query().Get("document_id")
 		f.mu.Lock()
+		if f.signOutDownloads {
+			f.mu.Unlock()
+			w.WriteHeader(http.StatusMisdirectedRequest)
+			return
+		}
 		data, ok := f.content[doc]
 		pkg, bad := f.packages[doc], f.badSig[doc]
 		f.mu.Unlock()
@@ -111,8 +126,12 @@ func newFakeDrive(t *testing.T) *fakeDrive {
 	})
 	mux.HandleFunc("GET /content/{doc}", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
-		data := f.content[r.PathValue("doc")]
+		data, stall := f.content[r.PathValue("doc")], f.stall[r.PathValue("doc")]
 		f.mu.Unlock()
+		if stall {
+			<-r.Context().Done() // never sends a byte
+			return
+		}
 		_, _ = w.Write(data)
 	})
 	f.srv = httptest.NewServer(mux)
@@ -158,10 +177,10 @@ func (f *fakeDrive) remove(folder, doc string) {
 	}
 }
 
-func (f *fakeDrive) folder(parent, id, name string) {
+func (f *fakeDrive) folder(id, name string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.children[parent] = append(f.children[parent], Item{DriveWSID: id, Type: TypeFolder, Name: name})
+	f.children[RootID] = append(f.children[RootID], Item{DriveWSID: id, Type: TypeFolder, Name: name})
 }
 
 type harness struct {
@@ -191,7 +210,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	h := &harness{t: t, drive: f, db: db, clock: t0}
 	h.a = &Archive{
-		Root: filepath.Join(t.TempDir(), "Drive"), DB: db, Client: c, Workers: 3,
+		Root: filepath.Join(t.TempDir(), "Drive"), DB: db, Client: c, Workers: 3, Stall: time.Minute,
 		Now: func() time.Time { return h.clock }, Log: slog.New(slog.DiscardHandler),
 	}
 	return h
@@ -238,7 +257,7 @@ func zipOf(t *testing.T, files map[string]string) []byte {
 func TestArchiveLifecycle(t *testing.T) {
 	h := newHarness(t)
 	d := h.drive
-	d.folder(RootID, "FOLDER::com.apple.CloudDocs::F1", "Docs")
+	d.folder("FOLDER::com.apple.CloudDocs::F1", "Docs")
 	d.put("FOLDER::com.apple.CloudDocs::F1", "A", "tax", "pdf", []byte("tax v1"), "e1")
 	d.put(RootID, "B", "notes", "txt", []byte("notes"), "e1")
 	d.put(RootID, "E", "empty", "", nil, "e1")
@@ -354,7 +373,7 @@ func TestArchiveScopesAppFolders(t *testing.T) {
 
 func TestArchiveNeverTombstonesOnAFailedListing(t *testing.T) {
 	h := newHarness(t)
-	h.drive.folder(RootID, "FOLDER::com.apple.CloudDocs::F1", "Docs")
+	h.drive.folder("FOLDER::com.apple.CloudDocs::F1", "Docs")
 	h.drive.put("FOLDER::com.apple.CloudDocs::F1", "A", "a", "txt", []byte("a"), "e1")
 	h.sync()
 	h.drive.failList = true
@@ -401,5 +420,149 @@ func TestArchiveNamesAreSafeOnWindows(t *testing.T) {
 	}
 	if !seen["icloud drive/a_b_.txt"] || !seen["icloud drive/_con.txt"] {
 		t.Fatalf("local paths = %v", seen)
+	}
+}
+
+func TestArchiveStopsWhenSignInExpiresDuringDownloads(t *testing.T) {
+	h := newHarness(t)
+	h.drive.put(RootID, "A", "a", "txt", []byte("a"), "e1")
+	h.sync()
+	h.drive.put(RootID, "B", "b", "txt", []byte("b"), "e1")
+	h.drive.remove(RootID, "A")
+	h.drive.signOutDownloads = true
+	rep, err := h.a.Sync(context.Background())
+	if !errors.Is(err, icloud.ErrSignInRequired) {
+		t.Fatalf("sync = %+v, %v; want ErrSignInRequired", rep, err)
+	}
+	// The run stopped: nothing was recorded as deleted.
+	files, err := h.db.DriveFiles(context.Background())
+	if err != nil || files["FILE::com.apple.CloudDocs::A"].DeletedAt != nil {
+		t.Fatalf("a deletion was recorded by a run that stopped: %+v, %v", files, err)
+	}
+}
+
+func TestArchiveNeverMovesAFolderAside(t *testing.T) {
+	h := newHarness(t)
+	h.drive.folder("FOLDER::com.apple.CloudDocs::N", "Notes")
+	h.drive.put("FOLDER::com.apple.CloudDocs::N", "A", "a", "txt", []byte("a"), "e1")
+	h.sync()
+	// The folder is deleted in iCloud (its file stays archived) and a file
+	// takes its name; then a folder takes the name of an archived file.
+	h.drive.mu.Lock()
+	h.drive.children[RootID] = nil
+	h.drive.mu.Unlock()
+	h.drive.put(RootID, "F", "notes", "", []byte("file named like the folder"), "e1")
+	h.drive.put(RootID, "R", "report", "", []byte("r"), "e1")
+	h.sync()
+	h.drive.remove(RootID, "R")
+	h.drive.folder("FOLDER::com.apple.CloudDocs::R2", "report")
+	h.drive.put("FOLDER::com.apple.CloudDocs::R2", "C", "child", "txt", []byte("c"), "e1")
+	rep := h.sync()
+	if rep.Failed != 0 {
+		t.Fatalf("sync = %+v", rep)
+	}
+	files, err := h.db.DriveFiles(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{
+		"FILE::com.apple.CloudDocs::A": "iCloud Drive/Notes/a.txt",
+		"FILE::com.apple.CloudDocs::F": "iCloud Drive/notes (F)",
+		"FILE::com.apple.CloudDocs::R": "iCloud Drive/report",
+		"FILE::com.apple.CloudDocs::C": "iCloud Drive/report (R2)/child.txt",
+	} {
+		if got := files[id].LocalPath; got != want {
+			t.Errorf("%s at %q, want %q", id, got, want)
+		}
+		if got := h.read(files[id].LocalPath); got == "" && id != "FILE::com.apple.CloudDocs::E" {
+			t.Errorf("%s is empty on disk", id)
+		}
+	}
+}
+
+func TestArchiveMoveSurvivesAFailedDownloadAndRerun(t *testing.T) {
+	h := newHarness(t)
+	h.drive.put(RootID, "A", "a", "txt", []byte("v1"), "e1")
+	h.sync()
+	// Moved and changed at once; the download fails this time.
+	h.drive.remove(RootID, "A")
+	h.drive.folder("FOLDER::com.apple.CloudDocs::D", "Docs")
+	h.drive.put("FOLDER::com.apple.CloudDocs::D", "A", "a", "txt", []byte("v2"), "e2")
+	h.drive.badSig["A"] = true
+	if rep := h.sync(); rep.Moved != 1 || rep.Failed != 1 {
+		t.Fatalf("failing sync = %+v", rep)
+	}
+	files, _ := h.db.DriveFiles(context.Background())
+	if files["FILE::com.apple.CloudDocs::A"].LocalPath != "iCloud Drive/Docs/a.txt" || h.read("iCloud Drive/Docs/a.txt") != "v1" {
+		t.Fatalf("after the failed download the ledger and disk disagree: %+v", files["FILE::com.apple.CloudDocs::A"])
+	}
+	h.drive.badSig["A"] = false
+	if rep := h.sync(); rep.Changed != 1 || rep.Moved != 0 || h.read("iCloud Drive/Docs/a.txt") != "v2" {
+		t.Fatalf("rerun = %+v", rep)
+	}
+	versions, _ := filepath.Glob(filepath.Join(h.a.Root, VersionsDir, "*", "iCloud Drive", "Docs", "a.txt"))
+	if len(versions) != 1 {
+		t.Fatalf("the replaced copy was not kept exactly once: %v", versions)
+	}
+}
+
+func TestArchiveCaseOnlyRename(t *testing.T) {
+	h := newHarness(t)
+	h.drive.put(RootID, "A", "notes", "txt", []byte("n"), "e1")
+	h.sync()
+	h.drive.put(RootID, "A", "NOTES", "txt", []byte("n"), "e1")
+	if rep := h.sync(); rep.Moved != 1 || rep.Failed != 0 {
+		t.Fatalf("rename sync = %+v", rep)
+	}
+	if h.read("iCloud Drive/NOTES.txt") != "n" {
+		t.Fatal("the renamed copy is not readable")
+	}
+	if versions, _ := filepath.Glob(filepath.Join(h.a.Root, VersionsDir, "*")); len(versions) != 0 {
+		t.Fatalf("a case-only rename kept a version: %v", versions)
+	}
+}
+
+func TestArchiveAbandonsAStalledDownload(t *testing.T) {
+	h := newHarness(t)
+	h.a.Stall = 200 * time.Millisecond
+	h.drive.put(RootID, "S", "slow", "bin", []byte("never arrives"), "e1")
+	h.drive.stall["S"] = true
+	rep := h.sync()
+	if rep.Failed != 1 || !strings.Contains(rep.Failures[0], "stalled") {
+		t.Fatalf("sync = %+v", rep)
+	}
+}
+
+func TestArchiveKeepsTwoVersionsInOneSecond(t *testing.T) {
+	h := newHarness(t)
+	for _, body := range []string{"one", "two"} {
+		if err := os.MkdirAll(filepath.Join(h.a.Root, "iCloud Drive"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(h.a.Root, "iCloud Drive", "x.txt"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.a.keep("iCloud Drive/x.txt"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kept, _ := filepath.Glob(filepath.Join(h.a.Root, VersionsDir, "*", "iCloud Drive", "x.txt"))
+	if len(kept) != 2 {
+		t.Fatalf("versions = %v; want both kept", kept)
+	}
+}
+
+func TestArchiveTreatsAVanishedSubfolderAsIncomplete(t *testing.T) {
+	h := newHarness(t)
+	h.drive.folder("FOLDER::com.apple.CloudDocs::D", "Docs")
+	h.drive.put("FOLDER::com.apple.CloudDocs::D", "A", "a", "txt", []byte("a"), "e1")
+	h.sync()
+	h.drive.vanished["FOLDER::com.apple.CloudDocs::D"] = true
+	if _, err := h.a.Sync(context.Background()); err == nil {
+		t.Fatal("a vanished folder in the iCloud Drive tree did not fail the walk")
+	}
+	files, _ := h.db.DriveFiles(context.Background())
+	if files["FILE::com.apple.CloudDocs::A"].DeletedAt != nil {
+		t.Fatal("files of a vanished folder were recorded as deleted")
 	}
 }

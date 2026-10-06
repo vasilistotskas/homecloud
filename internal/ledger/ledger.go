@@ -34,7 +34,7 @@ type DB struct {
 
 // Open opens (creating if needed) the ledger at file and applies pending migrations.
 func Open(ctx context.Context, file string) (*DB, error) {
-	common := "_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	common := "_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)"
 	base := "file:" + filepath.ToSlash(file)
 
 	w, err := sql.Open("sqlite", base+"?"+common+"&_txlock=immediate")

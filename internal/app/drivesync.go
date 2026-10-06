@@ -100,7 +100,10 @@ func (a *Agent) syncDrive(ctx context.Context) (any, bool) {
 		return fail(DriveOutcomeError, err)
 	}
 	root := filepath.Join(a.cfg.Storage.Root, drive.Dir)
-	archive := &drive.Archive{Root: root, DB: a.db, Client: client, Now: a.now, Log: a.log, Workers: a.cfg.Drive.Workers}
+	archive := &drive.Archive{
+		Root: root, DB: a.db, Client: client, Now: a.now, Log: a.log,
+		Workers: a.cfg.Drive.Workers, Stall: a.cfg.Drive.StallTimeout.Std(),
+	}
 	rep.Report, err = archive.Sync(ctx)
 	// Keep what the session learned (renewed cookies), unless the owner
 	// signed in again meanwhile.
@@ -108,6 +111,12 @@ func (a *Agent) syncDrive(ctx context.Context) (any, bool) {
 		err = errors.Join(err, saveErr)
 	} else if !saved {
 		a.log.Info("iCloud session changed during the sync; keeping the newer sign-in")
+	}
+	// The manifest follows the ledger even when the sync stopped part way:
+	// whatever was archived is listed.
+	var manifestErr error
+	if rep.ManifestRows, manifestErr = export.WriteDrive(context.WithoutCancel(ctx), a.db, root); manifestErr != nil {
+		err = errors.Join(err, manifestErr)
 	}
 	a.hub.Changed()
 	if errors.Is(err, icloud.ErrSignInRequired) {
@@ -120,9 +129,6 @@ func (a *Agent) syncDrive(ctx context.Context) (any, bool) {
 		return fail(DriveOutcomeSignInRequired, err)
 	}
 	if err != nil {
-		return fail(DriveOutcomeError, err)
-	}
-	if rep.ManifestRows, err = export.WriteDrive(ctx, a.db, root); err != nil {
 		return fail(DriveOutcomeError, err)
 	}
 	rep.Outcome = DriveOutcomeOK
