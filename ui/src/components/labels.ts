@@ -1,12 +1,12 @@
 import {
   AssetState,
   DriveFileChange,
-  DriveHealthState,
+  HealthState,
   DriveSyncOutcome,
   IPhoneBackupState,
   MediaType,
   Tier,
-} from "../gen/homecloud/agent/v2/agent_pb";
+} from "../gen/homecloud/agent/v3/agent_pb";
 
 /** The badge colours the app uses. */
 export type BadgeColor = "brand" | "success" | "warning" | "danger" | "informative";
@@ -49,12 +49,22 @@ export const iphoneSeverity: Record<IPhoneBackupState, number> = {
   [IPhoneBackupState.INVALID]: 7,
 };
 
-export const driveHealthBadge: Record<DriveHealthState, Labelled> = {
-  [DriveHealthState.UNSPECIFIED]: { label: "Not checked yet", color: "informative" },
-  [DriveHealthState.OK]: { label: "Healthy", color: "success" },
-  [DriveHealthState.WARNING]: { label: "Warning", color: "warning" },
-  [DriveHealthState.FAILING]: { label: "Failing", color: "danger" },
-  [DriveHealthState.UNAVAILABLE]: { label: "Health unavailable", color: "informative" },
+export const healthBadge: Record<HealthState, Labelled> = {
+  [HealthState.UNSPECIFIED]: { label: "Not checked yet", color: "informative" },
+  [HealthState.OK]: { label: "Healthy", color: "success" },
+  [HealthState.WARNING]: { label: "Warning", color: "warning" },
+  [HealthState.FAILING]: { label: "Failing", color: "danger" },
+  [HealthState.UNAVAILABLE]: { label: "Health unavailable", color: "informative" },
+};
+
+/** What a running md sync action is doing, for people. */
+export const raidSyncLabel: Record<string, string> = {
+  resync: "Resyncing",
+  recover: "Rebuilding",
+  reshape: "Reshaping",
+  check: "Checking",
+  repair: "Repairing",
+  frozen: "Paused",
 };
 
 export const driveSyncOutcomeBadge: Record<DriveSyncOutcome, Labelled> = {

@@ -18,7 +18,7 @@ import {
   RunKind,
   RunResult,
   SettingsSchema,
-} from "../gen/homecloud/agent/v2/agent_pb";
+} from "../gen/homecloud/agent/v3/agent_pb";
 
 const browser: Platform = { kind: "browser", mediaUrl: (path) => path };
 

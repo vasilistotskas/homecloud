@@ -1,7 +1,7 @@
 import { makeStyles, tokens } from "@fluentui/react-components";
 
 import { formatDuration, formatWhen, toDate } from "../format";
-import type { Run } from "../gen/homecloud/agent/v2/agent_pb";
+import type { Run } from "../gen/homecloud/agent/v3/agent_pb";
 
 export const useTableStyles = makeStyles({
   tableBox: { overflowX: "auto" },

@@ -6,17 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
 )
 
-const (
-	mountinfoPath = "/proc/self/mountinfo"
-	byUUIDDir     = "/dev/disk/by-uuid"
-)
+const mountinfoPath = "/proc/self/mountinfo"
 
 // SameVolume reports whether a and b, existing paths, are on the same
 // filesystem. It compares device numbers, which also works for bind mounts in
@@ -32,58 +28,19 @@ func SameVolume(a, b string) (bool, error) {
 	return sa.Dev == sb.Dev, nil
 }
 
-// VolumeID returns the filesystem UUID of the volume containing path by matching
-// the mount against /dev/disk/by-uuid. No privileges needed.
-func VolumeID(path string) (string, error) {
-	m, err := mountOf(path)
-	if err != nil {
-		return "", err
-	}
-	entries, err := os.ReadDir(byUUIDDir)
-	if err != nil {
-		return "", fmt.Errorf("%w: read %s: %w", ErrNoVolumeIdentity, byUUIDDir, err)
-	}
-	for _, e := range entries {
-		target, linkErr := filepath.EvalSymlinks(filepath.Join(byUUIDDir, e.Name()))
-		if linkErr != nil {
-			continue
-		}
-		var st unix.Stat_t
-		if statErr := unix.Stat(target, &st); statErr != nil {
-			continue
-		}
-		if m.matches(target, st.Rdev) {
-			return e.Name(), nil
-		}
-	}
-	return "", fmt.Errorf("%w: the mount holding %q (device %d:%d, source %s) has no entry in %s",
-		ErrNoVolumeIdentity, path, unix.Major(m.dev), unix.Minor(m.dev), m.source, byUUIDDir)
-}
-
 // mount is the filesystem mount holding a path, as /proc/self/mountinfo reports it.
 type mount struct {
 	// dev is the st_dev of files on the mount (mountinfo's major:minor).
 	dev uint64
-	// source is the mount source, e.g. /dev/sda1, /dev/root or overlay.
+	// fsType is the file system type, e.g. ext4 or btrfs.
+	fsType string
+	// source is the mount source, e.g. /dev/sda1, /dev/mapper/vg-lv or overlay.
 	source string
 }
 
-// matches reports whether the block device at devicePath, with device number
-// rdev, holds m. Most block-backed filesystems report the device's own number,
-// which also covers sources such as /dev/root that are not device nodes.
-// Filesystems that report an anonymous number (major 0, e.g. btrfs) are
-// matched by their source device instead.
-func (m mount) matches(devicePath string, rdev uint64) bool {
-	if unix.Major(m.dev) != 0 {
-		return rdev == m.dev
-	}
-	source, err := filepath.EvalSymlinks(m.source)
-	return err == nil && source == devicePath
-}
-
 // mountOf finds the mount holding path via statx(STATX_MNT_ID) (Linux ≥ 5.8)
-// and /proc/self/mountinfo. It fails with ErrNoVolumeIdentity for mounts that
-// are not backed by a block device (overlay, tmpfs, network file systems).
+// and /proc/self/mountinfo. It fails with ErrHealthUnsupported for mounts
+// that are not backed by a block device (overlay, tmpfs, network file systems).
 func mountOf(path string) (mount, error) {
 	var st unix.Statx_t
 	if err := unix.Statx(unix.AT_FDCWD, path, 0, unix.STATX_MNT_ID, &st); err != nil {
@@ -103,7 +60,7 @@ func mountOf(path string) (mount, error) {
 		return mount{}, err
 	}
 	if !strings.HasPrefix(m.source, "/dev/") {
-		return mount{}, fmt.Errorf("%w: %q is on %q, not a block device", ErrNoVolumeIdentity, path, m.source)
+		return mount{}, fmt.Errorf("%w: %q is on %q, not a block device", ErrHealthUnsupported, path, m.source)
 	}
 	return m, nil
 }
@@ -130,7 +87,7 @@ func parseMount(r io.Reader, mountID uint64) (mount, error) {
 		}
 		for i, field := range fields {
 			if field == "-" && i+2 < len(fields) {
-				return mount{dev: unix.Mkdev(uint32(maj), uint32(minor)), source: fields[i+2]}, nil
+				return mount{dev: unix.Mkdev(uint32(maj), uint32(minor)), fsType: fields[i+1], source: fields[i+2]}, nil
 			}
 		}
 		return mount{}, fmt.Errorf("malformed mountinfo line for mount %s", want)

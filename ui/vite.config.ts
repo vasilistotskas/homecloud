@@ -7,7 +7,7 @@ import type { ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
 
 // Paths the agent serves besides the app itself: the API and signed media.
-const agentPrefixes = ["/homecloud.agent.v2.AgentService", "/media/"];
+const agentPrefixes = ["/homecloud.agent.v3.AgentService", "/media/"];
 
 // agentURL reads the running agent's address from its discovery file (the same
 // per-user state directory the agent writes; see internal/platform StateDir).

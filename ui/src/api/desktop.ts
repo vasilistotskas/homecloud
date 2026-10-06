@@ -13,7 +13,7 @@ import { createConnectTransport } from "@connectrpc/connect-web";
 import { invoke } from "@tauri-apps/api/core";
 
 import type { DesktopConnection, Platform } from "../app/platformContext";
-import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
+import { AgentService } from "../gen/homecloud/agent/v3/agent_pb";
 
 /** Which agent the desktop shell uses (desktop/src-tauri ConnectionSettings). */
 type ConnectionSettings = { kind: "this_pc" } | { kind: "remote"; url: string; device_id: string };

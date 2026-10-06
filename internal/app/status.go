@@ -42,7 +42,7 @@ type Status struct {
 	NextCycleAt time.Time
 	// Drive is the latest health check of the archive drive; zero until the
 	// first cycle has checked it.
-	Drive health.Report
+	Storage health.Report
 }
 
 // Hub holds the live Status and wakes watchers whenever it, or anything they

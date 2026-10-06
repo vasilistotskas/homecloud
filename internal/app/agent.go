@@ -55,8 +55,10 @@ type Agent struct {
 	notify Notifier
 	keiLog io.Writer
 	now    func() time.Time
-	// readDrive reads the archive drive's SMART data.
-	readDrive func(context.Context) (platform.DriveHealth, error)
+	// readStorage finds the drives (and md arrays) holding the archive, and
+	// readDrive reads one drive's SMART data.
+	readStorage func() (platform.Storage, error)
+	readDrive   health.DriveReader
 	// checkArchive confirms the configured archive is present at storage.root.
 	checkArchive func() error
 	// checkSpace reports the archive volume's space, wrapping
@@ -79,9 +81,8 @@ func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, k
 ) *Agent {
 	return &Agent{
 		cfg: cfg, db: db, log: log, notify: n, keiLog: keiLog, renderer: renderer, now: now,
-		readDrive: func(ctx context.Context) (platform.DriveHealth, error) {
-			return platform.DriveHealthOf(ctx, cfg.Storage.Root)
-		},
+		readStorage:  func() (platform.Storage, error) { return platform.StorageOf(cfg.Storage.Root) },
+		readDrive:    health.ReaderFor(cfg),
 		checkArchive: func() error { return archive.Check(cfg.Storage.Root, cfg.Storage.ArchiveID) },
 		checkSpace: func() (platform.Space, error) {
 			return platform.CheckFreeSpace(cfg.Storage.Root, cfg.Storage.MinFreePercent)
@@ -312,7 +313,7 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 			Tags:     []string{"rotating_light"},
 		})
 	}
-	if err := a.checkDrive(ctx); err != nil {
+	if err := a.checkStorage(ctx); err != nil {
 		errs = append(errs, err)
 	}
 	if err := a.hideHiddenFolder(); err != nil {
@@ -376,12 +377,13 @@ func ParseCycleReport(detail string) (CycleReport, error) {
 	return rep, nil
 }
 
-// checkDrive reads and judges the archive drive, publishes the result, and
-// records and alerts on changes. The archive is the only copy of the library,
-// so a drive that predicts its own failure is urgent.
-func (a *Agent) checkDrive(ctx context.Context) error {
-	report := health.Check(func() (platform.DriveHealth, error) { return a.readDrive(ctx) }, a.now())
-	a.hub.update(func(s *Status) { s.Drive = report })
+// checkStorage reads and judges the drives and arrays holding the archive,
+// publishes the result, and records and alerts on changes. The archive is the
+// only copy of the library, so a drive that predicts its own failure, or an
+// array that lost its redundancy, is urgent.
+func (a *Agent) checkStorage(ctx context.Context) error {
+	report := health.Check(ctx, a.readStorage, a.readDrive, a.now())
+	a.hub.update(func(s *Status) { s.Storage = report })
 
 	previous, changed, err := a.db.RecordDriveHealth(ctx, string(report.State), report.Reasons, report.CheckedAt)
 	if err != nil {
@@ -390,12 +392,12 @@ func (a *Agent) checkDrive(ctx context.Context) error {
 	if !changed {
 		return nil
 	}
-	a.log.Info("archive drive health changed", "from", previous, "to", report.State, "reasons", report.Reasons)
+	a.log.Info("archive storage health changed", "from", previous, "to", report.State, "reasons", report.Reasons)
 	if report.State == health.StateWarning || report.State == health.StateFailing {
 		a.alert(ctx, notify.Msg{
-			Title: "homecloud: archive drive needs attention",
-			Body: "The drive holding your archive reports a problem (" + strings.Join(report.Reasons, "; ") +
-				"). It holds your only copy: replace it soon, and keep iCloud cleanup off until then.",
+			Title: "homecloud: archive storage needs attention",
+			Body: "The storage holding your archive reports a problem (" + strings.Join(report.Reasons, "; ") +
+				"). It holds your only copy: replace a failing drive soon, and keep iCloud cleanup off until then.",
 			Priority: notify.PriorityUrgent,
 			Tags:     []string{"rotating_light"},
 		})

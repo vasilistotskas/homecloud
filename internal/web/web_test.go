@@ -17,8 +17,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	agentv2 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2"
-	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2/agentv2connect"
+	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
+	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
 	"github.com/vasilistotskas/homecloud/internal/api"
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/auth"
@@ -58,7 +58,7 @@ type env struct {
 	token    string
 	db       *ledger.DB
 	agent    *fakeAgent
-	client   agentv2connect.AgentServiceClient
+	client   agentv3connect.AgentServiceClient
 }
 
 // setup starts the API over a fresh ledger; opts adjust the fake agent
@@ -134,7 +134,7 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 	t.Cleanup(srv.Close)
 	return &env{
 		url: srv.URL, host: listen, token: token, db: db, agent: agent, renderer: renderer,
-		client: agentv2connect.NewAgentServiceClient(srv.Client(), srv.URL, connect.WithInterceptors(auth.Bearer(token))),
+		client: agentv3connect.NewAgentServiceClient(srv.Client(), srv.URL, connect.WithInterceptors(auth.Bearer(token))),
 	}
 }
 
@@ -167,16 +167,16 @@ func seed(t *testing.T, db *ledger.DB, assetID string, quarantine bool) {
 
 func TestRequiresCredentials(t *testing.T) {
 	e := setup(t)
-	anon := agentv2connect.NewAgentServiceClient(http.DefaultClient, e.url)
-	_, err := anon.GetInfo(context.Background(), connect.NewRequest(&agentv2.GetInfoRequest{}))
+	anon := agentv3connect.NewAgentServiceClient(http.DefaultClient, e.url)
+	_, err := anon.GetInfo(context.Background(), connect.NewRequest(&agentv3.GetInfoRequest{}))
 	if code(err) != connect.CodeUnauthenticated {
 		t.Fatalf("anonymous GetInfo = %v, want unauthenticated", err)
 	}
-	wrong := agentv2connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(auth.Bearer("nope")))
-	if _, wrongErr := wrong.GetInfo(context.Background(), connect.NewRequest(&agentv2.GetInfoRequest{})); code(wrongErr) != connect.CodeUnauthenticated {
+	wrong := agentv3connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(auth.Bearer("nope")))
+	if _, wrongErr := wrong.GetInfo(context.Background(), connect.NewRequest(&agentv3.GetInfoRequest{})); code(wrongErr) != connect.CodeUnauthenticated {
 		t.Fatalf("wrong token = %v, want unauthenticated", wrongErr)
 	}
-	info, err := e.client.GetInfo(context.Background(), connect.NewRequest(&agentv2.GetInfoRequest{}))
+	info, err := e.client.GetInfo(context.Background(), connect.NewRequest(&agentv3.GetInfoRequest{}))
 	if err != nil || info.Msg.GetApiVersion() != api.Version {
 		t.Fatalf("GetInfo = %v, %v", info, err)
 	}
@@ -226,7 +226,7 @@ func TestHostAndOriginChecks(t *testing.T) {
 		{"desktop origin", map[string]string{"Authorization": bearer, "Origin": "http://tauri.localhost"}, http.StatusOK},
 	}
 	for _, c := range cases {
-		res := rawPost(t, e, agentv2connect.AgentServiceGetInfoProcedure, c.hdr)
+		res := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure, c.hdr)
 		if res.status != c.want {
 			t.Errorf("%s: status %d, want %d", c.name, res.status, c.want)
 		}
@@ -250,17 +250,17 @@ func TestPublicOrigin(t *testing.T) {
 		{"another tailnet host", map[string]string{"Authorization": bearer, "Host": "other.example.ts.net"}, http.StatusForbidden},
 	}
 	for _, c := range cases {
-		res := rawPost(t, e, agentv2connect.AgentServiceGetInfoProcedure, c.hdr)
+		res := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure, c.hdr)
 		if res.status != c.want {
 			t.Errorf("%s: status %d, want %d", c.name, res.status, c.want)
 		}
 	}
 
-	lc, err := e.client.CreateLoginCode(context.Background(), connect.NewRequest(&agentv2.CreateLoginCodeRequest{}))
+	lc, err := e.client.CreateLoginCode(context.Background(), connect.NewRequest(&agentv3.CreateLoginCodeRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, e.url+agentv2connect.AgentServiceExchangeLoginCodeProcedure,
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, e.url+agentv3connect.AgentServiceExchangeLoginCodeProcedure,
 		strings.NewReader(`{"code":"`+lc.Msg.GetCode()+`"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -284,44 +284,44 @@ func TestPublicOrigin(t *testing.T) {
 func TestPairedDevice(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(&agentv2.CreateLoginCodeRequest{}))
+	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The desktop app pairs from its own origin, with no credential yet.
-	anon := agentv2connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(origin("http://tauri.localhost")))
-	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv2.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: " "})); code(err) != connect.CodeInvalidArgument {
+	anon := agentv3connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(origin("http://tauri.localhost")))
+	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv3.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: " "})); code(err) != connect.CodeInvalidArgument {
 		t.Fatalf("blank name = %v", err)
 	}
-	paired, err := anon.PairDevice(ctx, connect.NewRequest(&agentv2.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: "Laptop"}))
+	paired, err := anon.PairDevice(ctx, connect.NewRequest(&agentv3.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: "Laptop"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv2.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: "Laptop"})); code(err) != connect.CodePermissionDenied {
+	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv3.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: "Laptop"})); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("reused code = %v", err)
 	}
 
-	device := agentv2connect.NewAgentServiceClient(http.DefaultClient, e.url,
+	device := agentv3connect.NewAgentServiceClient(http.DefaultClient, e.url,
 		connect.WithInterceptors(origin("http://tauri.localhost"), auth.Bearer(paired.Msg.GetToken())))
-	if _, err = device.GetInfo(ctx, connect.NewRequest(&agentv2.GetInfoRequest{})); err != nil {
+	if _, err = device.GetInfo(ctx, connect.NewRequest(&agentv3.GetInfoRequest{})); err != nil {
 		t.Fatalf("device call: %v", err)
 	}
-	if _, err = device.CreateLoginCode(ctx, connect.NewRequest(&agentv2.CreateLoginCodeRequest{})); code(err) != connect.CodePermissionDenied {
+	if _, err = device.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{})); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("a device minted a login code: %v", err)
 	}
-	list, err := device.ListDevices(ctx, connect.NewRequest(&agentv2.ListDevicesRequest{}))
+	list, err := device.ListDevices(ctx, connect.NewRequest(&agentv3.ListDevicesRequest{}))
 	if err != nil || len(list.Msg.GetDevices()) != 1 || list.Msg.GetDevices()[0].GetName() != "Laptop" ||
 		list.Msg.GetDevices()[0].GetId() != paired.Msg.GetDeviceId() {
 		t.Fatalf("devices = %v, %v", list, err)
 	}
 
-	if _, err = e.client.RevokeDevice(ctx, connect.NewRequest(&agentv2.RevokeDeviceRequest{DeviceId: paired.Msg.GetDeviceId()})); err != nil {
+	if _, err = e.client.RevokeDevice(ctx, connect.NewRequest(&agentv3.RevokeDeviceRequest{DeviceId: paired.Msg.GetDeviceId()})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = device.GetInfo(ctx, connect.NewRequest(&agentv2.GetInfoRequest{})); code(err) != connect.CodeUnauthenticated {
+	if _, err = device.GetInfo(ctx, connect.NewRequest(&agentv3.GetInfoRequest{})); code(err) != connect.CodeUnauthenticated {
 		t.Fatalf("revoked device call = %v, want Unauthenticated", err)
 	}
-	if _, err = e.client.RevokeDevice(ctx, connect.NewRequest(&agentv2.RevokeDeviceRequest{DeviceId: paired.Msg.GetDeviceId()})); code(err) != connect.CodeNotFound {
+	if _, err = e.client.RevokeDevice(ctx, connect.NewRequest(&agentv3.RevokeDeviceRequest{DeviceId: paired.Msg.GetDeviceId()})); code(err) != connect.CodeNotFound {
 		t.Fatalf("revoking twice = %v", err)
 	}
 }
@@ -338,7 +338,7 @@ func origin(o string) connect.UnaryInterceptorFunc {
 
 func TestDesktopPreflight(t *testing.T) {
 	e := setup(t)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodOptions, e.url+agentv2connect.AgentServiceGetInfoProcedure, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodOptions, e.url+agentv3connect.AgentServiceGetInfoProcedure, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,18 +365,18 @@ func TestDesktopPreflight(t *testing.T) {
 func TestBrowserLogin(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(&agentv2.CreateLoginCodeRequest{}))
+	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	self := "http://" + e.host
 
-	bad := rawPost(t, e, agentv2connect.AgentServiceExchangeLoginCodeProcedure, map[string]string{"Origin": self})
+	bad := rawPost(t, e, agentv3connect.AgentServiceExchangeLoginCodeProcedure, map[string]string{"Origin": self})
 	if bad.status == http.StatusOK || len(bad.cookies) != 0 {
 		t.Fatalf("empty code: status %d cookies %v", bad.status, bad.cookies)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.url+agentv2connect.AgentServiceExchangeLoginCodeProcedure,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.url+agentv3connect.AgentServiceExchangeLoginCodeProcedure,
 		strings.NewReader(`{"code":"`+lc.Msg.GetCode()+`"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -394,17 +394,17 @@ func TestBrowserLogin(t *testing.T) {
 	}
 	session := cookies[0].Name + "=" + cookies[0].Value
 
-	sameSite := rawPost(t, e, agentv2connect.AgentServiceGetInfoProcedure,
+	sameSite := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure,
 		map[string]string{"Cookie": session, "Origin": self, "Sec-Fetch-Site": "same-origin"})
 	if sameSite.status != http.StatusOK {
 		t.Fatalf("same-origin session call: %d", sameSite.status)
 	}
-	crossSite := rawPost(t, e, agentv2connect.AgentServiceGetInfoProcedure,
+	crossSite := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure,
 		map[string]string{"Cookie": session, "Sec-Fetch-Site": "cross-site"})
 	if crossSite.status == http.StatusOK {
 		t.Fatal("cross-site cookie request must be rejected")
 	}
-	mint := rawPost(t, e, agentv2connect.AgentServiceCreateLoginCodeProcedure,
+	mint := rawPost(t, e, agentv3connect.AgentServiceCreateLoginCodeProcedure,
 		map[string]string{"Cookie": session, "Origin": self, "Sec-Fetch-Site": "same-origin"})
 	if mint.status == http.StatusOK {
 		t.Fatal("a session must not mint login codes")
@@ -418,19 +418,19 @@ func TestOverviewAndWatch(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ov, err := e.client.GetOverview(ctx, connect.NewRequest(&agentv2.GetOverviewRequest{}))
+	ov, err := e.client.GetOverview(ctx, connect.NewRequest(&agentv3.GetOverviewRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	o := ov.Msg.GetOverview()
 	if o.GetAssets().GetDownloaded() != 1 || o.GetAssets().GetQuarantined() != 1 || o.GetArchive().GetFiles() != 2 ||
 		o.GetStorage().GetTotalBytes() <= 0 || o.GetLastCycle() != nil ||
-		o.GetAppleAccount().GetState() != agentv2.AppleAccountState_APPLE_ACCOUNT_STATE_UNSPECIFIED {
+		o.GetAppleAccount().GetState() != agentv3.AppleAccountState_APPLE_ACCOUNT_STATE_UNSPECIFIED {
 		t.Fatalf("overview = %v", o)
 	}
 
-	streamClient := agentv2connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(auth.Bearer(e.token)))
-	stream, err := streamClient.WatchOverview(ctx, connect.NewRequest(&agentv2.WatchOverviewRequest{}))
+	streamClient := agentv3connect.NewAgentServiceClient(http.DefaultClient, e.url, connect.WithInterceptors(auth.Bearer(e.token)))
+	stream, err := streamClient.WatchOverview(ctx, connect.NewRequest(&agentv3.WatchOverviewRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +438,7 @@ func TestOverviewAndWatch(t *testing.T) {
 	if !stream.Receive() || stream.Msg().GetOverview().GetAssets().GetQuarantined() != 1 {
 		t.Fatalf("first overview: %v", stream.Err())
 	}
-	if _, err := e.client.ReleaseQuarantine(ctx, connect.NewRequest(&agentv2.ReleaseQuarantineRequest{
+	if _, err := e.client.ReleaseQuarantine(ctx, connect.NewRequest(&agentv3.ReleaseQuarantineRequest{
 		Library: "PrimarySync", AssetId: "Q", Reason: "checked: plays fine",
 	})); err != nil {
 		t.Fatal(err)
@@ -453,24 +453,24 @@ func TestQuarantineActions(t *testing.T) {
 	seed(t, e.db, "Q", true)
 	ctx := context.Background()
 
-	list, err := e.client.ListQuarantine(ctx, connect.NewRequest(&agentv2.ListQuarantineRequest{}))
+	list, err := e.client.ListQuarantine(ctx, connect.NewRequest(&agentv3.ListQuarantineRequest{}))
 	if err != nil || len(list.Msg.GetAssets()) != 1 {
 		t.Fatalf("ListQuarantine = %v, %v", list, err)
 	}
 	qa := list.Msg.GetAssets()[0]
-	if qa.GetAsset().GetFilename() != "Q.MOV" || qa.GetFailures()[0].GetTier() != agentv2.Tier_TIER_STRUCTURE {
+	if qa.GetAsset().GetFilename() != "Q.MOV" || qa.GetFailures()[0].GetTier() != agentv3.Tier_TIER_STRUCTURE {
 		t.Fatalf("quarantined asset = %v", qa)
 	}
-	asset, err := e.client.GetAsset(ctx, connect.NewRequest(&agentv2.GetAssetRequest{Library: "PrimarySync", AssetId: "Q"}))
+	asset, err := e.client.GetAsset(ctx, connect.NewRequest(&agentv3.GetAssetRequest{Library: "PrimarySync", AssetId: "Q"}))
 	if err != nil || asset.Msg.GetAsset().GetRenditions()[0].GetFailure().GetReason() != "no moov box" ||
 		len(asset.Msg.GetAsset().GetRenditions()[0].GetRequiredTiers()) != 3 {
 		t.Fatalf("GetAsset = %v, %v", asset, err)
 	}
-	if _, missErr := e.client.GetAsset(ctx, connect.NewRequest(&agentv2.GetAssetRequest{Library: "PrimarySync", AssetId: "nope"})); code(missErr) != connect.CodeNotFound {
+	if _, missErr := e.client.GetAsset(ctx, connect.NewRequest(&agentv3.GetAssetRequest{Library: "PrimarySync", AssetId: "nope"})); code(missErr) != connect.CodeNotFound {
 		t.Fatalf("missing asset = %v", missErr)
 	}
 	release := func(reason string) error {
-		_, relErr := e.client.ReleaseQuarantine(ctx, connect.NewRequest(&agentv2.ReleaseQuarantineRequest{
+		_, relErr := e.client.ReleaseQuarantine(ctx, connect.NewRequest(&agentv3.ReleaseQuarantineRequest{
 			Library: "PrimarySync", AssetId: "Q", Reason: reason,
 		}))
 		return relErr
@@ -484,15 +484,15 @@ func TestQuarantineActions(t *testing.T) {
 	if againErr := release("again"); code(againErr) != connect.CodeFailedPrecondition {
 		t.Fatalf("second release = %v", againErr)
 	}
-	events, err := e.client.ListEvents(ctx, connect.NewRequest(&agentv2.ListEventsRequest{
-		Kinds: []agentv2.EventKind{agentv2.EventKind_EVENT_KIND_QUARANTINED, agentv2.EventKind_EVENT_KIND_QUARANTINE_RELEASED},
+	events, err := e.client.ListEvents(ctx, connect.NewRequest(&agentv3.ListEventsRequest{
+		Kinds: []agentv3.EventKind{agentv3.EventKind_EVENT_KIND_QUARANTINED, agentv3.EventKind_EVENT_KIND_QUARANTINE_RELEASED},
 	}))
 	if err != nil || len(events.Msg.GetEvents()) != 2 ||
 		events.Msg.GetEvents()[0].GetQuarantineReleased().GetReason() != "reviewed" ||
-		events.Msg.GetEvents()[1].GetQuarantined().GetTier() != agentv2.Tier_TIER_STRUCTURE {
+		events.Msg.GetEvents()[1].GetQuarantined().GetTier() != agentv3.Tier_TIER_STRUCTURE {
 		t.Fatalf("ListEvents = %v, %v", events, err)
 	}
-	if _, err := e.client.ListEvents(ctx, connect.NewRequest(&agentv2.ListEventsRequest{})); code(err) != connect.CodeInvalidArgument {
+	if _, err := e.client.ListEvents(ctx, connect.NewRequest(&agentv3.ListEventsRequest{})); code(err) != connect.CodeInvalidArgument {
 		t.Fatalf("ListEvents without kinds = %v", err)
 	}
 }
@@ -510,21 +510,21 @@ func TestRunsPagingAndSync(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	first, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv2.ListRunsRequest{Kind: agentv2.RunKind_RUN_KIND_CYCLE, PageSize: 2}))
+	first, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv3.ListRunsRequest{Kind: agentv3.RunKind_RUN_KIND_CYCLE, PageSize: 2}))
 	if err != nil || len(first.Msg.GetRuns()) != 2 || first.Msg.GetNextPageToken() == "" {
 		t.Fatalf("first page = %v, %v", first, err)
 	}
-	if first.Msg.GetRuns()[0].GetCycle().GetDownload() != agentv2.DownloadOutcome_DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED {
+	if first.Msg.GetRuns()[0].GetCycle().GetDownload() != agentv3.DownloadOutcome_DOWNLOAD_OUTCOME_SIGN_IN_REQUIRED {
 		t.Fatalf("run = %v", first.Msg.GetRuns()[0])
 	}
-	rest, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv2.ListRunsRequest{Kind: agentv2.RunKind_RUN_KIND_CYCLE, PageSize: 2, PageToken: first.Msg.GetNextPageToken()}))
+	rest, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv3.ListRunsRequest{Kind: agentv3.RunKind_RUN_KIND_CYCLE, PageSize: 2, PageToken: first.Msg.GetNextPageToken()}))
 	if err != nil || len(rest.Msg.GetRuns()) != 1 || rest.Msg.GetNextPageToken() != "" {
 		t.Fatalf("second page = %v, %v", rest, err)
 	}
-	if _, tokErr := e.client.ListRuns(ctx, connect.NewRequest(&agentv2.ListRunsRequest{Kind: agentv2.RunKind_RUN_KIND_CYCLE, PageToken: "!!"})); code(tokErr) != connect.CodeInvalidArgument {
+	if _, tokErr := e.client.ListRuns(ctx, connect.NewRequest(&agentv3.ListRunsRequest{Kind: agentv3.RunKind_RUN_KIND_CYCLE, PageToken: "!!"})); code(tokErr) != connect.CodeInvalidArgument {
 		t.Fatalf("bad token = %v", tokErr)
 	}
-	if _, kindErr := e.client.ListRuns(ctx, connect.NewRequest(&agentv2.ListRunsRequest{})); code(kindErr) != connect.CodeInvalidArgument {
+	if _, kindErr := e.client.ListRuns(ctx, connect.NewRequest(&agentv3.ListRunsRequest{})); code(kindErr) != connect.CodeInvalidArgument {
 		t.Fatalf("runs without a kind = %v", kindErr)
 	}
 	scrubID, err := e.db.StartRun(ctx, app.ScrubRunKind, t0)
@@ -541,18 +541,18 @@ func TestRunsPagingAndSync(t *testing.T) {
 	if err = e.db.FinishRun(ctx, backupID, true, app.LedgerBackupReport{File: "b.db", SizeBytes: 9}, t0); err != nil {
 		t.Fatal(err)
 	}
-	scrubs, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv2.ListRunsRequest{Kind: agentv2.RunKind_RUN_KIND_SCRUB}))
+	scrubs, err := e.client.ListRuns(ctx, connect.NewRequest(&agentv3.ListRunsRequest{Kind: agentv3.RunKind_RUN_KIND_SCRUB}))
 	if err != nil || len(scrubs.Msg.GetRuns()) != 1 || scrubs.Msg.GetRuns()[0].GetScrub().GetMismatched() != 1 {
 		t.Fatalf("scrub runs = %v, %v", scrubs, err)
 	}
-	ov, err := e.client.GetOverview(ctx, connect.NewRequest(&agentv2.GetOverviewRequest{}))
-	if err != nil || ov.Msg.GetOverview().GetAppleAccount().GetState() != agentv2.AppleAccountState_APPLE_ACCOUNT_STATE_SIGN_IN_REQUIRED {
+	ov, err := e.client.GetOverview(ctx, connect.NewRequest(&agentv3.GetOverviewRequest{}))
+	if err != nil || ov.Msg.GetOverview().GetAppleAccount().GetState() != agentv3.AppleAccountState_APPLE_ACCOUNT_STATE_SIGN_IN_REQUIRED {
 		t.Fatalf("apple state = %v, %v", ov, err)
 	}
 	if o := ov.Msg.GetOverview(); o.GetLastScrub().GetScrub().GetEligible() != 40 || o.GetLastLedgerBackup().GetLedgerBackup().GetSizeBytes() != 9 {
 		t.Fatalf("overview maintenance = %v", o)
 	}
-	sync, err := e.client.StartSync(ctx, connect.NewRequest(&agentv2.StartSyncRequest{}))
+	sync, err := e.client.StartSync(ctx, connect.NewRequest(&agentv3.StartSyncRequest{}))
 	if err != nil || !sync.Msg.GetStarted() {
 		t.Fatalf("StartSync = %v, %v", sync, err)
 	}
@@ -602,16 +602,16 @@ func TestLibraryAndSignedThumbnails(t *testing.T) {
 	e := setup(t)
 	seed(t, e.db, "A", false)
 	ctx := context.Background()
-	res, err := e.client.ListAssets(ctx, connect.NewRequest(&agentv2.ListAssetsRequest{}))
+	res, err := e.client.ListAssets(ctx, connect.NewRequest(&agentv3.ListAssetsRequest{}))
 	if err != nil || len(res.Msg.GetItems()) != 1 {
 		t.Fatalf("ListAssets = %v, %v", res, err)
 	}
 	item := res.Msg.GetItems()[0]
-	if item.GetKind() != agentv2.AssetKind_ASSET_KIND_VIDEO || item.GetAsset().GetFilename() != "A.MOV" ||
+	if item.GetKind() != agentv3.AssetKind_ASSET_KIND_VIDEO || item.GetAsset().GetFilename() != "A.MOV" ||
 		!strings.HasPrefix(item.GetThumbnailUrl(), "/media/thumb/PrimarySync/A/original?") {
 		t.Fatalf("item = %v", item)
 	}
-	hidden, err := e.client.ListAssets(ctx, connect.NewRequest(&agentv2.ListAssetsRequest{Hidden: true}))
+	hidden, err := e.client.ListAssets(ctx, connect.NewRequest(&agentv3.ListAssetsRequest{Hidden: true}))
 	if err != nil || len(hidden.Msg.GetItems()) != 0 {
 		t.Fatalf("hidden page = %v, %v", hidden, err)
 	}
@@ -635,7 +635,7 @@ func TestLibraryAndSignedThumbnails(t *testing.T) {
 
 func TestOverviewReportsMissingArchiveDrive(t *testing.T) {
 	e := setup(t, func(a *fakeAgent) { a.archive = errors.New("archive root is on another volume") })
-	_, err := e.client.GetOverview(context.Background(), connect.NewRequest(&agentv2.GetOverviewRequest{}))
+	_, err := e.client.GetOverview(context.Background(), connect.NewRequest(&agentv3.GetOverviewRequest{}))
 	if code(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("GetOverview on a replaced archive volume = %v, want failed_precondition", err)
 	}
@@ -656,7 +656,7 @@ func TestOverviewAndEventsOfICloudDrive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ov, err := e.client.GetOverview(ctx, connect.NewRequest(&agentv2.GetOverviewRequest{}))
+	ov, err := e.client.GetOverview(ctx, connect.NewRequest(&agentv3.GetOverviewRequest{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -665,14 +665,14 @@ func TestOverviewAndEventsOfICloudDrive(t *testing.T) {
 		t.Fatalf("icloud drive = %v", d)
 	}
 
-	events, err := e.client.ListEvents(ctx, connect.NewRequest(&agentv2.ListEventsRequest{
-		Kinds: []agentv2.EventKind{agentv2.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED, agentv2.EventKind_EVENT_KIND_DRIVE_FILE_DELETED},
+	events, err := e.client.ListEvents(ctx, connect.NewRequest(&agentv3.ListEventsRequest{
+		Kinds: []agentv3.EventKind{agentv3.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED, agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DELETED},
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := events.Msg.GetEvents()
-	if len(got) != 2 || got[0].GetDriveFile().GetChange() != agentv2.DriveFileChange_DRIVE_FILE_CHANGE_DELETED ||
+	if len(got) != 2 || got[0].GetDriveFile().GetChange() != agentv3.DriveFileChange_DRIVE_FILE_CHANGE_DELETED ||
 		got[1].GetDriveFile().GetSizeBytes() != 10 || got[0].GetAsset().GetFilename() != "tax.pdf" {
 		t.Fatalf("events = %v", got)
 	}

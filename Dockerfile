@@ -4,8 +4,8 @@
 # one image, for linux/amd64 and linux/arm64. Build with
 #   docker buildx build --platform linux/amd64,linux/arm64 -t homecloud .
 # Every build input is pinned: base images by digest, kei by its release
-# checksums, FFmpeg by its signed release tarball's checksum. Deployment:
-# deploy/compose.yaml and the README.
+# checksums, FFmpeg by its signed release tarball's checksum, smartmontools by
+# its Debian package version. Deployment: deploy/compose.yaml and the README.
 
 ARG NODE_IMAGE=node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
 ARG GO_IMAGE=golang:1.27.1-trixie@sha256:8f58fd67ea075142d947a60e0caa4317746a55118d312f027793d382c7741734
@@ -100,8 +100,21 @@ RUN set -eu; \
 
 # The runtime: Debian 13 (kei needs glibc 2.39 or newer).
 FROM ${DEBIAN_IMAGE}
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata libdbus-1-3 libwebp7 libwebpmux3 libsharpyuv0 zlib1g \
+# smartctl reads the archive drives' health (drive_health.source = "smartctl"):
+# smartmontools 7.5 from Debian's official backports (trixie has 7.4). Docker
+# gives a non-root container user no capabilities of its own, so smartctl
+# carries the ones it needs as file capabilities: CAP_SYS_RAWIO (ATA) and
+# CAP_SYS_ADMIN (NVMe) to send SMART commands, CAP_DAC_OVERRIDE to open the
+# drives' nodes. Only smartctl has them; the agent cannot read the drives.
+ARG SMARTMONTOOLS_VERSION=7.5-2~bpo13+1
+RUN printf 'Types: deb\nURIs: http://deb.debian.org/debian\nSuites: trixie-backports\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' \
+        > /etc/apt/sources.list.d/backports.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata libdbus-1-3 libwebp7 libwebpmux3 libsharpyuv0 zlib1g libcap2-bin \
+    && apt-get install -y --no-install-recommends -t trixie-backports "smartmontools=${SMARTMONTOOLS_VERSION}" \
+    && setcap cap_dac_override,cap_sys_rawio,cap_sys_admin+ep /usr/sbin/smartctl \
+    && apt-get purge -y libcap2-bin \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=go /out/ /opt/homecloud/bin/
 COPY --from=kei /usr/local/bin/kei /opt/kei/kei

@@ -14,7 +14,7 @@ import {
   GetAssetResponseSchema,
   LibraryItemSchema,
   OverviewSchema,
-} from "../gen/homecloud/agent/v2/agent_pb";
+} from "../gen/homecloud/agent/v3/agent_pb";
 
 const desktopLike: Platform = { kind: "browser", mediaUrl: (path) => "http://agent" + path };
 

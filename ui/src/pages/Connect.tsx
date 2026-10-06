@@ -19,7 +19,7 @@ import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
 import { navigate, useLocation } from "../app/router";
 import { PairForm } from "../components/PairForm";
-import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
+import { AgentService } from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
   root: {

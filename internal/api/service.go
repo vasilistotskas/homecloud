@@ -1,4 +1,4 @@
-// Package api implements homecloud.agent.v2.AgentService, the agent's local
+// Package api implements homecloud.agent.v3.AgentService, the agent's local
 // Connect API. Transport security (Host/Origin checks, authentication) is
 // applied around it by package web.
 package api
@@ -17,8 +17,8 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	agentv2 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2"
-	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2/agentv2connect"
+	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
+	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
@@ -31,8 +31,10 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
 )
 
-// Version is this API's "MAJOR.MINOR" version, reported by GetInfo.
-const Version = "1.0"
+// Version is this API's "MAJOR.MINOR" version, reported by GetInfo. MAJOR is
+// the proto package's version (homecloud.agent.v3); MINOR counts compatible
+// additions to it.
+const Version = "3.0"
 
 const (
 	defaultPageSize = 50
@@ -84,7 +86,7 @@ type Service struct {
 	now          func() time.Time
 }
 
-var _ agentv2connect.AgentServiceHandler = (*Service)(nil)
+var _ agentv3connect.AgentServiceHandler = (*Service)(nil)
 
 // Deps are the Service's collaborators.
 type Deps struct {
@@ -111,8 +113,8 @@ func New(d Deps) *Service {
 }
 
 // GetInfo implements AgentService.
-func (s *Service) GetInfo(context.Context, *connect.Request[agentv2.GetInfoRequest]) (*connect.Response[agentv2.GetInfoResponse], error) {
-	return connect.NewResponse(&agentv2.GetInfoResponse{
+func (s *Service) GetInfo(context.Context, *connect.Request[agentv3.GetInfoRequest]) (*connect.Response[agentv3.GetInfoResponse], error) {
+	return connect.NewResponse(&agentv3.GetInfoResponse{
 		AgentVersion: s.agentVersion,
 		ApiVersion:   Version,
 		Os:           runtime.GOOS,
@@ -120,13 +122,13 @@ func (s *Service) GetInfo(context.Context, *connect.Request[agentv2.GetInfoReque
 }
 
 // GetOverview implements AgentService.
-func (s *Service) GetOverview(ctx context.Context, _ *connect.Request[agentv2.GetOverviewRequest]) (*connect.Response[agentv2.GetOverviewResponse], error) {
+func (s *Service) GetOverview(ctx context.Context, _ *connect.Request[agentv3.GetOverviewRequest]) (*connect.Response[agentv3.GetOverviewResponse], error) {
 	st, _ := s.agent.Hub().Snapshot()
 	ov, err := s.overview(ctx, st)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentv2.GetOverviewResponse{Overview: ov}), nil
+	return connect.NewResponse(&agentv3.GetOverviewResponse{Overview: ov}), nil
 }
 
 // overviewInterval is the minimum time between updates on one overview
@@ -135,14 +137,14 @@ func (s *Service) GetOverview(ctx context.Context, _ *connect.Request[agentv2.Ge
 const overviewInterval = time.Second
 
 // WatchOverview implements AgentService.
-func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv2.WatchOverviewRequest], stream *connect.ServerStream[agentv2.WatchOverviewResponse]) error {
+func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv3.WatchOverviewRequest], stream *connect.ServerStream[agentv3.WatchOverviewResponse]) error {
 	for {
 		st, changed := s.agent.Hub().Snapshot()
 		ov, err := s.overview(ctx, st)
 		if err != nil {
 			return err
 		}
-		if err := stream.Send(&agentv2.WatchOverviewResponse{Overview: ov}); err != nil {
+		if err := stream.Send(&agentv3.WatchOverviewResponse{Overview: ov}); err != nil {
 			return fmt.Errorf("send overview: %w", err)
 		}
 		sent := time.Now()
@@ -164,12 +166,12 @@ func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv2.
 }
 
 // icloudDrive reports the iCloud Drive archive's totals and session.
-func (s *Service) icloudDrive(ctx context.Context) (*agentv2.ICloudDrive, error) {
+func (s *Service) icloudDrive(ctx context.Context) (*agentv3.ICloudDrive, error) {
 	files, bytes, deleted, err := s.db.DriveTotals(ctx)
 	if err != nil {
 		return nil, internal(err)
 	}
-	out := &agentv2.ICloudDrive{Files: files, Bytes: bytes, DeletedInIcloud: deleted}
+	out := &agentv3.ICloudDrive{Files: files, Bytes: bytes, DeletedInIcloud: deleted}
 	// A session that cannot be read is a state of the iCloud Drive card, not
 	// a failure of the whole overview.
 	switch signedIn, err := s.agent.ICloudSignedInAt(); {
@@ -181,7 +183,7 @@ func (s *Service) icloudDrive(ctx context.Context) (*agentv2.ICloudDrive, error)
 	return out, nil
 }
 
-func (s *Service) overview(ctx context.Context, st app.Status) (*agentv2.Overview, error) {
+func (s *Service) overview(ctx context.Context, st app.Status) (*agentv3.Overview, error) {
 	// The ledger lives on the archive volume, so without it there is no
 	// overview; say so precisely instead of failing as an internal error.
 	space, err := s.archiveSpace()
@@ -196,28 +198,28 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv2.Overvie
 	if err != nil {
 		return nil, internal(err)
 	}
-	ov := &agentv2.Overview{
-		Assets: &agentv2.AssetCounts{
+	ov := &agentv3.Overview{
+		Assets: &agentv3.AssetCounts{
 			Discovered:  int64(counts[ledger.StateDiscovered]),
 			Downloaded:  int64(counts[ledger.StateDownloaded]),
 			Verified:    int64(counts[ledger.StateVerified]),
 			Quarantined: int64(counts[ledger.StateQuarantined]),
 		},
-		Archive: &agentv2.ArchiveTotals{Files: files, Bytes: bytes},
-		Storage: &agentv2.Storage{
+		Archive: &agentv3.ArchiveTotals{Files: files, Bytes: bytes},
+		Storage: &agentv3.Storage{
 			Root:           s.cfg.Storage.Root,
 			TotalBytes:     clampInt64(space.Total),
 			FreeBytes:      clampInt64(space.Free),
 			MinFreePercent: s.cfg.Storage.MinFreePercent,
 		},
-		AppleAccount: &agentv2.AppleAccount{},
-		Activity: &agentv2.Activity{
+		AppleAccount: &agentv3.AppleAccount{},
+		Activity: &agentv3.Activity{
 			Phase:          phase(st.Phase),
 			PhaseStartedAt: optionalTime(st.PhaseStartedAt),
 			NextCycleAt:    optionalTime(st.NextCycleAt),
 		},
 	}
-	if ov.Drive, err = driveToProto(st.Drive); err != nil {
+	if ov.StorageHealth, err = storageHealthToProto(st.Storage); err != nil {
 		return nil, internal(err)
 	}
 	if ov.LastCycle, err = s.lastRun(ctx, app.CycleRunKind); err != nil {
@@ -268,7 +270,7 @@ func (s *Service) nextRun(ctx context.Context, kind string, every time.Duration,
 }
 
 // lastRun returns the most recent finished run of kind, or nil before the first.
-func (s *Service) lastRun(ctx context.Context, kind string) (*agentv2.Run, error) {
+func (s *Service) lastRun(ctx context.Context, kind string) (*agentv3.Run, error) {
 	last, err := s.db.LastFinishedRun(ctx, kind)
 	switch {
 	case errors.Is(err, ledger.ErrNotFound):
@@ -297,7 +299,7 @@ func (s *Service) archiveSpace() (platform.Space, error) {
 }
 
 // ListRuns implements AgentService.
-func (s *Service) ListRuns(ctx context.Context, req *connect.Request[agentv2.ListRunsRequest]) (*connect.Response[agentv2.ListRunsResponse], error) {
+func (s *Service) ListRuns(ctx context.Context, req *connect.Request[agentv3.ListRunsRequest]) (*connect.Response[agentv3.ListRunsResponse], error) {
 	size, before, err := page(req.Msg.GetPageSize(), req.Msg.GetPageToken())
 	if err != nil {
 		return nil, err
@@ -310,7 +312,7 @@ func (s *Service) ListRuns(ctx context.Context, req *connect.Request[agentv2.Lis
 	if err != nil {
 		return nil, internal(err)
 	}
-	res := &agentv2.ListRunsResponse{}
+	res := &agentv3.ListRunsResponse{}
 	for _, r := range runs {
 		pr, convErr := runToProto(r)
 		if convErr != nil {
@@ -325,7 +327,7 @@ func (s *Service) ListRuns(ctx context.Context, req *connect.Request[agentv2.Lis
 }
 
 // ListEvents implements AgentService.
-func (s *Service) ListEvents(ctx context.Context, req *connect.Request[agentv2.ListEventsRequest]) (*connect.Response[agentv2.ListEventsResponse], error) {
+func (s *Service) ListEvents(ctx context.Context, req *connect.Request[agentv3.ListEventsRequest]) (*connect.Response[agentv3.ListEventsResponse], error) {
 	if len(req.Msg.GetKinds()) == 0 {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("at least one event kind is required"))
 	}
@@ -345,7 +347,7 @@ func (s *Service) ListEvents(ctx context.Context, req *connect.Request[agentv2.L
 	if err != nil {
 		return nil, internal(err)
 	}
-	res := &agentv2.ListEventsResponse{}
+	res := &agentv3.ListEventsResponse{}
 	for _, e := range events {
 		pe, convErr := eventToProto(e)
 		if convErr != nil {
@@ -360,19 +362,19 @@ func (s *Service) ListEvents(ctx context.Context, req *connect.Request[agentv2.L
 }
 
 // ListQuarantine implements AgentService.
-func (s *Service) ListQuarantine(ctx context.Context, _ *connect.Request[agentv2.ListQuarantineRequest]) (*connect.Response[agentv2.ListQuarantineResponse], error) {
+func (s *Service) ListQuarantine(ctx context.Context, _ *connect.Request[agentv3.ListQuarantineRequest]) (*connect.Response[agentv3.ListQuarantineResponse], error) {
 	items, err := s.db.Quarantined(ctx)
 	if err != nil {
 		return nil, internal(err)
 	}
-	res := &agentv2.ListQuarantineResponse{}
-	byAsset := map[[2]string]*agentv2.QuarantinedAsset{}
+	res := &agentv3.ListQuarantineResponse{}
+	byAsset := map[[2]string]*agentv3.QuarantinedAsset{}
 	for _, q := range items {
 		key := [2]string{q.Library, q.AssetID}
 		qa, ok := byAsset[key]
 		if !ok {
-			qa = &agentv2.QuarantinedAsset{
-				Asset:         &agentv2.AssetRef{Library: q.Library, AssetId: q.AssetID},
+			qa = &agentv3.QuarantinedAsset{
+				Asset:         &agentv3.AssetRef{Library: q.Library, AssetId: q.AssetID},
 				QuarantinedAt: timestamppb.New(q.QuarantinedAt),
 			}
 			byAsset[key] = qa
@@ -387,7 +389,7 @@ func (s *Service) ListQuarantine(ctx context.Context, _ *connect.Request[agentv2
 }
 
 // GetAsset implements AgentService.
-func (s *Service) GetAsset(ctx context.Context, req *connect.Request[agentv2.GetAssetRequest]) (*connect.Response[agentv2.GetAssetResponse], error) {
+func (s *Service) GetAsset(ctx context.Context, req *connect.Request[agentv3.GetAssetRequest]) (*connect.Response[agentv3.GetAssetResponse], error) {
 	d, err := s.db.Asset(ctx, req.Msg.GetLibrary(), req.Msg.GetAssetId())
 	if errors.Is(err, ledger.ErrNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
@@ -399,11 +401,11 @@ func (s *Service) GetAsset(ctx context.Context, req *connect.Request[agentv2.Get
 	if err != nil {
 		return nil, internal(err)
 	}
-	return connect.NewResponse(&agentv2.GetAssetResponse{Asset: a}), nil
+	return connect.NewResponse(&agentv3.GetAssetResponse{Asset: a}), nil
 }
 
 // ReleaseQuarantine implements AgentService.
-func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[agentv2.ReleaseQuarantineRequest]) (*connect.Response[agentv2.ReleaseQuarantineResponse], error) {
+func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[agentv3.ReleaseQuarantineRequest]) (*connect.Response[agentv3.ReleaseQuarantineResponse], error) {
 	m := req.Msg
 	err := s.db.ReleaseQuarantine(ctx, m.GetLibrary(), m.GetAssetId(), strings.TrimSpace(m.GetReason()), s.now())
 	switch {
@@ -415,34 +417,34 @@ func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[ag
 		return nil, internal(err)
 	}
 	s.agent.Hub().Changed()
-	return connect.NewResponse(&agentv2.ReleaseQuarantineResponse{}), nil
+	return connect.NewResponse(&agentv3.ReleaseQuarantineResponse{}), nil
 }
 
 // StartSync implements AgentService.
-func (s *Service) StartSync(context.Context, *connect.Request[agentv2.StartSyncRequest]) (*connect.Response[agentv2.StartSyncResponse], error) {
-	return connect.NewResponse(&agentv2.StartSyncResponse{Started: s.agent.RequestCycle()}), nil
+func (s *Service) StartSync(context.Context, *connect.Request[agentv3.StartSyncRequest]) (*connect.Response[agentv3.StartSyncResponse], error) {
+	return connect.NewResponse(&agentv3.StartSyncResponse{Started: s.agent.RequestCycle()}), nil
 }
 
 // SendTestNotification implements AgentService.
-func (s *Service) SendTestNotification(ctx context.Context, _ *connect.Request[agentv2.SendTestNotificationRequest]) (*connect.Response[agentv2.SendTestNotificationResponse], error) {
+func (s *Service) SendTestNotification(ctx context.Context, _ *connect.Request[agentv3.SendTestNotificationRequest]) (*connect.Response[agentv3.SendTestNotificationResponse], error) {
 	if err := s.notify.Send(ctx, notify.TestMsg()); err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("send test notification: %w", err))
 	}
-	return connect.NewResponse(&agentv2.SendTestNotificationResponse{}), nil
+	return connect.NewResponse(&agentv3.SendTestNotificationResponse{}), nil
 }
 
 // GetSettings implements AgentService.
-func (s *Service) GetSettings(context.Context, *connect.Request[agentv2.GetSettingsRequest]) (*connect.Response[agentv2.GetSettingsResponse], error) {
+func (s *Service) GetSettings(context.Context, *connect.Request[agentv3.GetSettingsRequest]) (*connect.Response[agentv3.GetSettingsResponse], error) {
 	c := s.cfg
-	return connect.NewResponse(&agentv2.GetSettingsResponse{Settings: &agentv2.Settings{
+	return connect.NewResponse(&agentv3.GetSettingsResponse{Settings: &agentv3.Settings{
 		ConfigPath:                       s.configPath,
 		StorageRoot:                      c.Storage.Root,
 		StorageArchiveId:                 c.Storage.ArchiveID,
 		MinFreePercent:                   c.Storage.MinFreePercent,
-		Downloader:                       &agentv2.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
+		Downloader:                       &agentv3.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
 		DownloaderConfig:                 c.Kei.Config,
-		VideoProbe:                       &agentv2.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
-		Thumbnailer:                      &agentv2.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
+		VideoProbe:                       &agentv3.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
+		Thumbnailer:                      &agentv3.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
 		Listen:                           c.Web.Listen,
 		NotifyServer:                     c.Notify.Server,
 		NotifyTopic:                      c.Notify.Topic,
@@ -467,16 +469,16 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv2.GetSetti
 
 // CreateLoginCode implements AgentService. Package web only lets bearer-token
 // callers reach it.
-func (s *Service) CreateLoginCode(context.Context, *connect.Request[agentv2.CreateLoginCodeRequest]) (*connect.Response[agentv2.CreateLoginCodeResponse], error) {
+func (s *Service) CreateLoginCode(context.Context, *connect.Request[agentv3.CreateLoginCodeRequest]) (*connect.Response[agentv3.CreateLoginCodeResponse], error) {
 	code, exp, err := s.auth.NewLoginCode()
 	if err != nil {
 		return nil, internal(err)
 	}
-	return connect.NewResponse(&agentv2.CreateLoginCodeResponse{Code: code, ExpiresAt: timestamppb.New(exp)}), nil
+	return connect.NewResponse(&agentv3.CreateLoginCodeResponse{Code: code, ExpiresAt: timestamppb.New(exp)}), nil
 }
 
 // ExchangeLoginCode implements AgentService.
-func (s *Service) ExchangeLoginCode(_ context.Context, req *connect.Request[agentv2.ExchangeLoginCodeRequest]) (*connect.Response[agentv2.ExchangeLoginCodeResponse], error) {
+func (s *Service) ExchangeLoginCode(_ context.Context, req *connect.Request[agentv3.ExchangeLoginCodeRequest]) (*connect.Response[agentv3.ExchangeLoginCodeResponse], error) {
 	cookie, err := s.auth.Exchange(req.Msg.GetCode())
 	if errors.Is(err, auth.ErrInvalidCode) {
 		return nil, connect.NewError(connect.CodePermissionDenied, err)
@@ -484,7 +486,7 @@ func (s *Service) ExchangeLoginCode(_ context.Context, req *connect.Request[agen
 	if err != nil {
 		return nil, internal(err)
 	}
-	res := connect.NewResponse(&agentv2.ExchangeLoginCodeResponse{})
+	res := connect.NewResponse(&agentv3.ExchangeLoginCodeResponse{})
 	res.Header().Set("Set-Cookie", cookie.String())
 	return res, nil
 }
@@ -493,7 +495,7 @@ func (s *Service) ExchangeLoginCode(_ context.Context, req *connect.Request[agen
 const maxDeviceName = 64
 
 // PairDevice implements AgentService.
-func (s *Service) PairDevice(ctx context.Context, req *connect.Request[agentv2.PairDeviceRequest]) (*connect.Response[agentv2.PairDeviceResponse], error) {
+func (s *Service) PairDevice(ctx context.Context, req *connect.Request[agentv3.PairDeviceRequest]) (*connect.Response[agentv3.PairDeviceResponse], error) {
 	name := strings.TrimSpace(req.Msg.GetName())
 	if n := utf8.RuneCountInString(name); n == 0 || n > maxDeviceName || !utf8.ValidString(name) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("name must be 1-%d characters", maxDeviceName))
@@ -505,18 +507,18 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[agentv2.P
 	if err != nil {
 		return nil, internal(err)
 	}
-	return connect.NewResponse(&agentv2.PairDeviceResponse{DeviceId: id, Token: token}), nil
+	return connect.NewResponse(&agentv3.PairDeviceResponse{DeviceId: id, Token: token}), nil
 }
 
 // ListDevices implements AgentService.
-func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[agentv2.ListDevicesRequest]) (*connect.Response[agentv2.ListDevicesResponse], error) {
+func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[agentv3.ListDevicesRequest]) (*connect.Response[agentv3.ListDevicesResponse], error) {
 	devices, err := s.db.PairedDevices(ctx)
 	if err != nil {
 		return nil, internal(err)
 	}
-	res := &agentv2.ListDevicesResponse{}
+	res := &agentv3.ListDevicesResponse{}
 	for _, d := range devices {
-		res.Devices = append(res.Devices, &agentv2.PairedDevice{
+		res.Devices = append(res.Devices, &agentv3.PairedDevice{
 			Id: d.ID, Name: d.Name, PairedAt: timestamppb.New(d.PairedAt), LastSeenAt: timestamppb.New(d.LastSeenAt),
 		})
 	}
@@ -524,7 +526,7 @@ func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[agentv2.Li
 }
 
 // RevokeDevice implements AgentService.
-func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[agentv2.RevokeDeviceRequest]) (*connect.Response[agentv2.RevokeDeviceResponse], error) {
+func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[agentv3.RevokeDeviceRequest]) (*connect.Response[agentv3.RevokeDeviceResponse], error) {
 	err := s.db.RevokePairedDevice(ctx, req.Msg.GetDeviceId(), s.now())
 	if errors.Is(err, ledger.ErrNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
@@ -532,7 +534,7 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[agentv2
 	if err != nil {
 		return nil, internal(err)
 	}
-	return connect.NewResponse(&agentv2.RevokeDeviceResponse{}), nil
+	return connect.NewResponse(&agentv3.RevokeDeviceResponse{}), nil
 }
 
 func internal(err error) error {
@@ -540,7 +542,7 @@ func internal(err error) error {
 }
 
 // ListAssets implements AgentService.
-func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv2.ListAssetsRequest]) (*connect.Response[agentv2.ListAssetsResponse], error) {
+func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv3.ListAssetsRequest]) (*connect.Response[agentv3.ListAssetsResponse], error) {
 	m := req.Msg
 	size, err := pageSize(m.GetPageSize(), defaultLibraryPage)
 	if err != nil {
@@ -565,7 +567,7 @@ func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv2.L
 	if err != nil {
 		return nil, internal(err)
 	}
-	res := &agentv2.ListAssetsResponse{}
+	res := &agentv3.ListAssetsResponse{}
 	for _, a := range assets {
 		item, convErr := s.libraryItem(a)
 		if convErr != nil {
@@ -583,7 +585,7 @@ func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv2.L
 	return connect.NewResponse(res), nil
 }
 
-func (s *Service) libraryItem(a ledger.LibraryAsset) (*agentv2.LibraryItem, error) {
+func (s *Service) libraryItem(a ledger.LibraryAsset) (*agentv3.LibraryItem, error) {
 	state, err := lookup(assetStates, a.State, "asset state")
 	if err != nil {
 		return nil, err
@@ -592,8 +594,8 @@ func (s *Service) libraryItem(a ledger.LibraryAsset) (*agentv2.LibraryItem, erro
 	if err != nil {
 		return nil, err
 	}
-	item := &agentv2.LibraryItem{
-		Asset:     &agentv2.AssetRef{Library: a.Library, AssetId: a.AssetID, Filename: a.Filename},
+	item := &agentv3.LibraryItem{
+		Asset:     &agentv3.AssetRef{Library: a.Library, AssetId: a.AssetID, Filename: a.Filename},
 		Kind:      kind,
 		CreatedAt: optionalTimePtr(a.CreatedAt),
 		State:     state,

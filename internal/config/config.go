@@ -36,6 +36,8 @@ type Config struct {
 	IPhoneBackup IPhoneBackup `toml:"iphone_backup"`
 	Drive        Drive        `toml:"drive"`
 	Logs         Logs         `toml:"logs"`
+	DriveHealth  DriveHealth  `toml:"drive_health"`
+	Smartctl     Smartctl     `toml:"smartctl"`
 }
 
 // Storage describes the archive.
@@ -135,6 +137,35 @@ type Drive struct {
 	// StallTimeout abandons a download that receives no data for this long;
 	// it is retried at the next sync.
 	StallTimeout Duration `toml:"stall_timeout"`
+}
+
+// DriveHealth chooses, on Linux, where the SMART data of the drives holding
+// the archive comes from. Windows reads NVMe health itself and has no
+// [drive_health] section.
+type DriveHealth struct {
+	// Source is DriveHealthUdisks or DriveHealthSmartctl.
+	Source string `toml:"source"`
+}
+
+// Drive health sources on Linux.
+const (
+	// DriveHealthUdisks reads what the udisks2 service of a desktop keeps;
+	// it needs no rights.
+	DriveHealthUdisks = "udisks"
+	// DriveHealthSmartctl runs smartctl ([smartctl]), for servers and the
+	// container, which have no udisks. smartctl needs the drives' device
+	// nodes and the capabilities to query them (README, NAS mode).
+	DriveHealthSmartctl = "smartctl"
+)
+
+// Smartctl pins smartmontools' smartctl, used when drive_health.source is
+// "smartctl" and absent otherwise.
+type Smartctl struct {
+	Binary string `toml:"binary"`
+	// Version is smartctl's MAJOR.MINOR release, e.g. "7.5".
+	Version string `toml:"version"`
+	// Timeout bounds one smartctl run on one drive.
+	Timeout Duration `toml:"timeout"`
 }
 
 // Logs configures the agent's rotating log files under <storage.root>/logs on
@@ -413,5 +444,6 @@ func (c *Config) Validate() error {
 		add("iphone_backup.max_shrink_percent must be in (0, 100), got %v", ib.MaxShrinkPercent)
 	}
 
+	c.validateDriveHealth(add)
 	return errors.Join(errs...)
 }

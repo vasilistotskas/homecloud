@@ -167,8 +167,11 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 	}))
 	t.Cleanup(apple.Close)
 	agent.icloudEndpoints = icloud.Endpoints{Auth: apple.URL, Setup: apple.URL, Home: apple.URL}
-	// Tests judge a healthy drive unless they say otherwise.
-	agent.readDrive = func(context.Context) (platform.DriveHealth, error) {
+	// Tests judge one healthy drive unless they say otherwise.
+	agent.readStorage = func() (platform.Storage, error) {
+		return platform.Storage{Drives: []platform.Drive{{Name: "nvme0n1", Device: "/dev/nvme0n1"}}}, nil
+	}
+	agent.readDrive = func(context.Context, platform.Drive) (platform.DriveHealth, error) {
 		return platform.DriveHealth{Protocol: "NVMe"}, nil
 	}
 	return agent, n
@@ -298,7 +301,7 @@ func TestCycleAlertsOnceWhenDriveFails(t *testing.T) {
 	clock := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 	agent, notes := newTestAgent(t, fixture(t, false), "0", &clock)
 	warnings := []string{"spare"}
-	agent.readDrive = func(context.Context) (platform.DriveHealth, error) {
+	agent.readDrive = func(context.Context, platform.Drive) (platform.DriveHealth, error) {
 		return platform.DriveHealth{Protocol: "NVMe", Warnings: warnings}, nil
 	}
 	ctx := context.Background()
@@ -307,11 +310,11 @@ func TestCycleAlertsOnceWhenDriveFails(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := notes.titles(); len(got) != 1 || !strings.Contains(got[0], "archive drive") {
-		t.Fatalf("alerts = %v, want one drive alert", got)
+	if got := notes.titles(); len(got) != 1 || !strings.Contains(got[0], "archive storage") {
+		t.Fatalf("alerts = %v, want one storage alert", got)
 	}
-	if st, _ := agent.Hub().Snapshot(); st.Drive.State != health.StateFailing || st.Drive.Drive == nil {
-		t.Fatalf("status drive = %+v", st.Drive)
+	if st, _ := agent.Hub().Snapshot(); st.Storage.State != health.StateFailing || len(st.Storage.Drives) != 1 || st.Storage.Drives[0].Health == nil {
+		t.Fatalf("status storage = %+v", st.Storage)
 	}
 
 	warnings = nil

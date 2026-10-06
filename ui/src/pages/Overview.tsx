@@ -44,11 +44,12 @@ import { href, navigate } from "../app/router";
 import { CommandDialog, type CommandState } from "../components/CommandDialog";
 import { LoadError } from "../components/LoadError";
 import {
-  driveHealthBadge,
   driveSyncListed,
+  healthBadge,
   driveSyncOutcomeBadge,
   iphoneSeverity,
   iphoneStateBadge,
+  raidSyncLabel,
   type BadgeColor,
   type Labelled,
 } from "../components/labels";
@@ -60,18 +61,20 @@ import { icloudLoginCommand, keiLoginCommand, terminalName } from "../shell";
 import {
   AgentService,
   AppleAccountState,
-  DriveHealthState,
   DownloadOutcome,
   DriveSyncOutcome,
+  HealthState,
   Phase,
   RunKind,
   RunResult,
   type DriveHealth,
+  type RaidArray,
+  type StorageHealth,
   type GetInfoResponse,
   type Run,
   type Overview,
   type Settings,
-} from "../gen/homecloud/agent/v2/agent_pb";
+} from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
   hero: {
@@ -109,6 +112,8 @@ const useStyles = makeStyles({
     gap: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalL}`,
   },
   muted: { color: tokens.colorNeutralForeground3 },
+  section: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS },
+  sectionHeader: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
   bar: {
     position: "relative",
     height: "12px",
@@ -204,7 +209,7 @@ export function OverviewPage() {
         <StorageCard overview={overview} />
         <AccountCard overview={overview} />
         <ScheduleCard overview={overview} settings={env.settings} />
-        <DriveCard drive={overview.drive} />
+        <DriveHealthCard storage={overview.storageHealth} />
         <IntegrityCard overview={overview} settings={env.settings} />
         <IPhoneBackupCard overview={overview} settings={env.settings} />
         <ICloudDriveCard overview={overview} env={env} />
@@ -387,7 +392,7 @@ function Hero({ overview, env }: { overview: Overview; env: Env }) {
   const quarantined = a?.quarantined ?? 0n;
   const pending = (a?.discovered ?? 0n) + (a?.downloaded ?? 0n);
   const account = overview.appleAccount?.state ?? AppleAccountState.UNSPECIFIED;
-  const drive = overview.drive?.state ?? DriveHealthState.UNSPECIFIED;
+  const storage = overview.storageHealth?.state ?? HealthState.UNSPECIFIED;
   const cycle = overview.lastCycle?.cycle;
   const scrub = overview.lastScrub;
   const backup = overview.lastLedgerBackup;
@@ -399,18 +404,18 @@ function Hero({ overview, env }: { overview: Overview; env: Env }) {
   // Danger outranks every warning; within each, the order is how much the
   // problem threatens the archive.
   const problems: Problem[] = [];
-  if (drive === DriveHealthState.FAILING || drive === DriveHealthState.WARNING) {
+  if (storage === HealthState.FAILING || storage === HealthState.WARNING) {
     problems.push({
       rank: 100,
       tone: "danger",
       icon: <HardDriveRegular />,
       title:
-        drive === DriveHealthState.FAILING
-          ? "Your archive drive expects to fail"
-          : "Your archive drive reports a problem",
+        storage === HealthState.FAILING
+          ? "Your archive's drives need attention now"
+          : "Your archive's drives report a problem",
       body: sentence(
-        overview.drive?.reasons.join("; ") ?? "",
-        "It holds your only copy: replace it soon, and keep iCloud cleanup off until then.",
+        overview.storageHealth?.reasons.join("; ") ?? "",
+        "They hold your only copy: replace a failing drive soon, and keep iCloud cleanup off until then.",
       ),
     });
   }
@@ -797,18 +802,12 @@ function nextRun(at: Timestamp | undefined): string {
   return when === undefined ? "After the current sync" : formatRelative(when);
 }
 
-function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
+function DriveHealthCard({ storage }: { storage: StorageHealth | undefined }) {
   const styles = useStyles();
-  const badge = driveHealthBadge[drive?.state ?? DriveHealthState.UNSPECIFIED];
-  const checked = toDate(drive?.checkedAt);
-  const facts: [string, string][] = [];
-  if (drive !== undefined && drive.state !== DriveHealthState.UNAVAILABLE) {
-    facts.push(["Disk", [drive.model, drive.protocol].filter((s) => s !== "").join(" · ")]);
-    if (drive.temperatureCelsius !== undefined) facts.push(["Temperature", `${drive.temperatureCelsius} °C`]);
-    if (drive.percentUsed !== undefined) facts.push(["Wear", `${drive.percentUsed}% of rated life`]);
-    if (drive.mediaErrors !== undefined) facts.push(["Media errors", formatCount(drive.mediaErrors)]);
-    if (drive.powerOnHours !== undefined) facts.push(["Powered on", `${formatCount(drive.powerOnHours)} hours`]);
-  }
+  const badge = healthBadge[storage?.state ?? HealthState.UNSPECIFIED];
+  const checked = toDate(storage?.checkedAt);
+  // One drive needs no badge of its own: the card's is the drive's.
+  const several = storage !== undefined && storage.drives.length + storage.arrays.length > 1;
   return (
     <Card>
       <CardHeader
@@ -820,15 +819,95 @@ function DriveCard({ drive }: { drive: DriveHealth | undefined }) {
           </Badge>
         }
       />
-      {facts.length > 0 && <Facts facts={facts} />}
-      {drive?.state === DriveHealthState.UNAVAILABLE && (
-        <Text className={styles.muted}>Health can&apos;t be read for this drive: {drive.reasons.join("; ")}</Text>
+      {storage?.drives.length === 0 && (
+        <Text className={styles.muted}>
+          The archive&apos;s drives can&apos;t be found: {storage.reasons.join("; ")}
+        </Text>
       )}
+      {storage?.drives.map((d) => (
+        <DriveSection key={d.name} drive={d} badge={several} />
+      ))}
+      {storage?.arrays.map((a) => (
+        <ArraySection key={a.name} array={a} />
+      ))}
       <Caption1 className={styles.muted}>
-        The archive drive holds your only copy. If it reports a problem you&apos;re alerted at once.
+        These drives hold your only copy. If one reports a problem you&apos;re alerted at once.
         {checked !== undefined && ` Checked ${formatWhen(checked)}.`}
       </Caption1>
     </Card>
+  );
+}
+
+function SectionHeader({
+  name,
+  detail,
+  state,
+  badge,
+}: {
+  name: string;
+  detail?: string;
+  state: HealthState;
+  badge: boolean;
+}) {
+  const styles = useStyles();
+  const b = healthBadge[state];
+  return (
+    <div className={styles.sectionHeader}>
+      <Text weight="semibold">{name}</Text>
+      {detail !== undefined && detail !== "" && <Text className={styles.muted}>{detail}</Text>}
+      {badge && (
+        <Badge appearance="tint" size="small" color={b.color}>
+          {b.label}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function DriveSection({ drive, badge }: { drive: DriveHealth; badge: boolean }) {
+  const styles = useStyles();
+  const facts: [string, string][] = [];
+  if (drive.state !== HealthState.UNAVAILABLE) {
+    if (drive.serial !== "") facts.push(["Serial", drive.serial]);
+    if (drive.temperatureCelsius !== undefined) facts.push(["Temperature", `${drive.temperatureCelsius} °C`]);
+    if (drive.percentUsed !== undefined) facts.push(["Wear", `${drive.percentUsed}% of rated life`]);
+    if (drive.mediaErrors !== undefined) facts.push(["Media errors", formatCount(drive.mediaErrors)]);
+    if (drive.powerOnHours !== undefined) facts.push(["Powered on", `${formatCount(drive.powerOnHours)} hours`]);
+  }
+  const detail = [drive.model, drive.protocol].filter((s) => s !== "").join(" · ");
+  return (
+    <div className={styles.section}>
+      <SectionHeader name={drive.name} detail={detail} state={drive.state} badge={badge} />
+      {facts.length > 0 && <Facts facts={facts} />}
+      {drive.state === HealthState.UNAVAILABLE && (
+        <Text className={styles.muted}>Health can&apos;t be read for this drive: {drive.reasons.join("; ")}</Text>
+      )}
+      {(drive.state === HealthState.WARNING || drive.state === HealthState.FAILING) && (
+        <Text>{drive.reasons.join("; ")}</Text>
+      )}
+    </div>
+  );
+}
+
+function ArraySection({ array }: { array: RaidArray }) {
+  const styles = useStyles();
+  const inSync = array.members.filter((m) => m.states.includes("in_sync")).length;
+  const level = array.level.replace(/^raid(\d+)$/, "RAID $1");
+  const facts: [string, string][] = [
+    ["Drives", `${inSync} of ${array.raidDisks} in sync (${array.members.map((m) => m.drive).join(", ")})`],
+  ];
+  const action = raidSyncLabel[array.syncAction];
+  if (action !== undefined) {
+    const done = array.syncTotal > 0n ? ` · ${(array.syncDone * 100n) / array.syncTotal}% done` : "";
+    facts.push(["Activity", action + done]);
+  }
+  if (array.mismatchCount > 0n) facts.push(["Last check", `${formatCount(array.mismatchCount)} sectors differed`]);
+  return (
+    <div className={styles.section}>
+      <SectionHeader name={array.name} detail={`${level} · ${array.arrayState}`} state={array.state} badge />
+      <Facts facts={facts} />
+      {array.state !== HealthState.OK && <Text>{array.reasons.join("; ")}</Text>}
+    </div>
   );
 }
 

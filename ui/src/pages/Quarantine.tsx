@@ -26,7 +26,7 @@ import { ReleaseDialog } from "../components/ReleaseDialog";
 import { mediaLabel, tierLabel } from "../components/labels";
 import { useNotify } from "../components/toast";
 import { formatBytes, formatWhen, toDate } from "../format";
-import { AgentService, type QuarantinedAsset, type Rendition } from "../gen/homecloud/agent/v2/agent_pb";
+import { AgentService, type QuarantinedAsset, type Rendition } from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
   intro: { color: tokens.colorNeutralForeground3, maxWidth: "720px" },

@@ -11,9 +11,6 @@ import (
 func TestSameVolume(t *testing.T) {
 	a, b := t.TempDir(), t.TempDir()
 	same, err := SameVolume(a, b)
-	if errors.Is(err, ErrNoVolumeIdentity) {
-		t.Skipf("no volume identity in this environment: %v", err)
-	}
 	if err != nil || !same {
 		t.Fatalf("two temp dirs: same = %v, %v; want true", same, err)
 	}

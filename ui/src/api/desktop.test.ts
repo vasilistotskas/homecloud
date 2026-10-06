@@ -2,7 +2,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, type Transport } from "@connectrpc/connect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AgentService, GetInfoResponseSchema } from "../gen/homecloud/agent/v2/agent_pb";
+import { AgentService, GetInfoResponseSchema } from "../gen/homecloud/agent/v3/agent_pb";
 import { DesktopTransport } from "./desktop";
 
 const invoke = vi.hoisted(() => vi.fn());

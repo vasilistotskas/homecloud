@@ -15,7 +15,7 @@ import {
   RunResult,
   RunSchema,
   SettingsSchema,
-} from "../gen/homecloud/agent/v2/agent_pb";
+} from "../gen/homecloud/agent/v3/agent_pb";
 import { App } from "./App";
 import type { Platform } from "./platformContext";
 

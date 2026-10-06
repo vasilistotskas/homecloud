@@ -22,10 +22,10 @@ func TestParseMount(t *testing.T) {
 		want mount
 	}{
 		// /dev/root is not a device node: the device number identifies the volume.
-		{22, mount{dev: unix.Mkdev(8, 2), source: "/dev/root"}},
+		{22, mount{dev: unix.Mkdev(8, 2), fsType: "ext4", source: "/dev/root"}},
 		// btrfs reports an anonymous device number; its source names the device.
-		{41, mount{dev: unix.Mkdev(0, 45), source: "/dev/nvme0n1p1"}},
-		{57, mount{dev: unix.Mkdev(0, 26), source: "tmpfs"}},
+		{41, mount{dev: unix.Mkdev(0, 45), fsType: "btrfs", source: "/dev/nvme0n1p1"}},
+		{57, mount{dev: unix.Mkdev(0, 26), fsType: "tmpfs", source: "tmpfs"}},
 	}
 	for _, tt := range tests {
 		got, err := parseMount(strings.NewReader(sampleMountinfo), tt.id)
@@ -41,28 +41,6 @@ func TestParseMount(t *testing.T) {
 	}
 	if _, err := parseMount(strings.NewReader("7 1 eight / / rw - ext4 /dev/sda1 rw\n"), 7); err == nil {
 		t.Error("malformed device number accepted")
-	}
-}
-
-func TestMountMatches(t *testing.T) {
-	root := mount{dev: unix.Mkdev(8, 2), source: "/dev/root"}
-	if !root.matches("/dev/sda2", unix.Mkdev(8, 2)) {
-		t.Error("a mount must match the block device with its device number, whatever its source is called")
-	}
-	if root.matches("/dev/sda3", unix.Mkdev(8, 3)) {
-		t.Error("a mount matched another device")
-	}
-	dir := t.TempDir()
-	device := filepath.Join(dir, "nvme0n1p1")
-	if err := os.WriteFile(device, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	anon := mount{dev: unix.Mkdev(0, 45), source: device}
-	if !anon.matches(device, unix.Mkdev(259, 1)) {
-		t.Error("a mount with an anonymous device number must match its source device")
-	}
-	if anon.matches(filepath.Join(dir, "other"), unix.Mkdev(0, 45)) {
-		t.Error("an anonymous device number must never match by number")
 	}
 }
 

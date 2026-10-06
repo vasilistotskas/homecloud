@@ -8,11 +8,15 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/smartctl"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
 	"github.com/vasilistotskas/homecloud/internal/verify"
 )
@@ -39,6 +43,12 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		checkPin(ctx, "ffprobe version", verify.FFprobePin(cfg.FFmpeg).Check),
 		checkPin(ctx, "ffmpeg version", thumbs.FFmpegPin(cfg.FFmpeg).Check),
 	}
+	if cfg.DriveHealth.Source == config.DriveHealthSmartctl {
+		results = append(results, checkPin(ctx, "smartctl version", func(ctx context.Context) error {
+			return smartctl.CheckVersion(ctx, cfg.Smartctl)
+		}))
+	}
+	results = append(results, checkStorage(ctx, cfg))
 	return append(results, checkIPhoneBackupDirs(cfg)...)
 }
 
@@ -76,6 +86,25 @@ func checkSpace(s config.Storage) Result {
 	space, err := platform.CheckFreeSpace(s.Root, s.MinFreePercent)
 	detail := fmt.Sprintf("%.1f%% free (%.0f of %.0f GB)", space.FreePercent(), float64(space.Free)/1e9, float64(space.Total)/1e9)
 	return Result{Name: "free space", Detail: detail, Err: err}
+}
+
+// checkStorage finds the drives (and md arrays) holding the archive and reads
+// their health once, as the agent does after every sync. In a container it
+// shows a drive that was not passed in or a capability that is missing.
+func checkStorage(ctx context.Context, cfg *config.Config) Result {
+	r := health.Check(ctx, func() (platform.Storage, error) { return platform.StorageOf(cfg.Storage.Root) },
+		health.ReaderFor(cfg), time.Now())
+	names := make([]string, 0, len(r.Drives)+len(r.Arrays))
+	for _, d := range r.Drives {
+		names = append(names, d.Name)
+	}
+	for _, a := range r.Arrays {
+		names = append(names, fmt.Sprintf("%s (%s, %s)", a.Name, a.Level, a.ArrayState))
+	}
+	if r.State != health.StateOK {
+		return Result{Name: "drive health", Err: fmt.Errorf("%s: %s", r.State, strings.Join(r.Reasons, "; "))}
+	}
+	return Result{Name: "drive health", Detail: "healthy: " + strings.Join(names, ", ")}
 }
 
 func checkPin(ctx context.Context, name string, check func(context.Context) error) Result {

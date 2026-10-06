@@ -26,7 +26,7 @@ import { MoreButton, RunBadge, RunTable } from "../components/RunTable";
 import { nextPage, useTableStyles } from "../components/tables";
 import {
   driveFileChangeBadge,
-  driveHealthBadge,
+  healthBadge,
   driveSyncListed,
   driveSyncOutcomeBadge,
   iphoneStateBadge,
@@ -45,7 +45,7 @@ import {
   type DriveFileEvent,
   type Event,
   type Run,
-} from "../gen/homecloud/agent/v2/agent_pb";
+} from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
   filters: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalM },
@@ -393,7 +393,7 @@ function describe(e: Event, driveDir: string | undefined): { kind: string; color
         text: `The downloader now keeps the ${e.detail.value.version} version at ${e.detail.value.to} (was ${e.detail.value.from}). It is checked again there.`,
       };
     case "driveHealthChanged": {
-      const b = driveHealthBadge[e.detail.value.to];
+      const b = healthBadge[e.detail.value.to];
       return { kind: "Drive health", color: b.color, text: [b.label, ...e.detail.value.reasons].join(": ") };
     }
     case "iphoneBackupChanged": {

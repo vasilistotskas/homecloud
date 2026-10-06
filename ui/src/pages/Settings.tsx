@@ -32,7 +32,7 @@ import { useNotify } from "../components/toast";
 import { useCopy } from "../components/useCopy";
 import { formatInterval, formatSpan, formatWhen, toDate } from "../format";
 import { icloudLoginCommand } from "../shell";
-import { AgentService } from "../gen/homecloud/agent/v2/agent_pb";
+import { AgentService } from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
   intro: { color: tokens.colorNeutralForeground3, maxWidth: "760px" },

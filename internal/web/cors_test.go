@@ -29,7 +29,7 @@ func serve(t *testing.T, method string, header http.Header) (res *httptest.Respo
 		reached = true
 		w.WriteHeader(http.StatusTeapot)
 	})
-	req := httptest.NewRequestWithContext(t.Context(), method, "/homecloud.agent.v2.AgentService/GetInfo", nil)
+	req := httptest.NewRequestWithContext(t.Context(), method, "/homecloud.agent.v3.AgentService/GetInfo", nil)
 	req.Header = header
 	res = httptest.NewRecorder()
 	testPolicy().handler(next).ServeHTTP(res, req)

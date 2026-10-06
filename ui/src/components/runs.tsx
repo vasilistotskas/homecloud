@@ -1,6 +1,6 @@
 import { Badge } from "@fluentui/react-components";
 
-import { DownloadOutcome, RunResult, type Run } from "../gen/homecloud/agent/v2/agent_pb";
+import { DownloadOutcome, RunResult, type Run } from "../gen/homecloud/agent/v3/agent_pb";
 import { formatCount } from "../format";
 import { started, took } from "./tables";
 

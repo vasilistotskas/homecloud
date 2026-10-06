@@ -26,15 +26,12 @@ const (
 	noDriveObjectRef = dbus.ObjectPath("/")
 )
 
-// DriveHealthOf reads the SMART data udisks2 keeps for the drive holding path
-// (NVMe controllers and ATA drives). Drives udisks cannot map, such as
-// device-mapper volumes, return ErrHealthUnsupported.
-func DriveHealthOf(ctx context.Context, path string) (DriveHealth, error) {
-	// The filesystem UUID identifies the volume however it is mounted (for
-	// example as /dev/root), and udisks resolves it through Block.IdUUID.
-	uuid, err := VolumeID(path)
-	if err != nil {
-		return DriveHealth{}, err
+// ReadDriveHealth reads the SMART data udisks2 keeps for a drive (NVMe
+// controllers and ATA drives), finding it by its device node. Drives udisks
+// reports no SMART data for return ErrHealthUnsupported.
+func ReadDriveHealth(ctx context.Context, d Drive) (DriveHealth, error) {
+	if d.Device == "" {
+		return DriveHealth{}, fmt.Errorf("%w: no device node here", ErrHealthUnsupported)
 	}
 	conn, err := dbus.ConnectSystemBus(dbus.WithContext(ctx))
 	if err != nil {
@@ -44,23 +41,26 @@ func DriveHealthOf(ctx context.Context, path string) (DriveHealth, error) {
 
 	var blocks []dbus.ObjectPath
 	if callErr := conn.Object(udisksBus, udisksManager).CallWithContext(ctx, ifaceManager+".ResolveDevice", 0,
-		map[string]dbus.Variant{"uuid": dbus.MakeVariant(uuid)}, map[string]dbus.Variant{}).Store(&blocks); callErr != nil {
-		return DriveHealth{}, fmt.Errorf("udisks: resolve filesystem %s: %w", uuid, callErr)
+		map[string]dbus.Variant{"path": dbus.MakeVariant(d.Device)}, map[string]dbus.Variant{}).Store(&blocks); callErr != nil {
+		return DriveHealth{}, fmt.Errorf("udisks: resolve %s: %w", d.Device, callErr)
 	}
 	if len(blocks) == 0 {
-		return DriveHealth{}, fmt.Errorf("%w: udisks does not know filesystem %s", ErrHealthUnsupported, uuid)
+		return DriveHealth{}, fmt.Errorf("%w: udisks does not know %s", ErrHealthUnsupported, d.Device)
 	}
 	var drivePath dbus.ObjectPath
 	if propErr := conn.Object(udisksBus, blocks[0]).StoreProperty(ifaceBlock+".Drive", &drivePath); propErr != nil {
-		return DriveHealth{}, fmt.Errorf("udisks: drive of filesystem %s: %w", uuid, propErr)
+		return DriveHealth{}, fmt.Errorf("udisks: drive of %s: %w", d.Device, propErr)
 	}
 	if drivePath == noDriveObjectRef {
-		return DriveHealth{}, fmt.Errorf("%w: filesystem %s is not on a physical drive udisks can see", ErrHealthUnsupported, uuid)
+		return DriveHealth{}, fmt.Errorf("%w: udisks sees no physical drive behind %s", ErrHealthUnsupported, d.Device)
 	}
 	drive := conn.Object(udisksBus, drivePath)
-	var model string
+	var model, serial string
 	if propErr := drive.StoreProperty(ifaceDrive+".Model", &model); propErr != nil {
 		return DriveHealth{}, fmt.Errorf("udisks: model of %s: %w", drivePath, propErr)
+	}
+	if propErr := drive.StoreProperty(ifaceDrive+".Serial", &serial); propErr != nil {
+		return DriveHealth{}, fmt.Errorf("udisks: serial of %s: %w", drivePath, propErr)
 	}
 
 	node, err := introspect.Call(drive)
@@ -71,6 +71,7 @@ func DriveHealthOf(ctx context.Context, path string) (DriveHealth, error) {
 		return slices.ContainsFunc(node.Interfaces, func(i introspect.Interface) bool { return i.Name == iface })
 	}
 
+	var h DriveHealth
 	switch {
 	case implements(ifaceNVMe):
 		nvme, err := allProperties(ctx, drive, ifaceNVMe)
@@ -78,18 +79,25 @@ func DriveHealthOf(ctx context.Context, path string) (DriveHealth, error) {
 			return DriveHealth{}, err
 		}
 		var attrs map[string]dbus.Variant
-		if err := drive.CallWithContext(ctx, ifaceNVMe+".SmartGetAttributes", 0, map[string]dbus.Variant{}).Store(&attrs); err != nil {
-			return DriveHealth{}, fmt.Errorf("udisks: NVMe SMART attributes of %s: %w", drivePath, err)
+		if callErr := drive.CallWithContext(ctx, ifaceNVMe+".SmartGetAttributes", 0, map[string]dbus.Variant{}).Store(&attrs); callErr != nil {
+			return DriveHealth{}, fmt.Errorf("udisks: NVMe SMART attributes of %s: %w", drivePath, callErr)
 		}
-		return parseUdisksNVMe(model, nvme, attrs)
+		if h, err = parseUdisksNVMe(nvme, attrs); err != nil {
+			return DriveHealth{}, err
+		}
 	case implements(ifaceDriveAta):
 		ata, err := allProperties(ctx, drive, ifaceDriveAta)
 		if err != nil {
 			return DriveHealth{}, err
 		}
-		return parseUdisksATA(model, ata)
+		if h, err = parseUdisksATA(ata); err != nil {
+			return DriveHealth{}, err
+		}
+	default:
+		return DriveHealth{}, fmt.Errorf("%w: %s (%s) reports no SMART data", ErrHealthUnsupported, drivePath, model)
 	}
-	return DriveHealth{}, fmt.Errorf("%w: %s (%s) reports no SMART data", ErrHealthUnsupported, drivePath, model)
+	h.Model, h.Serial = model, serial
+	return h, nil
 }
 
 // allProperties returns the properties of iface on obj.
@@ -115,7 +123,7 @@ func variant[T any](m map[string]dbus.Variant, key string) (T, error) {
 
 // parseUdisksNVMe maps the NVMe.Controller properties and SmartGetAttributes
 // result (udisks ≥ 2.10) to DriveHealth.
-func parseUdisksNVMe(model string, props, attrs map[string]dbus.Variant) (DriveHealth, error) {
+func parseUdisksNVMe(props, attrs map[string]dbus.Variant) (DriveHealth, error) {
 	updated, err := variant[uint64](props, "SmartUpdated")
 	if err != nil {
 		return DriveHealth{}, err
@@ -148,7 +156,6 @@ func parseUdisksNVMe(model string, props, attrs map[string]dbus.Variant) (DriveH
 		return DriveHealth{}, err
 	}
 	h := DriveHealth{
-		Model:                 model,
 		Protocol:              "NVMe",
 		Warnings:              warnings,
 		AvailableSparePercent: new(int(spare)),
@@ -163,7 +170,7 @@ func parseUdisksNVMe(model string, props, attrs map[string]dbus.Variant) (DriveH
 }
 
 // parseUdisksATA maps the Drive.Ata SMART properties to DriveHealth.
-func parseUdisksATA(model string, props map[string]dbus.Variant) (DriveHealth, error) {
+func parseUdisksATA(props map[string]dbus.Variant) (DriveHealth, error) {
 	for key, missing := range map[string]string{"SmartSupported": "supported", "SmartEnabled": "enabled"} {
 		on, err := variant[bool](props, key)
 		if err != nil {
@@ -196,7 +203,7 @@ func parseUdisksATA(model string, props map[string]dbus.Variant) (DriveHealth, e
 	if err != nil {
 		return DriveHealth{}, err
 	}
-	h := DriveHealth{Model: model, Protocol: "ATA", PowerOnHours: new(seconds / secondsPerHour)}
+	h := DriveHealth{Protocol: "ATA", PowerOnHours: new(seconds / secondsPerHour)}
 	if failing {
 		h.Warnings = []string{"failing"}
 	}

@@ -31,7 +31,7 @@ import { Page } from "../components/Page";
 import { mediaLabel } from "../components/labels";
 import { useNotify } from "../components/toast";
 import { formatBytes, formatCount, formatWhen, toDate } from "../format";
-import { AgentService, AssetKind, AssetState, type LibraryItem } from "../gen/homecloud/agent/v2/agent_pb";
+import { AgentService, AssetKind, AssetState, type LibraryItem } from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
   filters: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.spacingHorizontalS },

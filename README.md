@@ -39,8 +39,9 @@ flowchart TB
 
     kei["kei (pinned downloader)"]
     ffmpeg["ffprobe / ffmpeg (pinned)"]
+    smart["Drive health: NVMe log (Windows) ·<br/>udisks or pinned smartctl (Linux)"]
 
-    subgraph archive["Archive drive · storage.root"]
+    subgraph archive["Archive storage · storage.root<br/>(one drive, or a RAID of several)"]
         photos[("Photos/ + *.xmp")]
         drivedir[("Drive/ + .versions/<br/>+ manifest.csv")]
         ledger[("homecloud.db<br/>ledger + audit log")]
@@ -59,6 +60,7 @@ flowchart TB
     icloud --> kei
     cycle -- "runs" --> kei
     cycle -- "runs" --> ffmpeg
+    cycle -- "every drive + md array<br/>under the archive" --> smart
     kei --> photos
     cycle --> ledger
     cycle --> exports
@@ -94,7 +96,7 @@ flowchart TD
     bad -- yes --> q["Quarantine the asset, urgent alert<br/>(never deleted from iCloud)"]
     bad -- no --> ok["Verified"]
     q --> after
-    ok --> after["Drive health (SMART) · manifest.csv · thumbnails"]
+    ok --> after["Health of every drive and RAID array under the archive<br/>(SMART, md) · manifest.csv · thumbnails"]
     after --> due{"Maintenance due?"}
     due -- "scrub (schedule.scrub_interval)" --> scrub["Re-hash the photo and Drive files confirmed longest ago<br/>(schedule.scrub_fraction of each per run)"]
     due -- "iCloud Drive (drive.sync_interval)" --> dsync["List iCloud Drive; download new/changed files,<br/>check size + Apple's signature (ZIP check for packages),<br/>keep replaced copies in .versions, record deletions"]
@@ -108,7 +110,7 @@ flowchart TD
 ```
 
 The agent serves a local API ([Connect](https://connectrpc.com), contract in
-`proto/homecloud/agent/v2`) on `web.listen` (always `127.0.0.1`). Same-user clients read the
+`proto/homecloud/agent/v3`) on `web.listen` (always `127.0.0.1`). Same-user clients read the
 bearer token from the owner-only discovery file `agent.json` in the per-user state directory
 (`%LOCALAPPDATA%\homecloud` on Windows, `$XDG_STATE_HOME/homecloud` on Linux); the token changes
 every time the agent starts. Browsers sign in with a one-time code from `homecloud open`.
@@ -161,15 +163,24 @@ docker run --rm -v /srv/archive:/archive --entrypoint homecloud homecloud archiv
 
 Tools: `kei.binary = '/opt/kei/kei'`, `ffmpeg.ffmpeg = '/opt/ffmpeg/bin/ffmpeg'`,
 `ffmpeg.ffprobe = '/opt/ffmpeg/bin/ffprobe'`. Run it as the user that owns the folders
-(`--user UID:GID`). Logs go to stdout (`docker logs`). Archive drive health inside a container
-is not read yet.
+(`--user UID:GID`). Logs go to stdout (`docker logs`).
+
+**Drive health in the container:** set `drive_health.source = "smartctl"` and
+`[smartctl] binary = '/usr/sbin/smartctl'`, `version = "7.5"`. The agent follows the archive's
+file system down through LVM and md RAID to every drive under it and reads each drive with
+smartctl (smartmontools 7.5 from Debian's backports), plus each md array's state. Pass every
+such drive read-only by its stable name (`--device /dev/disk/by-id/ata-…:/dev/disk/by-id/ata-…:r`)
+and allow `--cap-add SYS_RAWIO --cap-add SYS_ADMIN`: only the image's `smartctl` carries those
+capabilities (Docker gives a non-root user none), so the agent itself cannot read the drives.
+`homecloud doctor` lists the drives and arrays it found and names a drive it could not read.
 
 **On a NAS, with the app on your other devices:** `deploy/compose.yaml` runs the image next to
 a [Tailscale](https://tailscale.com) container that shares its network: the agent still listens
 only on `127.0.0.1`, and Tailscale Serve (`deploy/serve.json`) publishes it to your tailnet,
 and nowhere else, at `https://<TS_HOSTNAME>.<tailnet>.ts.net` with a real certificate. Enable
 MagicDNS and HTTPS certificates for the tailnet, copy `deploy/homecloud.env.example` to
-`deploy/.env` and fill it in, set `web.public_origin` to that address, then
+`deploy/.env` and fill it in (including the archive's drives, `HOMECLOUD_DRIVE_1`/`_2`), set
+`web.public_origin` to that address, then
 `docker compose up -d` and sign in with the link `docker compose exec homecloud homecloud open
 --print` prints.
 
@@ -214,6 +225,8 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[drive]` | `sync_interval` (≥ 15m), `workers` (parallel downloads, 1–16), `stall_timeout` (a download receiving nothing this long is retried next sync, 30s–10m) |
 | `[iphone_backup]` | `dirs` (absolute paths, written out: Apple Devices uses `C:\Users\<you>\Apple\MobileSync\Backup`, desktop iTunes `C:\Users\<you>\AppData\Roaming\Apple Computer\MobileSync\Backup`), `max_age`, `check_interval` (≤ `max_age`), `read_interval` (how often every backup file is read in full, ≥ `check_interval`), `stalled_after` (a backup still running this long counts as unfinished), `max_shrink_percent` |
 | `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files under `<storage.root>\logs` on Windows (Linux logs to journald) |
+| `[drive_health]` | Linux only: `source`, where the SMART data of the drives under the archive comes from: `"udisks"` (a desktop's udisks2, no rights needed) or `"smartctl"` (a server or the container). Windows reads NVMe health itself and has no such section |
+| `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m) |
 
 ## Operating
 
@@ -256,7 +269,7 @@ golangci-lint run      # and with GOOS=linux
 pnpm --dir ui lint; pnpm --dir ui typecheck; pnpm --dir ui test
 ```
 
-- **API contract:** edit `proto/homecloud/agent/v2/agent.proto`, then `go tool buf lint` and
+- **API contract:** edit `proto/homecloud/agent/v3/agent.proto`, then `go tool buf lint` and
   `go tool buf generate` (needs `pnpm install` in `ui/`, which pins `protoc-gen-es`). Generated
   code under `gen/` and `ui/src/gen/` is committed; CI fails if it is stale or breaks the API.
 - **Web app:** `pnpm --dir ui dev` serves it with hot reload and proxies the API and `/media` to

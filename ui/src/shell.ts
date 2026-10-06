@@ -1,4 +1,4 @@
-import type { Settings } from "./gen/homecloud/agent/v2/agent_pb";
+import type { Settings } from "./gen/homecloud/agent/v3/agent_pb";
 
 /**
  * A command line that runs `binary` with `args` in the terminal of the agent's

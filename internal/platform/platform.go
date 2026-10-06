@@ -4,7 +4,6 @@
 //
 // Per-OS functions:
 //
-//	VolumeID(path) (string, error)       identity of the volume holding path
 //	SameVolume(a, b) (bool, error)       whether two paths share a volume
 //	DiskSpace(path) (Space, error)       free/total bytes available to the caller
 //	AcquireInstance(name) (*Lock, error) single-instance guard for the agent
@@ -19,7 +18,9 @@
 //
 //	OpenURL(url) error                   open a URL in the default browser
 //	MarkHidden(path) error               hide a file or folder from file managers
-//	DriveHealthOf(ctx, path)             SMART health of the drive holding path
+//	StorageOf(path) (Storage, error)     drives (and Linux md arrays) holding path
+//	ReadDriveHealth(ctx, Drive)          SMART health the OS itself reports for a
+//	                                     drive (Windows: NVMe health log; Linux: udisks)
 package platform
 
 import (
@@ -27,13 +28,8 @@ import (
 	"fmt"
 )
 
-var (
-	// ErrAlreadyRunning is returned by AcquireInstance when another process holds the lock.
-	ErrAlreadyRunning = errors.New("another instance is already running")
-	// ErrNoVolumeIdentity is returned by VolumeID for storage without a stable
-	// volume identity (for example overlay, tmpfs or network file systems).
-	ErrNoVolumeIdentity = errors.New("path is not on a volume with a stable identity")
-)
+// ErrAlreadyRunning is returned by AcquireInstance when another process holds the lock.
+var ErrAlreadyRunning = errors.New("another instance is already running")
 
 // Space is the free and total space on a volume, as available to the caller.
 type Space struct {

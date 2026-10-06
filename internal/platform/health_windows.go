@@ -1,13 +1,12 @@
 package platform
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -15,8 +14,7 @@ import (
 // Storage IOCTLs and structure layouts from winioctl.h. Every query below
 // works on handles opened with no access rights, so no elevation is needed.
 const (
-	ioctlStorageGetDeviceNumber uint32 = 0x2D1080
-	ioctlStorageQueryProperty   uint32 = 0x2D1400
+	ioctlStorageQueryProperty uint32 = 0x2D1400
 
 	storageDeviceProperty                 = 0  // STORAGE_PROPERTY_ID StorageDeviceProperty
 	storageDeviceProtocolSpecificProperty = 50 // STORAGE_PROPERTY_ID StorageDeviceProtocolSpecificProperty
@@ -36,93 +34,81 @@ const (
 	deviceDescriptorBufSize = 1024
 )
 
-// DriveHealthOf reads the SMART / Health log of the NVMe drive holding path.
-// Other bus types return ErrHealthUnsupported: reading ATA SMART data on
-// Windows requires administrator rights.
-func DriveHealthOf(_ context.Context, path string) (DriveHealth, error) {
-	number, err := diskNumber(path)
-	if err != nil {
-		return DriveHealth{}, err
-	}
-	name, err := windows.UTF16PtrFromString(fmt.Sprintf(`\\.\PhysicalDrive%d`, number))
+// ReadDriveHealth reads the SMART / Health log of an NVMe drive. Other bus
+// types return ErrHealthUnsupported: reading ATA SMART data on Windows
+// requires administrator rights.
+func ReadDriveHealth(_ context.Context, d Drive) (DriveHealth, error) {
+	name, err := windows.UTF16PtrFromString(d.Device)
 	if err != nil {
 		return DriveHealth{}, fmt.Errorf("encode disk path: %w", err)
 	}
 	disk, err := windows.CreateFile(name, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
 	if err != nil {
-		return DriveHealth{}, fmt.Errorf("open disk %d: %w", number, err)
+		return DriveHealth{}, fmt.Errorf("open %s: %w", d.Device, err)
 	}
 	defer windows.CloseHandle(disk) //nolint:errcheck // read-only query handle
 
-	model, bus, err := deviceDescriptor(disk)
+	desc, err := deviceDescriptor(disk)
 	if err != nil {
 		return DriveHealth{}, err
 	}
-	if bus != busTypeNvme {
-		return DriveHealth{}, fmt.Errorf("%w: disk %d (%s) is not NVMe", ErrHealthUnsupported, number, model)
+	if desc.bus != busTypeNvme {
+		return DriveHealth{}, fmt.Errorf("%w: %s is not NVMe", ErrHealthUnsupported, desc.model)
 	}
 	log, err := nvmeHealthLog(disk)
 	if err != nil {
-		return DriveHealth{}, fmt.Errorf("disk %d: %w", number, err)
+		return DriveHealth{}, err
 	}
-	return parseNVMeHealthLog(model, log), nil
+	h := parseNVMeHealthLog(log)
+	h.Model, h.Serial = desc.model, desc.serial
+	return h, nil
 }
 
-// diskNumber returns the number of the physical disk holding path's volume.
-func diskNumber(path string) (uint32, error) {
-	vol := filepath.VolumeName(path)
-	if vol == "" {
-		return 0, fmt.Errorf("%q has no volume name", path)
-	}
-	name, err := windows.UTF16PtrFromString(`\\.\` + strings.TrimSuffix(vol, `\`))
-	if err != nil {
-		return 0, fmt.Errorf("encode volume path: %w", err)
-	}
-	h, err := windows.CreateFile(name, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
-	if err != nil {
-		return 0, fmt.Errorf("open volume %s: %w", vol, err)
-	}
-	defer windows.CloseHandle(h) //nolint:errcheck // read-only query handle
-
-	// STORAGE_DEVICE_NUMBER
-	var dn struct{ DeviceType, DeviceNumber, PartitionNumber uint32 }
-	var n uint32
-	size := uint32(unsafe.Sizeof(dn))
-	if err := windows.DeviceIoControl(h, ioctlStorageGetDeviceNumber, nil, 0, (*byte)(unsafe.Pointer(&dn)), size, &n, nil); err != nil { //nolint:gosec // fixed-size Win32 struct
-		return 0, fmt.Errorf("disk number of %s: %w", vol, err)
-	}
-	return dn.DeviceNumber, nil
+// descriptor is what homecloud uses of a STORAGE_DEVICE_DESCRIPTOR.
+type descriptor struct {
+	model, serial string
+	bus           uint32
 }
 
-// deviceDescriptor returns the product id and bus type from STORAGE_DEVICE_DESCRIPTOR.
-func deviceDescriptor(disk windows.Handle) (string, uint32, error) {
+// deviceDescriptor reads the disk's STORAGE_DEVICE_DESCRIPTOR.
+func deviceDescriptor(disk windows.Handle) (descriptor, error) {
 	var query [propertyQueryHeader + 4]byte
 	binary.LittleEndian.PutUint32(query[0:], storageDeviceProperty)
 	binary.LittleEndian.PutUint32(query[4:], propertyStandardQuery)
 	var out [deviceDescriptorBufSize]byte
 	var n uint32
 	if err := windows.DeviceIoControl(disk, ioctlStorageQueryProperty, &query[0], uint32(len(query)), &out[0], uint32(len(out)), &n, nil); err != nil {
-		return "", 0, fmt.Errorf("query device descriptor: %w", err)
+		return descriptor{}, fmt.Errorf("query device descriptor: %w", err)
 	}
 	return parseDeviceDescriptor(out[:n])
 }
 
 // parseDeviceDescriptor reads STORAGE_DEVICE_DESCRIPTOR: ProductIdOffset at
-// byte 16 (a NUL-terminated string, 0 when absent) and BusType at byte 28.
-func parseDeviceDescriptor(b []byte) (string, uint32, error) {
-	const productIDOffset, busTypeOffset = 16, 28
+// byte 16 and SerialNumberOffset at byte 24 (each a NUL-terminated string, 0
+// when absent) and BusType at byte 28.
+func parseDeviceDescriptor(b []byte) (descriptor, error) {
+	const productIDOffset, serialNumberOffset, busTypeOffset = 16, 24, 28
 	if len(b) < busTypeOffset+4 {
-		return "", 0, fmt.Errorf("device descriptor too short (%d bytes)", len(b))
+		return descriptor{}, fmt.Errorf("device descriptor too short (%d bytes)", len(b))
 	}
-	var model string
-	if off := binary.LittleEndian.Uint32(b[productIDOffset:]); off != 0 && int(off) < len(b) {
-		s := b[off:]
-		if end := strings.IndexByte(string(s), 0); end >= 0 {
-			s = s[:end]
-		}
-		model = strings.TrimSpace(string(s))
+	return descriptor{
+		model:  descriptorString(b, binary.LittleEndian.Uint32(b[productIDOffset:])),
+		serial: descriptorString(b, binary.LittleEndian.Uint32(b[serialNumberOffset:])),
+		bus:    binary.LittleEndian.Uint32(b[busTypeOffset:]),
+	}, nil
+}
+
+// descriptorString reads the NUL-terminated string at off; 0 (and an offset
+// past the end, which some drivers write for "none") mean absent.
+func descriptorString(b []byte, off uint32) string {
+	if off == 0 || int(off) >= len(b) {
+		return ""
 	}
-	return model, binary.LittleEndian.Uint32(b[busTypeOffset:]), nil
+	s := b[off:]
+	if end := bytes.IndexByte(s, 0); end >= 0 {
+		s = s[:end]
+	}
+	return strings.TrimSpace(string(s))
 }
 
 // nvmeHealthLog reads the NVMe SMART / Health Information log page through
@@ -163,11 +149,10 @@ func protocolData(b []byte) ([]byte, error) {
 
 // parseNVMeHealthLog decodes the fields homecloud uses from the 512-byte NVMe
 // SMART / Health Information log (NVMe Base Specification, log page 02h).
-func parseNVMeHealthLog(model string, log []byte) DriveHealth {
+func parseNVMeHealthLog(log []byte) DriveHealth {
 	return DriveHealth{
-		Model:                 model,
 		Protocol:              "NVMe",
-		Warnings:              nvmeWarnings(log[0]),
+		Warnings:              NVMeWarnings(log[0]),
 		TemperatureCelsius:    new(kelvinToCelsius(int(binary.LittleEndian.Uint16(log[1:])))),
 		AvailableSparePercent: new(int(log[3])),
 		PercentUsed:           new(int(log[5])),
@@ -177,19 +162,4 @@ func parseNVMeHealthLog(model string, log []byte) DriveHealth {
 		PowerOnHours: new(binary.LittleEndian.Uint64(log[128:])),
 		MediaErrors:  new(binary.LittleEndian.Uint64(log[160:])),
 	}
-}
-
-// nvmeCriticalWarnings names the bits of the NVMe SMART / Health log's
-// Critical Warning byte (NVMe Base Specification, Get Log Page 02h), using the
-// names udisks reports for the same bits on Linux.
-var nvmeCriticalWarnings = []string{"spare", "temperature", "degraded", "readonly", "volatile_mem", "pmr_readonly"}
-
-func nvmeWarnings(b byte) []string {
-	var out []string
-	for i, name := range nvmeCriticalWarnings {
-		if b&(1<<i) != 0 {
-			out = append(out, name)
-		}
-	}
-	return out
 }

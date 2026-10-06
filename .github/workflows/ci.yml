@@ -173,6 +173,17 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race ./...
+      - name: Storage discovery on real block devices
+        if: runner.os == 'Linux'
+        # md raid1 → LVM → ext4 and a btrfs raid1 on loop devices, as on a NAS
+        # pool (internal/platform TestStorageOfRealStack); it needs root.
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mdadm lvm2 btrfs-progs
+          sudo modprobe raid1
+          sudo modprobe btrfs
+          go test -c -o "$RUNNER_TEMP/platform.test" ./internal/platform/
+          sudo HOMECLOUD_TEST_BLOCK_DEVICES=1 "$RUNNER_TEMP/platform.test" -test.run TestStorageOfRealStack -test.v
       - uses: golangci/golangci-lint-action@v9.3.0
         with:
           version: v2.14.0

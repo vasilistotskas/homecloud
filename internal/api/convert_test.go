@@ -1,37 +1,66 @@
 package api
 
 import (
+	"strings"
 	"testing"
 	"time"
 
-	agentv2 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2"
+	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
-func TestDriveToProto(t *testing.T) {
-	if d, err := driveToProto(health.Report{}); d != nil || err != nil {
-		t.Fatalf("unchecked drive = %v, %v; want nil", d, err)
+func TestStorageHealthToProto(t *testing.T) {
+	if s, err := storageHealthToProto(health.Report{}); s != nil || err != nil {
+		t.Fatalf("unchecked storage = %v, %v; want nil", s, err)
 	}
-	temp, used := 55, 4
-	hours := uint64(18658)
-	d, err := driveToProto(health.Report{
+	s, err := storageHealthToProto(health.Report{
 		State:     health.StateFailing,
 		CheckedAt: time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC),
-		Reasons:   []string{"drive reports: spare"},
-		Drive: &platform.DriveHealth{
-			Model: "CT2000T700SSD5", Protocol: "NVMe", Warnings: []string{"spare"},
-			TemperatureCelsius: &temp, PercentUsed: &used, PowerOnHours: &hours,
+		Reasons:   []string{"sda: drive reports: failing", "md1: sdb3 has failed"},
+		Drives: []health.DriveReport{
+			{Name: "sda", State: health.StateFailing, Reasons: []string{"drive reports: failing"}, Health: &platform.DriveHealth{
+				Model: "ST4000VN006-3CW104", Serial: "ZW6123AB", Protocol: "ATA", Warnings: []string{"failing"},
+				TemperatureCelsius: new(34), PowerOnHours: new(uint64(1200)),
+			}},
+			{Name: "sdb", State: health.StateUnavailable, Reasons: []string{"no device node here"}},
 		},
+		Arrays: []health.ArrayReport{{
+			RaidArray: platform.RaidArray{
+				Name: "md1", Level: "raid1", ArrayState: "clean", RaidDisks: 2, Degraded: 1, SyncAction: "idle",
+				Members: []platform.RaidMember{{Name: "sda3", Drive: "sda", States: []string{"in_sync"}, Errors: 2}},
+			},
+			State: health.StateFailing, Reasons: []string{"sdb3 has failed"},
+		}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.GetState() != agentv2.DriveHealthState_DRIVE_HEALTH_STATE_FAILING || d.GetTemperatureCelsius() != 55 ||
-		d.GetPercentUsed() != 4 || d.GetPowerOnHours() != 18658 || d.MediaErrors != nil || d.GetModel() != "CT2000T700SSD5" {
-		t.Fatalf("drive = %v", d)
+	if s.GetState() != agentv3.HealthState_HEALTH_STATE_FAILING || len(s.GetReasons()) != 2 || len(s.GetDrives()) != 2 {
+		t.Fatalf("storage = %v", s)
+	}
+	sda, sdb := s.GetDrives()[0], s.GetDrives()[1]
+	if sda.GetName() != "sda" || sda.GetSerial() != "ZW6123AB" || sda.GetTemperatureCelsius() != 34 || sda.GetPowerOnHours() != 1200 ||
+		sda.PercentUsed != nil || sda.MediaErrors != nil || sda.GetWarnings()[0] != "failing" {
+		t.Fatalf("sda = %v", sda)
+	}
+	if sdb.GetState() != agentv3.HealthState_HEALTH_STATE_UNAVAILABLE || sdb.GetProtocol() != "" || sdb.GetReasons()[0] != "no device node here" {
+		t.Fatalf("sdb = %v", sdb)
+	}
+	a := s.GetArrays()[0]
+	if a.GetName() != "md1" || a.GetDegraded() != 1 || a.GetRaidDisks() != 2 || a.GetState() != agentv3.HealthState_HEALTH_STATE_FAILING ||
+		a.GetMembers()[0].GetDrive() != "sda" || a.GetMembers()[0].GetReadErrors() != 2 {
+		t.Fatalf("array = %v", a)
+	}
+}
+
+func TestAPIVersionMatchesPackage(t *testing.T) {
+	pkg := string(agentv3.File_homecloud_agent_v3_agent_proto.Package())
+	major, _, _ := strings.Cut(Version, ".")
+	if !strings.HasSuffix(pkg, ".v"+major) {
+		t.Fatalf("api.Version %s does not match the proto package %s", Version, pkg)
 	}
 }
 
@@ -43,8 +72,8 @@ func TestDriveHealthEventToProto(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := e.GetDriveHealthChanged()
-	if c.GetFrom() != agentv2.DriveHealthState_DRIVE_HEALTH_STATE_UNSPECIFIED ||
-		c.GetTo() != agentv2.DriveHealthState_DRIVE_HEALTH_STATE_WARNING || c.GetReasons()[0] != "3 media errors" {
+	if c.GetFrom() != agentv3.HealthState_HEALTH_STATE_UNSPECIFIED ||
+		c.GetTo() != agentv3.HealthState_HEALTH_STATE_WARNING || c.GetReasons()[0] != "3 media errors" {
 		t.Fatalf("event = %v", e)
 	}
 	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.EventDriveHealthChanged, Detail: `{"to":"bogus"}`}); err == nil {
@@ -62,8 +91,8 @@ func TestIPhoneBackupEventToProto(t *testing.T) {
 	}
 	c := e.GetIphoneBackupChanged()
 	if c.GetUdid() != "UDID-A" || c.GetDir() != `C:\Backup\UDID-A` || c.GetDeviceName() != "iPhone" ||
-		c.GetFrom() != agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
-		c.GetTo() != agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE || c.GetReasons()[0] != "old" {
+		c.GetFrom() != agentv3.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
+		c.GetTo() != agentv3.IPhoneBackupState_I_PHONE_BACKUP_STATE_STALE || c.GetReasons()[0] != "old" {
 		t.Fatalf("event = %v", e)
 	}
 	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.EventIPhoneBackupChanged, Detail: `{"to":"bogus"}`}); err == nil {
@@ -83,7 +112,7 @@ func TestIPhoneBackupRunToProto(t *testing.T) {
 	}
 	rep := r.GetIphoneBackup()
 	d := rep.GetDevices()[0]
-	if rep.GetArchived() != 1 || d.GetState() != agentv2.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
+	if rep.GetArchived() != 1 || d.GetState() != agentv3.IPhoneBackupState_I_PHONE_BACKUP_STATE_OK ||
 		d.GetSizeBytes() != 1024 || !d.GetEncrypted() || d.GetCompletedAt().AsTime().Hour() != 20 {
 		t.Fatalf("run = %v", r)
 	}
@@ -100,7 +129,7 @@ func TestDriveSyncRunToProto(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := r.GetDriveSync()
-	if d.GetOutcome() != agentv2.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_PARTIAL || d.GetArchived() != 7 ||
+	if d.GetOutcome() != agentv3.DriveSyncOutcome_DRIVE_SYNC_OUTCOME_PARTIAL || d.GetArchived() != 7 ||
 		d.GetDownloadedBytes() != 2048 || d.GetFailures()[0] != "a.pdf: boom" || d.GetManifestRows() != 9 {
 		t.Fatalf("run = %v", r)
 	}
@@ -118,7 +147,7 @@ func TestDriveFileMovedEventToProto(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := e.GetDriveFile()
-	if d.GetChange() != agentv2.DriveFileChange_DRIVE_FILE_CHANGE_MOVED || d.GetFromPath() != "iCloud Drive/a.pdf" ||
+	if d.GetChange() != agentv3.DriveFileChange_DRIVE_FILE_CHANGE_MOVED || d.GetFromPath() != "iCloud Drive/a.pdf" ||
 		d.GetPath() != "iCloud Drive/Docs/b.pdf" || e.GetAsset().GetFilename() != "b.pdf" {
 		t.Fatalf("event = %v", e)
 	}

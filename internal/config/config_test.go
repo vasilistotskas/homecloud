@@ -25,6 +25,7 @@ var (
 var validTOML = strings.NewReplacer(
 	"@ROOT@", testRoot, "@ARCHIVE_ID@", testArchiveID,
 	"@KEI_BINARY@", testKeiBinary, "@KEI_CONFIG@", testKeiConfig, "@FFPROBE@", testFFprobeBin, "@FFMPEG@", testFFmpegBin, "@BACKUP_DIR@", testBackupDir, "@IPHONE_DIR@", testIPhoneDir,
+	"@DRIVE_HEALTH@", testDriveHealthTOML,
 ).Replace(`
 [storage]
 root = '@ROOT@'
@@ -89,7 +90,7 @@ stall_timeout = "2m"
 [logs]
 max_size_mb = 20
 max_backups = 10
-`)
+@DRIVE_HEALTH@`)
 
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()
@@ -131,7 +132,9 @@ func TestLoadValid(t *testing.T) {
 			CheckInterval: Duration(24 * time.Hour), MaxShrinkPercent: 50,
 			ReadInterval: Duration(168 * time.Hour), StalledAfter: Duration(6 * time.Hour),
 		},
-		Logs: Logs{MaxSizeMB: 20, MaxBackups: 10},
+		Logs:        Logs{MaxSizeMB: 20, MaxBackups: 10},
+		DriveHealth: testDriveHealth,
+		Smartctl:    testSmartctl,
 	}
 	if diff := cmp.Diff(want, cfg); diff != "" {
 		t.Errorf("config mismatch (-want +got):\n%s", diff)

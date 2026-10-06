@@ -35,6 +35,17 @@ services:
     environment:
       # Times the CLI prints (a sign-in code's expiry) are local times.
       TZ: ${TZ}
+    # Drive health (drive_health.source = "smartctl"): every drive holding
+    # the archive, read-only, by its stable /dev/disk/by-id/ name. smartctl
+    # in the image carries the capabilities that query drives; the container
+    # must allow them (and must not set no-new-privileges), or smartctl does
+    # not start. The agent itself holds none and cannot read the drives.
+    devices:
+      - ${HOMECLOUD_DRIVE_1}:${HOMECLOUD_DRIVE_1}:r
+      - ${HOMECLOUD_DRIVE_2}:${HOMECLOUD_DRIVE_2}:r
+    cap_add:
+      - SYS_RAWIO # ATA SMART commands
+      - SYS_ADMIN # NVMe admin commands
     volumes:
       - ${HOMECLOUD_ARCHIVE}:/archive
       - ${HOMECLOUD_DATA}/config:/config:ro

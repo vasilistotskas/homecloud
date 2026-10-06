@@ -15,8 +15,8 @@ import (
 
 	"connectrpc.com/connect"
 
-	agentv2 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2"
-	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2/agentv2connect"
+	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
+	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/auth"
@@ -374,8 +374,8 @@ func runOpen(ctx context.Context, c *call, printLink bool) error {
 	if err != nil {
 		return err
 	}
-	client := agentv2connect.NewAgentServiceClient(http.DefaultClient, ep.URL, connect.WithInterceptors(auth.Bearer(ep.Token)))
-	res, err := client.CreateLoginCode(ctx, connect.NewRequest(&agentv2.CreateLoginCodeRequest{}))
+	client := agentv3connect.NewAgentServiceClient(http.DefaultClient, ep.URL, connect.WithInterceptors(auth.Bearer(ep.Token)))
+	res, err := client.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{}))
 	if err != nil {
 		return fmt.Errorf("request login code: %w", err)
 	}

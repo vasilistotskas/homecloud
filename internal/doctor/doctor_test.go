@@ -10,7 +10,6 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/config"
-	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 func TestErr(t *testing.T) {
@@ -48,9 +47,6 @@ func TestCheckBackupVolumeRefusesTheArchiveDrive(t *testing.T) {
 		Backup:  config.Backup{Dir: filepath.Join(dir, "not", "yet", "created")},
 	}
 	r := checkBackupVolume(cfg)
-	if errors.Is(r.Err, platform.ErrNoVolumeIdentity) {
-		t.Skipf("no volume identity in this environment: %v", r.Err)
-	}
 	if r.OK() || !strings.Contains(r.Err.Error(), "archive's drive") {
 		t.Fatalf("backups on the archive's drive = %+v; want refused", r)
 	}

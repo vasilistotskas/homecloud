@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AgentService,
   AppleAccountState,
-  DriveHealthState,
+  HealthState,
   DriveSyncOutcome,
   IPhoneBackupState,
   ListRunsResponseSchema,
@@ -15,7 +15,7 @@ import {
   Phase,
   RunResult,
   SettingsSchema,
-} from "../gen/homecloud/agent/v2/agent_pb";
+} from "../gen/homecloud/agent/v3/agent_pb";
 import { App } from "./App";
 import type { Platform } from "./platformContext";
 
@@ -114,7 +114,7 @@ describe("App", () => {
     scrollTo.mockRestore();
   });
 
-  it("puts a failing archive drive first", async () => {
+  it("puts failing archive drives first", async () => {
     const transport = createRouterTransport(({ service }) => {
       service(AgentService, {
         async *watchOverview() {
@@ -122,7 +122,13 @@ describe("App", () => {
             overview: create(OverviewSchema, {
               assets: { verified: 1n, quarantined: 1n },
               appleAccount: { state: AppleAccountState.SIGN_IN_REQUIRED },
-              drive: { state: DriveHealthState.FAILING, reasons: ["drive reports: spare"], protocol: "NVMe" },
+              storageHealth: {
+                state: HealthState.FAILING,
+                reasons: ["nvme0n1: drive reports: spare"],
+                drives: [
+                  { name: "nvme0n1", state: HealthState.FAILING, reasons: ["drive reports: spare"], protocol: "NVMe" },
+                ],
+              },
             }),
           };
           await never();
@@ -132,8 +138,66 @@ describe("App", () => {
       });
     });
     render(<App transport={transport} platform={browser} />);
-    expect(await screen.findByText("Your archive drive expects to fail")).toBeInTheDocument();
+    expect(await screen.findByText("Your archive's drives need attention now")).toBeInTheDocument();
     expect(screen.getByText("Failing")).toBeInTheDocument();
+  });
+
+  it("shows every drive and RAID array under the archive", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 1n },
+              storageHealth: {
+                state: HealthState.FAILING,
+                reasons: ["sdb: no device node here", "md1: lost redundancy: 1 of 2 drives missing or failed"],
+                drives: [
+                  {
+                    name: "sda",
+                    state: HealthState.OK,
+                    model: "ST4000VN006-3CW104",
+                    serial: "ZW6123AB",
+                    protocol: "ATA",
+                    temperatureCelsius: 34,
+                    mediaErrors: 0n,
+                  },
+                  { name: "sdb", state: HealthState.UNAVAILABLE, reasons: ["no device node here"] },
+                ],
+                arrays: [
+                  {
+                    name: "md1",
+                    state: HealthState.FAILING,
+                    reasons: ["lost redundancy: 1 of 2 drives missing or failed"],
+                    level: "raid1",
+                    arrayState: "active",
+                    raidDisks: 2,
+                    degraded: 1,
+                    syncAction: "recover",
+                    syncDone: 1024n,
+                    syncTotal: 4096n,
+                    members: [
+                      { name: "sda3", drive: "sda", states: ["in_sync"] },
+                      { name: "sdb3", drive: "sdb", states: ["spare"] },
+                    ],
+                  },
+                ],
+              },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("ST4000VN006-3CW104 · ATA")).toBeInTheDocument();
+    expect(screen.getByText("ZW6123AB")).toBeInTheDocument();
+    expect(screen.getByText("Health can't be read for this drive: no device node here")).toBeInTheDocument();
+    expect(screen.getByText("RAID 1 · active")).toBeInTheDocument();
+    expect(screen.getByText("1 of 2 in sync (sda, sdb)")).toBeInTheDocument();
+    expect(screen.getByText("Rebuilding · 25% done")).toBeInTheDocument();
   });
 
   it("reports archived files that changed on disk", async () => {

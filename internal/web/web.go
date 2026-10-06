@@ -28,7 +28,7 @@ import (
 	"connectrpc.com/connect"
 	connectcors "connectrpc.com/cors"
 
-	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v2/agentv2connect"
+	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/media"
 )
@@ -55,7 +55,7 @@ type Options struct {
 	// forwards the original Host), or empty.
 	PublicOrigin string
 	// Service implements the API.
-	Service agentv2connect.AgentServiceHandler
+	Service agentv3connect.AgentServiceHandler
 	// App is the built web app (index.html plus hashed assets/).
 	App fs.FS
 	// Media serves signed thumbnail and preview URLs (package media).
@@ -85,7 +85,7 @@ func Handler(o Options) (http.Handler, error) {
 		}
 	}
 
-	apiPath, apiHandler := agentv2connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
+	apiPath, apiHandler := agentv3connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
 	mux := http.NewServeMux()
 	mux.Handle(apiPath, authenticate(o.Auth, csrf, apiHandler))
 	app := serveApp(o.App)
@@ -148,7 +148,7 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		procedure := strings.TrimSuffix(r.URL.Path, "/")
 		switch procedure {
-		case agentv2connect.AgentServiceExchangeLoginCodeProcedure:
+		case agentv3connect.AgentServiceExchangeLoginCodeProcedure:
 			// It sets a cookie: no cross-site page may log a browser in.
 			if err := csrf.Check(r); err != nil {
 				deny(w, r, connect.CodePermissionDenied, "cross-origin request rejected")
@@ -156,7 +156,7 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 			}
 			next.ServeHTTP(w, r)
 			return
-		case agentv2connect.AgentServicePairDeviceProcedure:
+		case agentv3connect.AgentServicePairDeviceProcedure:
 			// It returns a token to the caller and sets nothing ambient; the
 			// desktop app calls it from its own origin.
 			next.ServeHTTP(w, r)
@@ -170,12 +170,12 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 		switch kind {
 		case auth.KindBearer:
 		case auth.KindDevice:
-			if procedure == agentv2connect.AgentServiceCreateLoginCodeProcedure {
+			if procedure == agentv3connect.AgentServiceCreateLoginCodeProcedure {
 				deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")
 				return
 			}
 		case auth.KindSession:
-			if procedure == agentv2connect.AgentServiceCreateLoginCodeProcedure {
+			if procedure == agentv3connect.AgentServiceCreateLoginCodeProcedure {
 				deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")
 				return
 			}

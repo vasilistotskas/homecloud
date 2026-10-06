@@ -11,8 +11,9 @@ import (
 // bufLen is the UTF-16 buffer length for volume paths and volume GUID names.
 const bufLen uint32 = windows.MAX_LONG_PATH
 
-// VolumeID returns the volume GUID name of the volume containing path.
-func VolumeID(path string) (string, error) {
+// volumeName returns the volume GUID name (\\?\Volume{…}\) of the volume
+// containing path.
+func volumeName(path string) (string, error) {
 	p, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return "", fmt.Errorf("encode path %q: %w", path, err)
@@ -36,11 +37,11 @@ func SameVolume(a, b string) (bool, error) {
 			return false, fmt.Errorf("stat %q: %w", p, err)
 		}
 	}
-	va, err := VolumeID(a)
+	va, err := volumeName(a)
 	if err != nil {
 		return false, err
 	}
-	vb, err := VolumeID(b)
+	vb, err := volumeName(b)
 	if err != nil {
 		return false, err
 	}

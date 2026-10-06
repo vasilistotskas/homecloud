@@ -1,17 +1,17 @@
 syntax = "proto3";
 
-// Package homecloud.agent.v2 is the local API of the homecloud agent. It is
+// Package homecloud.agent.v3 is the local API of the homecloud agent. It is
 // served on the loopback address configured as web.listen. Clients
 // authenticate with the bearer token from the agent's discovery file, or (in a
 // browser) with a session cookie obtained through a one-time login code.
-package homecloud.agent.v2;
+package homecloud.agent.v3;
 
 import "google/protobuf/timestamp.proto";
 
 // AgentService exposes the agent's state and the operator actions it accepts.
 service AgentService {
   // GetInfo identifies the agent. Incompatible API changes get a new proto
-  // package (homecloud.agent.v2), so an outdated client fails with
+  // package (homecloud.agent.v3), so an outdated client fails with
   // Unimplemented; api_version is informational, for display and support.
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -104,8 +104,9 @@ message Overview {
   Activity activity = 5;
   // The most recent finished cycle; absent before the first one finishes.
   Run last_cycle = 6;
-  // The latest health check of the archive drive; absent before the first one.
-  DriveHealth drive = 7;
+  // The latest health check of the storage holding the archive; absent
+  // before the first one.
+  StorageHealth storage_health = 7;
   // The most recent finished scrub; absent before the first one.
   Run last_scrub = 8;
   // The most recent finished ledger backup; absent before the first one.
@@ -132,36 +133,98 @@ message ICloudDrive {
   string session_problem = 5;
 }
 
-// DriveHealth is what the archive drive reports about itself (SMART) and the
-// agent's verdict on it.
-message DriveHealth {
-  DriveHealthState state = 1;
+// StorageHealth is the health of the storage holding the archive: every
+// drive under it and, on Linux, the md software RAID arrays between those
+// drives and the file system, with the agent's verdicts.
+message StorageHealth {
+  // The worst state of any drive or array; a problem one reports outranks
+  // one that could not be read.
+  HealthState state = 1;
   google.protobuf.Timestamp checked_at = 2;
+  // Why the state is not OK, each prefixed with its drive or array, or why
+  // the storage could not be found.
+  repeated string reasons = 3;
+  // Sorted by name.
+  repeated DriveHealth drives = 4;
+  // Sorted by name.
+  repeated RaidArray arrays = 5;
+}
+
+// DriveHealth is what one drive reports about itself (SMART) and the agent's
+// verdict on it.
+message DriveHealth {
+  // The operating system's name for the drive: "sda", "nvme0n1",
+  // "PhysicalDrive1".
+  string name = 1;
+  HealthState state = 2;
   // Why the state is not OK, or why health could not be read.
   repeated string reasons = 3;
   string model = 4;
-  // "NVMe" or "ATA".
-  string protocol = 5;
+  // Identifies the physical drive, e.g. to find the one to replace.
+  string serial = 5;
+  // "NVMe" or "ATA"; empty when health could not be read.
+  string protocol = 6;
   // The drive's own critical warnings, e.g. "spare", "temperature", "failing".
-  repeated string warnings = 6;
-  optional int32 temperature_celsius = 7;
-  // NVMe endurance estimate; 100 means the rated life is used up.
-  optional int32 percent_used = 8;
-  optional int32 available_spare_percent = 9;
+  repeated string warnings = 7;
+  optional int32 temperature_celsius = 8;
+  // Endurance estimate; 100 means the rated life is used up.
+  optional int32 percent_used = 9;
+  optional int32 available_spare_percent = 10;
   // NVMe media and data-integrity errors, or ATA bad sectors.
-  optional uint64 media_errors = 10;
-  optional uint64 power_on_hours = 11;
+  optional uint64 media_errors = 11;
+  optional uint64 power_on_hours = 12;
 }
 
-enum DriveHealthState {
-  DRIVE_HEALTH_STATE_UNSPECIFIED = 0;
-  DRIVE_HEALTH_STATE_OK = 1;
-  // Data was lost or remapped, or the rated endurance is used up.
-  DRIVE_HEALTH_STATE_WARNING = 2;
-  // The drive predicts its own failure.
-  DRIVE_HEALTH_STATE_FAILING = 3;
+// RaidArray is a Linux md array, as the kernel reports it.
+message RaidArray {
+  // "md1".
+  string name = 1;
+  HealthState state = 2;
+  // Why the state is not OK.
+  repeated string reasons = 3;
+  // "raid1".
+  string level = 4;
+  // md's array_state: "clean", "active", "inactive", …
+  string array_state = 5;
+  // Members of the complete array.
+  int32 raid_disks = 6;
+  // Members the array is missing.
+  int32 degraded = 7;
+  // idle, resync, recover, check, repair, reshape or frozen; empty for
+  // arrays without redundancy.
+  string sync_action = 8;
+  // Sectors done and in total of the running sync action; 0 when none runs.
+  uint64 sync_done = 9;
+  uint64 sync_total = 10;
+  // What the last check found; on raid1 not a sign of damage by itself.
+  uint64 mismatch_count = 11;
+  // Sorted by name.
+  repeated RaidMember members = 12;
+}
+
+// RaidMember is one device of an md array.
+message RaidMember {
+  // "sda3".
+  string name = 1;
+  // The drive it is on: "sda".
+  string drive = 2;
+  // md's flags for it: in_sync, faulty, spare, write_error, …
+  repeated string states = 3;
+  // Read errors the array corrected without evicting the device.
+  uint64 read_errors = 4;
+}
+
+// HealthState is a verdict on a drive, an array or all of the archive's storage.
+enum HealthState {
+  HEALTH_STATE_UNSPECIFIED = 0;
+  HEALTH_STATE_OK = 1;
+  // Data was lost or remapped, the rated endurance is used up, or an array
+  // is rebuilding or has a member with errors.
+  HEALTH_STATE_WARNING = 2;
+  // A drive predicts its own failure, or an array lost its redundancy.
+  HEALTH_STATE_FAILING = 3;
   // Health could not be read; never treated as healthy.
-  DRIVE_HEALTH_STATE_UNAVAILABLE = 4;
+  HEALTH_STATE_UNAVAILABLE = 4;
 }
 
 // AssetCounts counts assets by lifecycle state.
@@ -581,10 +644,10 @@ message IPhoneBackupChanged {
   string dir = 6;
 }
 
-// DriveHealthChanged: the archive drive's health state changed.
+// DriveHealthChanged: the health of the storage holding the archive changed.
 message DriveHealthChanged {
-  DriveHealthState from = 1;
-  DriveHealthState to = 2;
+  HealthState from = 1;
+  HealthState to = 2;
   repeated string reasons = 3;
 }
 
