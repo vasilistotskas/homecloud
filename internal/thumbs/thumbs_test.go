@@ -45,11 +45,11 @@ func TestRendersRealSamples(t *testing.T) {
 		t.Run(e.Name(), func(t *testing.T) {
 			src := Source{Path: filepath.Join(dir, e.Name()), SHA256: fmt.Sprintf("%064x", i)}
 			for _, size := range []Size{Thumb, Preview} {
-				out, err := r.Ensure(context.Background(), src, size)
+				out, err := r.Ensure(t.Context(), src, size)
 				if err != nil {
 					t.Fatalf("%s: %v", size, err)
 				}
-				probe := platform.Command(context.Background(), ffprobe, //nolint:gosec // test tool from PATH
+				probe := platform.Command(t.Context(), ffprobe, //nolint:gosec // test tool from PATH
 					"-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", out)
 				if got, err := probe.Output(); err != nil || strings.TrimSpace(string(got)) != "webp" {
 					t.Fatalf("%s rendered %q, %v", size, got, err)
@@ -100,21 +100,21 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "red.png")
 	// ffmpeg and ffprobe come from PATH, found by exec.LookPath above.
-	makeSource := platform.Command(context.Background(), ffmpeg, //nolint:gosec // test tool from PATH
+	makeSource := platform.Command(t.Context(), ffmpeg, //nolint:gosec // test tool from PATH
 		"-v", "error", "-f", "lavfi", "-i", "color=red:s=640x480", "-frames:v", "1", src)
 	if out, runErr := makeSource.CombinedOutput(); runErr != nil {
 		t.Fatalf("make source: %v %s", runErr, out)
 	}
 	r := New(config.FFmpeg{FFmpeg: ffmpeg, FFprobe: ffprobe, Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, filepath.Join(dir, "cache"))
 	sha := strings.Repeat("ab", 32)
-	path, err := r.Ensure(context.Background(), Source{Path: src, SHA256: sha}, Thumb)
+	path, err := r.Ensure(t.Context(), Source{Path: src, SHA256: sha}, Thumb)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if path != r.CachePath(sha, Thumb) {
 		t.Fatalf("path = %s", path)
 	}
-	probe := platform.Command(context.Background(), ffprobe, //nolint:gosec // test tool from PATH
+	probe := platform.Command(t.Context(), ffprobe, //nolint:gosec // test tool from PATH
 		"-v", "error", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", path)
 	out, err := probe.Output()
 	if err != nil || strings.TrimSpace(string(out)) != "webp,320,320" {
@@ -124,7 +124,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := r.Ensure(context.Background(), Source{Path: src, SHA256: sha}, Thumb)
+	again, err := r.Ensure(t.Context(), Source{Path: src, SHA256: sha}, Thumb)
 	if err != nil || again != path {
 		t.Fatalf("cached Ensure = %s, %v", again, err)
 	}
@@ -133,7 +133,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	}
 
 	// A render outlives the request that started it: it fills the cache for others.
-	gone, cancel := context.WithCancel(context.Background())
+	gone, cancel := context.WithCancel(t.Context())
 	cancel()
 	if _, err = r.Ensure(gone, Source{Path: src, SHA256: sha}, Preview); err != nil {
 		t.Fatalf("render started by a cancelled request: %v", err)
@@ -145,11 +145,11 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	// A DNG renders from its embedded preview: a 64×48 JPEG fits the 1600 box unscaled.
 	dng := writeTIFF(t, dir, testJPEG(t, 64, 48), 64, 48, true)
 	dngSHA := strings.Repeat("cd", 32)
-	dngPath, err := r.Ensure(context.Background(), Source{Path: dng, SHA256: dngSHA}, Preview)
+	dngPath, err := r.Ensure(t.Context(), Source{Path: dng, SHA256: dngSHA}, Preview)
 	if err != nil {
 		t.Fatal(err)
 	}
-	probe = platform.Command(context.Background(), ffprobe, //nolint:gosec // test tool from PATH
+	probe = platform.Command(t.Context(), ffprobe, //nolint:gosec // test tool from PATH
 		"-v", "error", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", dngPath)
 	if out, err := probe.Output(); err != nil || strings.TrimSpace(string(out)) != "webp,64,48" {
 		t.Fatalf("rendered DNG = %q, %v", out, err)

@@ -1,59 +1,40 @@
 package thumbs
 
 import (
-	"errors"
 	"fmt"
 	"os"
-
-	"github.com/evanoberholster/imagemeta"
-	"github.com/evanoberholster/imagemeta/imagetype"
 )
 
 // rawPreview returns the largest JPEG preview embedded in path when path is a
-// TIFF-based camera raw (DNG, including Apple ProRAW, NEF, CR2, ARW, ...);
-// isRaw is false, with no error, for every other file.
+// DNG (including Apple ProRAW); isRaw is false, with no error, for every
+// other file.
 //
-// FFmpeg cannot develop raw sensor data. Raws carry the camera's own rendering
-// as an embedded JPEG (ProRAW keeps a full-size one in IFD0), so that preview
-// is what the library shows. The preview keeps its EXIF orientation, which
-// FFmpeg applies when rendering it.
-func rawPreview(path string) (jpeg []byte, isRaw bool, err error) {
+// FFmpeg cannot develop raw sensor data, and its TIFF decoder renders a
+// ProRAW's JPEG-compressed preview as a blank frame. A DNG carries the
+// camera's own rendering as an embedded JPEG (ProRAW keeps a full-size one in
+// IFD0), so that preview is what the library shows. The preview keeps its
+// EXIF orientation, which FFmpeg applies when rendering it.
+func rawPreview(path string) (preview []byte, isRaw bool, err error) {
 	f, err := os.Open(path) //nolint:gosec // path comes from the ledger
 	if err != nil {
 		return nil, false, fmt.Errorf("open %s: %w", path, err)
 	}
 	defer f.Close() //nolint:errcheck // read-only handle; close errors cannot affect the result
 
-	ft, err := imagetype.ReadAt(f)
+	info, err := f.Stat()
+	if err != nil {
+		return nil, false, fmt.Errorf("stat %s: %w", path, err)
+	}
+	ref, isDNG, err := dngPreview(f, info.Size())
 	switch {
-	case errors.Is(err, imagetype.ErrImageTypeNotFound), errors.Is(err, imagetype.ErrDataLength):
-		return nil, false, nil // not an image format imagemeta knows (videos): not a raw
 	case err != nil:
-		return nil, false, fmt.Errorf("sniff %s: %w", path, err)
-	}
-	// A DNG starts like any TIFF; DecodeTiff tells them apart by DNGVersion.
-	if !ft.IsRAW() && ft != imagetype.ImageTiff {
+		return nil, isDNG, fmt.Errorf("find the preview in %s: %w", path, err)
+	case !isDNG:
 		return nil, false, nil
 	}
-	meta, err := imagemeta.DecodeTiff(f)
-	if err != nil {
-		return nil, false, fmt.Errorf("read %s: %w", path, err)
+	preview = make([]byte, ref.length)
+	if _, err := f.ReadAt(preview, ref.offset); err != nil {
+		return nil, true, fmt.Errorf("extract the preview of %s: %w", path, err)
 	}
-	if !meta.ImageType.IsRAW() {
-		return nil, false, nil
-	}
-
-	previews, err := imagemeta.TIFFPreviews(f)
-	if err != nil {
-		return nil, true, fmt.Errorf("find previews in %s: %w", path, err)
-	}
-	if len(previews) == 0 {
-		return nil, true, fmt.Errorf("raw %s has no embedded JPEG preview", path)
-	}
-	// TIFFPreviews sorts by length, largest (the full-size rendering) first.
-	jpeg, err = imagemeta.ExtractPreview(f, previews[0])
-	if err != nil {
-		return nil, true, fmt.Errorf("extract preview of %s: %w", path, err)
-	}
-	return jpeg, true, nil
+	return preview, true, nil
 }
