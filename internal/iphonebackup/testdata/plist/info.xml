@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Applications</key>
+	<dict>
+		<key>com.example.app</key>
+		<dict>
+			<key>PlaceholderIcon</key>
+			<data>
+			iVBORw0KGgoAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0e
+			HyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RF
+			RkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpamts
+			bW5vcHFyc3R1dnd4eXp7fH1+f4CBgoOEhYaHiImKi4yNjo+QkZKT
+			lJWWl5iZmpucnZ6foKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6
+			u7y9vr/AwcLDxMXGx8jJysvMzc7P0NHS09TV1tfY2drb3N3e3+Dh
+			4uPk5ebn6Onq6+zt7u/w8fLz9PX29/j5+vv8/f7/AAECAwQFBgcI
+			CQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4v
+			MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVW
+			V1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9
+			fn+AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOk
+			paanqKmqq6ytrq+wsbKztLW2t7i5uru8vb6/wMHCw8TFxsfIycrL
+			zM3Oz9DR0tPU1dbX2Nna29zd3t/g4eLj5OXm5+jp6uvs7e7v8PHy
+			8/T19vf4+fr7/P3+/wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZ
+			GhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9A
+			QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZn
+			aGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIGCg4SFhoeIiYqLjI2O
+			j5CRkpOUlZaXmJmam5ydnp+goaKjpKWmp6ipqqusra6vsLGys7S1
+			tre4ubq7vL2+v8DBwsPExcbHyMnKy8zNzs/Q0dLT1NXW19jZ2tvc
+			3d7f4OHi4+Tl5ufo6err7O3u7/Dx8vP09fb3+Pn6+/z9/v8AAQID
+			BAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkq
+			KywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkdISUpLTE1OT1BR
+			UlNUVVZXWFlaW1xdXl9gYWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4
+			eXp7fH1+f4CBgoOEhYaHiImKi4yNjo+QkZKTlJWWl5iZmpucnZ6f
+			oKGio6SlpqeoqaqrrK2ur7CxsrO0tba3uLm6u7y9vr/AwcLDxMXG
+			x8jJysvMzc7P0NHS09TV1tfY2drb3N3e3+Dh4uPk5ebn6Onq6+zt
+			7u/w8fLz9PX29/j5+vv8/f7/
+			</data>
+			<key>iTunesMetadata</key>
+			<data>
+			PHBsaXN0Lz4=
+			</data>
+		</dict>
+	</dict>
+	<key>Big Int</key>
+	<integer>9223372036854775807</integer>
+	<key>Build Version</key>
+	<string>23B85</string>
+	<key>Device Name</key>
+	<string>Βασίλης’s iPhone 📱</string>
+	<key>Installed Applications</key>
+	<array>
+		<string>com.example.app</string>
+		<string>com.example.other</string>
+	</array>
+	<key>Last Backup Date</key>
+	<date>2026-10-06T12:00:00Z</date>
+	<key>Negative</key>
+	<integer>-42</integer>
+	<key>Product Version</key>
+	<string>26.1</string>
+	<key>Ratio</key>
+	<real>2.5</real>
+	<key>Serial Number</key>
+	<string>&amp;&lt;&gt;"'</string>
+	<key>Target Type</key>
+	<string>Device</string>
+	<key>Unique Identifier</key>
+	<string>00008110-001A2B3C4D5E801E</string>
+	<key>iTunes Settings</key>
+	<dict/>
+</dict>
+</plist>

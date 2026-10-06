@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"howett.net/plist"
+	"github.com/vasilistotskas/homecloud/internal/iphonebackup/iphonebackuptest"
 )
 
 var t0 = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
@@ -30,8 +30,6 @@ type fixture struct {
 	files      map[string]string
 }
 
-func ptr[T any](v T) *T { return &v }
-
 // writeBackup lays out a backup folder like Apple's tools do: Info.plist as
 // XML, Manifest.plist and Status.plist as binary plists, hashed files in
 // two-hex-digit subfolders.
@@ -45,30 +43,26 @@ func writeBackup(t *testing.T, dir string, f fixture) string {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	put := func(name string, v any, format int) {
+	put := func(name string, data []byte) {
 		t.Helper()
-		data, err := plist.Marshal(v, format)
-		if err != nil {
-			t.Fatal(err)
-		}
 		if err := os.WriteFile(filepath.Join(root, name), data, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if !f.noInfo {
-		put("Info.plist", map[string]any{"Device Name": "Test iPhone", "Product Version": "26.1", "Unique Identifier": udid}, plist.XMLFormat)
+		put("Info.plist", iphonebackuptest.XML(t, map[string]any{"Device Name": "Test iPhone", "Product Version": "26.1", "Unique Identifier": udid}))
 	}
 	if !f.noManifest {
 		manifest := map[string]any{"Version": "10.0"}
 		if f.encrypted != nil {
 			manifest["IsEncrypted"] = *f.encrypted
 		}
-		put("Manifest.plist", manifest, plist.BinaryFormat)
+		put("Manifest.plist", iphonebackuptest.Binary(t, manifest))
 	}
 	if !f.noStatus {
-		put("Status.plist", map[string]any{
+		put("Status.plist", iphonebackuptest.Binary(t, map[string]any{
 			"SnapshotState": f.state, "Date": f.completed, "IsFullBackup": false, "BackupState": "new", "Version": "3.3",
-		}, plist.BinaryFormat)
+		}))
 	}
 	if f.snapshot {
 		if err := os.MkdirAll(filepath.Join(root, snapshotDir), 0o700); err != nil {
@@ -91,7 +85,7 @@ func scanOne(t *testing.T, f fixture) Backup {
 	t.Helper()
 	dir := t.TempDir()
 	writeBackup(t, dir, f)
-	current, archived, err := Scan(context.Background(), dir)
+	current, archived, err := Scan(t.Context(), dir)
 	if err != nil || len(current) != 1 || archived != 0 {
 		t.Fatalf("Scan = %d current, %d archived, %v", len(current), archived, err)
 	}
@@ -100,7 +94,7 @@ func scanOne(t *testing.T, f fixture) Backup {
 
 func TestJudge(t *testing.T) {
 	finished := func(completed time.Time) fixture {
-		return fixture{encrypted: ptr(true), state: "finished", completed: completed}
+		return fixture{encrypted: new(true), state: "finished", completed: completed}
 	}
 	tests := []struct {
 		name string
@@ -109,17 +103,17 @@ func TestJudge(t *testing.T) {
 		want State
 	}{
 		{"healthy", finished(t0.Add(-24 * time.Hour)), t0, StateOK},
-		{"unencrypted", fixture{encrypted: ptr(false), state: "finished", completed: t0.Add(-time.Hour)}, t0, StateUnencrypted},
+		{"unencrypted", fixture{encrypted: new(false), state: "finished", completed: t0.Add(-time.Hour)}, t0, StateUnencrypted},
 		{"stale", finished(t0.Add(-10 * 24 * time.Hour)), t0, StateStale},
-		{"did not finish", fixture{encrypted: ptr(true), state: "uploading", completed: t0.Add(-time.Hour)}, t0, StateIncomplete},
+		{"did not finish", fixture{encrypted: new(true), state: "uploading", completed: t0.Add(-time.Hour)}, t0, StateIncomplete},
 		{"future date", finished(t0.Add(48 * time.Hour)), t0, StateInvalid},
 		{"manifest without IsEncrypted", fixture{state: "finished", completed: t0}, t0, StateInvalid},
-		{"missing status when idle", fixture{encrypted: ptr(true), noStatus: true}, t0, StateInvalid},
-		{"folder not named by UDID", fixture{folder: "something-else", encrypted: ptr(true), state: "finished", completed: t0}, t0, StateInvalid},
+		{"missing status when idle", fixture{encrypted: new(true), noStatus: true}, t0, StateInvalid},
+		{"folder not named by UDID", fixture{folder: "something-else", encrypted: new(true), state: "finished", completed: t0}, t0, StateInvalid},
 		// A first backup writes its plists as it goes: none of that is a problem.
 		{"first backup in progress", fixture{snapshot: true, noInfo: true, noManifest: true, noStatus: true}, time.Now(), StateInProgress},
 		// A stale device whose new backup runs is not stale meanwhile.
-		{"stale while backing up", fixture{snapshot: true, encrypted: ptr(true), state: "finished", completed: t0.Add(-30 * 24 * time.Hour)}, time.Now(), StateInProgress},
+		{"stale while backing up", fixture{snapshot: true, encrypted: new(true), state: "finished", completed: t0.Add(-30 * 24 * time.Hour)}, time.Now(), StateInProgress},
 		// A backup that stopped writing long ago never finished.
 		{"stalled backup", fixture{snapshot: true, noManifest: true, noStatus: true}, time.Now().Add(7 * time.Hour), StateIncomplete},
 	}
@@ -170,13 +164,13 @@ func TestJudgeCountsUnreadableFiles(t *testing.T) {
 
 func TestScanCountsArchivedCopiesWithoutReadingThem(t *testing.T) {
 	dir := t.TempDir()
-	writeBackup(t, dir, fixture{encrypted: ptr(true), state: "finished", completed: t0, files: map[string]string{"ab/ab12": "12345"}})
+	writeBackup(t, dir, fixture{encrypted: new(true), state: "finished", completed: t0, files: map[string]string{"ab/ab12": "12345"}})
 	// An archived copy with a broken plist is counted, never judged.
-	archived := writeBackup(t, dir, fixture{folder: udid + "-20260901-101500", encrypted: ptr(true), state: "finished", completed: t0})
+	archived := writeBackup(t, dir, fixture{folder: udid + "-20260901-101500", encrypted: new(true), state: "finished", completed: t0})
 	if err := os.WriteFile(filepath.Join(archived, "Info.plist"), []byte("garbage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	current, n, err := Scan(context.Background(), dir)
+	current, n, err := Scan(t.Context(), dir)
 	if err != nil || len(current) != 1 || n != 1 {
 		t.Fatalf("Scan = %+v, %d archived, %v", current, n, err)
 	}
@@ -188,7 +182,7 @@ func TestScanCountsArchivedCopiesWithoutReadingThem(t *testing.T) {
 }
 
 func TestScanMissingDirectoryMeansNoBackups(t *testing.T) {
-	current, archived, err := Scan(context.Background(), filepath.Join(t.TempDir(), "MobileSync", "Backup"))
+	current, archived, err := Scan(t.Context(), filepath.Join(t.TempDir(), "MobileSync", "Backup"))
 	if err != nil || current != nil || archived != 0 {
 		t.Fatalf("Scan of a missing dir = %v, %v, %v", current, archived, err)
 	}
@@ -196,11 +190,11 @@ func TestScanMissingDirectoryMeansNoBackups(t *testing.T) {
 
 func TestScanReportsCorruptPlist(t *testing.T) {
 	dir := t.TempDir()
-	root := writeBackup(t, dir, fixture{encrypted: ptr(true), state: "finished", completed: t0})
+	root := writeBackup(t, dir, fixture{encrypted: new(true), state: "finished", completed: t0})
 	if err := os.WriteFile(filepath.Join(root, "Status.plist"), []byte("bplist00\x00garbage"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	current, _, err := Scan(context.Background(), dir)
+	current, _, err := Scan(t.Context(), dir)
 	if err != nil || len(current) != 1 || current[0].Err == nil {
 		t.Fatalf("corrupt Status.plist: %+v, %v", current, err)
 	}
@@ -208,10 +202,10 @@ func TestScanReportsCorruptPlist(t *testing.T) {
 
 func TestReadAll(t *testing.T) {
 	dir := writeBackup(t, t.TempDir(), fixture{files: map[string]string{"ab/ab12": strings.Repeat("x", 3*readBuffer)}})
-	if unreadable, err := ReadAll(context.Background(), dir); err != nil || len(unreadable) != 0 {
+	if unreadable, err := ReadAll(t.Context(), dir); err != nil || len(unreadable) != 0 {
 		t.Fatalf("ReadAll = %v, %v", unreadable, err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	if _, err := ReadAll(ctx, dir); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled ReadAll: %v", err)

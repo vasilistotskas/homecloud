@@ -1,16 +1,14 @@
 package app
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"howett.net/plist"
-
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
+	"github.com/vasilistotskas/homecloud/internal/iphonebackup/iphonebackuptest"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 )
 
@@ -23,18 +21,11 @@ func writeIPhoneBackup(t *testing.T, dir string, encrypted bool, completed time.
 	if err := os.MkdirAll(filepath.Join(root, "ab"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for name, v := range map[string]struct {
-		value  any
-		format int
-	}{
-		"Info.plist":     {map[string]any{"Device Name": "Test iPhone", "Product Version": "26.1", "Unique Identifier": testUDID}, plist.XMLFormat},
-		"Manifest.plist": {map[string]any{"IsEncrypted": encrypted}, plist.BinaryFormat},
-		"Status.plist":   {map[string]any{"SnapshotState": "finished", "Date": completed}, plist.BinaryFormat},
+	for name, data := range map[string][]byte{
+		"Info.plist":     iphonebackuptest.XML(t, map[string]any{"Device Name": "Test iPhone", "Product Version": "26.1", "Unique Identifier": testUDID}),
+		"Manifest.plist": iphonebackuptest.Binary(t, map[string]any{"IsEncrypted": encrypted}),
+		"Status.plist":   iphonebackuptest.Binary(t, map[string]any{"SnapshotState": "finished", "Date": completed}),
 	} {
-		data, err := plist.Marshal(v.value, v.format)
-		if err != nil {
-			t.Fatal(err)
-		}
 		if err := os.WriteFile(filepath.Join(root, name), data, 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +48,7 @@ func countTitle(n *recordingNotifier, title string) int {
 func TestIPhoneBackupCheckWithoutBackups(t *testing.T) {
 	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
 	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
-	rep, ok := agent.checkIPhoneBackups(context.Background())
+	rep, ok := agent.checkIPhoneBackups(t.Context())
 	r, isReport := rep.(IPhoneBackupReport)
 	if ok || !isReport || len(r.Devices) != 0 || r.Error != "" {
 		t.Fatalf("check without backups = %+v, ok=%v; want a completed, unhealthy check", rep, ok)
@@ -70,7 +61,7 @@ func TestIPhoneBackupCheckWithoutBackups(t *testing.T) {
 func TestIPhoneBackupCheckRecordsStateAndAlertsOnceADay(t *testing.T) {
 	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
 	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
-	ctx := context.Background()
+	ctx := t.Context()
 	dir := agent.cfg.IPhoneBackup.Dirs[0]
 
 	writeIPhoneBackup(t, dir, true, clock.Add(-time.Hour))
@@ -114,7 +105,7 @@ func TestIPhoneBackupCheckRecordsStateAndAlertsOnceADay(t *testing.T) {
 func TestIPhoneBackupFullReadRunsOnItsOwnInterval(t *testing.T) {
 	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
 	agent, _ := newTestAgent(t, fixture(t, false), "0", &clock)
-	ctx := context.Background()
+	ctx := t.Context()
 	writeIPhoneBackup(t, agent.cfg.IPhoneBackup.Dirs[0], true, clock)
 	readAt := func() time.Time {
 		t.Helper()
@@ -157,7 +148,7 @@ func TestIPhoneBackupUnreadableDirectoryAlerts(t *testing.T) {
 	if err := os.WriteFile(dir, []byte("not a folder"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rep, ok := agent.checkIPhoneBackups(context.Background())
+	rep, ok := agent.checkIPhoneBackups(t.Context())
 	if r := rep.(IPhoneBackupReport); ok || len(r.DirErrors) != 1 {
 		t.Fatalf("check = %+v, ok=%v", r, ok)
 	}

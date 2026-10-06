@@ -21,8 +21,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"howett.net/plist"
 )
 
 // Backup is what a device's current backup folder says about itself.
@@ -57,21 +55,65 @@ type Backup struct {
 // archivedName matches a copy the user archived in Apple's tool.
 var archivedName = regexp.MustCompile(`^.+-\d{8}-\d{6}$`)
 
-// Plist keys, as written by Apple's backup tools (libimobiledevice
-// tools/idevicebackup2.c; The Apple Wiki "ITunes Backup").
+// What homecloud reads from each plist, under the keys Apple's backup tools
+// write (libimobiledevice tools/idevicebackup2.c; The Apple Wiki "ITunes
+// Backup"). An absent key reads as the zero value; a key of another type is
+// an error.
 type infoPlist struct {
-	DeviceName       string `plist:"Device Name"`
-	ProductVersion   string `plist:"Product Version"`
-	UniqueIdentifier string `plist:"Unique Identifier"`
+	DeviceName, ProductVersion, UniqueIdentifier string
 }
 
 type manifestPlist struct {
-	IsEncrypted *bool `plist:"IsEncrypted"`
+	// IsEncrypted is nil when the key is absent.
+	IsEncrypted *bool
 }
 
 type statusPlist struct {
-	SnapshotState string    `plist:"SnapshotState"`
-	Date          time.Time `plist:"Date"`
+	SnapshotState string
+	Date          time.Time
+}
+
+func readInfo(path string) (infoPlist, error) {
+	var info infoPlist
+	err := readKeys(path, func(d dict) error {
+		return errors.Join(
+			d.str("Device Name", &info.DeviceName),
+			d.str("Product Version", &info.ProductVersion),
+			d.str("Unique Identifier", &info.UniqueIdentifier),
+		)
+	})
+	return info, err
+}
+
+func readManifest(path string) (manifestPlist, error) {
+	var manifest manifestPlist
+	err := readKeys(path, func(d dict) error {
+		return d.boolean("IsEncrypted", &manifest.IsEncrypted)
+	})
+	return manifest, err
+}
+
+func readStatus(path string) (statusPlist, error) {
+	var status statusPlist
+	err := readKeys(path, func(d dict) error {
+		return errors.Join(
+			d.str("SnapshotState", &status.SnapshotState),
+			d.date("Date", &status.Date),
+		)
+	})
+	return status, err
+}
+
+// readKeys reads the plist at path and its keys with read.
+func readKeys(path string, read func(dict) error) error {
+	d, err := readPlist(path)
+	if err != nil {
+		return err
+	}
+	if err := read(d); err != nil {
+		return fmt.Errorf("decode %s: %w", path, err)
+	}
+	return nil
 }
 
 // snapshotDir is where a backup in progress is written.
@@ -126,8 +168,8 @@ func inspect(ctx context.Context, dir string) Backup {
 
 	// While a backup is written its plists may be missing or half written:
 	// read what is there and judge nothing else.
-	var info infoPlist
-	if err := readPlist(filepath.Join(dir, "Info.plist"), &info); err != nil {
+	info, err := readInfo(filepath.Join(dir, "Info.plist"))
+	if err != nil {
 		if !b.InProgress {
 			b.Err = err
 		}
@@ -146,8 +188,8 @@ func inspect(ctx context.Context, dir string) Backup {
 		return b
 	}
 
-	var manifest manifestPlist
-	if err := readPlist(filepath.Join(dir, "Manifest.plist"), &manifest); err != nil {
+	manifest, err := readManifest(filepath.Join(dir, "Manifest.plist"))
+	if err != nil {
 		b.Err = err
 		return b
 	}
@@ -157,8 +199,8 @@ func inspect(ctx context.Context, dir string) Backup {
 	}
 	b.Encrypted = *manifest.IsEncrypted
 
-	var status statusPlist
-	if err := readPlist(filepath.Join(dir, "Status.plist"), &status); err != nil {
+	status, err := readStatus(filepath.Join(dir, "Status.plist"))
+	if err != nil {
 		b.Err = err
 		return b
 	}
@@ -274,16 +316,4 @@ func readFile(ctx context.Context, path string, buf []byte) error {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 	}
-}
-
-// readPlist decodes the XML or binary plist at path into v.
-func readPlist(path string, v any) error {
-	data, err := os.ReadFile(path) //nolint:gosec // a file of a configured backup folder
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-	if _, err := plist.Unmarshal(data, v); err != nil {
-		return fmt.Errorf("decode %s: %w", path, err)
-	}
-	return nil
 }

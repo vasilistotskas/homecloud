@@ -5,3 +5,4 @@
 *.heic binary
 *.mov binary
 *.mp4 binary
+*.bplist binary
