@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json/v2"
 	"strings"
 	"testing"
 	"time"
@@ -150,5 +151,63 @@ func TestDriveFileMovedEventToProto(t *testing.T) {
 	if d.GetChange() != agentv3.DriveFileChange_DRIVE_FILE_CHANGE_MOVED || d.GetFromPath() != "iCloud Drive/a.pdf" ||
 		d.GetPath() != "iCloud Drive/Docs/b.pdf" || e.GetAsset().GetFilename() != "b.pdf" {
 		t.Fatalf("event = %v", e)
+	}
+}
+
+func TestIPhoneBackupCopyEventsToProto(t *testing.T) {
+	for kind, want := range iphoneCopyChanges {
+		e, err := eventToProto(ledger.Event{ID: 1, Kind: kind, Detail: `{"udid":"00008110-001A2B3C4D5E801E",` +
+			`"device_name":"iPhone","stamp":"20261007T030000Z","files":7,"bytes":700,"copied_bytes":30,"reason":"retention"}`})
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		c := e.GetIphoneBackupCopy()
+		if c.GetChange() != want || c.GetFiles() != 7 || c.GetCopiedBytes() != 30 || c.GetReason() != "retention" ||
+			!c.GetCompletedAt().AsTime().Equal(time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)) {
+			t.Fatalf("%s = %v", kind, c)
+		}
+	}
+	// Every ledger kind can be listed through the API.
+	for _, name := range []string{
+		ledger.EventIPhoneBackupCopied, ledger.EventIPhoneBackupCopyRemoved,
+		ledger.EventIPhoneBackupCopyDamaged, ledger.EventIPhoneBackupPushRefused,
+	} {
+		found := false
+		for _, n := range eventKindNames {
+			found = found || n == name
+		}
+		if !found {
+			t.Errorf("%s has no API event kind", name)
+		}
+	}
+	if _, err := eventToProto(ledger.Event{ID: 2, Kind: ledger.EventIPhoneBackupCopied, Detail: `{"stamp":"yesterday"}`}); err == nil {
+		t.Fatal("a malformed stamp must be rejected")
+	}
+}
+
+func TestIPhoneBackupReportCopiesToProto(t *testing.T) {
+	verified := time.Date(2026, 10, 7, 4, 0, 0, 0, time.UTC)
+	detail, err := json.Marshal(app.IPhoneBackupReport{
+		PushErrors: []string{"backup of 20261008T030000Z: a file does not match its manifest"},
+		Devices: []app.IPhoneBackupDevice{{
+			UDID: "00008110-001A2B3C4D5E801E", State: "ok", FromCopy: true,
+			Copies: []app.IPhoneBackupCopy{{
+				CompletedAt: verified.Add(-time.Hour), Dir: "/archive/iPhone backups/x/20261007T030000Z",
+				Files: 7, Bytes: 700, CopiedBytes: 30, VerifiedAt: &verified, DamagedFiles: 1,
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := iphoneBackupToProto(string(detail))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := rep.GetDevices()[0]
+	c := d.GetCopies()[0]
+	if !d.GetFromCopy() || len(rep.GetPushErrors()) != 1 || c.GetSizeBytes() != 700 || c.GetDamagedFiles() != 1 ||
+		!c.GetVerifiedAt().AsTime().Equal(verified) {
+		t.Fatalf("report = %v", rep)
 	}
 }

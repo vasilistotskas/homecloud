@@ -145,7 +145,7 @@ func Scan(ctx context.Context, dir string) (current []Backup, archived int, _ er
 			archived++
 			continue
 		}
-		b := inspect(ctx, filepath.Join(dir, e.Name()))
+		b := Inspect(ctx, filepath.Join(dir, e.Name()), e.Name())
 		if err := ctx.Err(); err != nil {
 			return nil, 0, fmt.Errorf("scan %s: %w", dir, err)
 		}
@@ -154,10 +154,11 @@ func Scan(ctx context.Context, dir string) (current []Backup, archived int, _ er
 	return current, archived, nil
 }
 
-// inspect reads one backup folder's plists and file sizes. Problems are
-// reported in the Backup rather than returned, so one bad folder never hides
-// the others.
-func inspect(ctx context.Context, dir string) Backup {
+// Inspect reads one backup folder's plists and file sizes; its Info.plist
+// must name the device udid (a device folder is named by its UDID, a copy in
+// the archive by its time). Problems are reported in the Backup rather than
+// returned, so one bad folder never hides the others.
+func Inspect(ctx context.Context, dir, udid string) Backup {
 	b := Backup{Dir: dir}
 	activity, inProgress, err := snapshotActivity(ctx, filepath.Join(dir, snapshotDir))
 	if err != nil {
@@ -183,8 +184,8 @@ func inspect(ctx context.Context, dir string) Backup {
 	case info.UniqueIdentifier == "":
 		b.Err = fmt.Errorf("%s: Info.plist has no Unique Identifier", dir)
 		return b
-	case !strings.EqualFold(filepath.Base(dir), info.UniqueIdentifier):
-		b.Err = fmt.Errorf("folder name %q does not match the device's UDID %s", filepath.Base(dir), info.UniqueIdentifier)
+	case !strings.EqualFold(udid, info.UniqueIdentifier):
+		b.Err = fmt.Errorf("%s holds the backup of device %s, not %s", dir, info.UniqueIdentifier, udid)
 		return b
 	}
 

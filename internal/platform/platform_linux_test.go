@@ -45,7 +45,7 @@ func TestParseMount(t *testing.T) {
 }
 
 func TestRenderUnit(t *testing.T) {
-	unit, err := renderUnit(AgentService{
+	unit, err := renderUnit(Task{
 		Name:        "homecloud-agent",
 		Description: "homecloud agent (100% local)",
 		Executable:  `/opt/home cloud/bin/homecloud-agent`,
@@ -67,10 +67,10 @@ func TestRenderUnit(t *testing.T) {
 			t.Errorf("unit missing %q:\n%s", want, unit)
 		}
 	}
-	if _, err := renderUnit(AgentService{Executable: "rel/agent", WorkingDir: "/x"}); err == nil {
+	if _, err := renderUnit(Task{Executable: "rel/agent", WorkingDir: "/x"}); err == nil {
 		t.Error("relative executable accepted")
 	}
-	if _, err := renderUnit(AgentService{Executable: "/x/a\nb", WorkingDir: "/x"}); err == nil {
+	if _, err := renderUnit(Task{Executable: "/x/a\nb", WorkingDir: "/x"}); err == nil {
 		t.Error("control character accepted")
 	}
 }
@@ -128,5 +128,28 @@ func TestAcquireInstanceRequiresRuntimeDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(os.Getenv("XDG_RUNTIME_DIR"), "homecloud", "x.lock")); err != nil { //nolint:gosec // test-controlled temp dir
 		t.Fatalf("lock file missing: %v", err)
+	}
+}
+
+func TestRenderPeriodicUnits(t *testing.T) {
+	task := Task{
+		Name: "homecloud-iphone-push", Description: "push 100% of backups",
+		Executable: "/opt/homecloud/homecloud", Args: []string{"iphone", "push", "--to", "/mnt/nas inbox"},
+		WorkingDir: "/opt/homecloud", Every: 90 * time.Minute,
+	}
+	unit, err := renderUnit(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "[Unit]\nDescription=push 100%% of backups\n\n[Service]\nType=oneshot\n" +
+		`ExecStart="/opt/homecloud/homecloud" "iphone" "push" "--to" "/mnt/nas inbox"` + "\nWorkingDirectory=/opt/homecloud\n"
+	if string(unit) != want {
+		t.Fatalf("service unit:\n%s\nwant:\n%s", unit, want)
+	}
+	timer := string(renderTimer(task))
+	for _, line := range []string{"OnStartupSec=1min", "OnUnitInactiveSec=90min", "WantedBy=timers.target"} {
+		if !strings.Contains(timer, line+"\n") {
+			t.Errorf("timer lacks %s:\n%s", line, timer)
+		}
 	}
 }

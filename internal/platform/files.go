@@ -72,3 +72,9 @@ func commit(f *os.File, path string, data []byte) (err error) {
 // FileTimeLayout is the UTC time layout for file and folder names: name order
 // is time order, and it has no character any supported file system forbids.
 const FileTimeLayout = "20060102T150405Z"
+
+// FileIdentity identifies a file on its system (see FileID): equal for every
+// hard link to it.
+type FileIdentity struct {
+	Volume, Index uint64
+}

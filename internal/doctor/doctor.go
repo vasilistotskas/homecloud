@@ -175,5 +175,30 @@ func checkIPhoneBackupDirs(cfg *config.Config) []Result {
 			out = append(out, Result{Name: "iphone backups", Detail: dir})
 		}
 	}
+	if in := cfg.IPhoneBackup.Incoming; in != "" {
+		out = append(out, checkIncoming(in))
+	}
 	return out
+}
+
+// checkIncoming checks the folder backups are pushed to: it must exist (the
+// share is mounted) and take files, because the agent removes each push it
+// takes in.
+func checkIncoming(dir string) Result {
+	const name = "iphone incoming"
+	info, err := os.Stat(dir)
+	switch {
+	case err != nil:
+		return Result{Name: name, Err: err}
+	case !info.IsDir():
+		return Result{Name: name, Err: fmt.Errorf("%s is not a directory", dir)}
+	}
+	probe, err := os.CreateTemp(dir, ".homecloud-doctor-*")
+	if err != nil {
+		return Result{Name: name, Err: fmt.Errorf("%s does not take files: %w", dir, err)}
+	}
+	if err := errors.Join(probe.Close(), os.Remove(probe.Name())); err != nil {
+		return Result{Name: name, Err: fmt.Errorf("remove the probe file in %s: %w", dir, err)}
+	}
+	return Result{Name: name, Detail: dir + " (pushed backups arrive here)"}
 }

@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -181,4 +183,40 @@ func writeString(b *bytes.Buffer, s string) {
 	for _, u := range units {
 		writeSized(b, uint64(u), 2)
 	}
+}
+
+// Backup is a finished device backup for WriteBackup.
+type Backup struct {
+	UDID, DeviceName string
+	Completed        time.Time
+	Encrypted        bool
+	// Files maps paths inside the folder (Apple's hashed names, e.g.
+	// "ab/ab12…") to their contents.
+	Files map[string]string
+}
+
+// WriteBackup lays out b as Apple's tools leave a finished backup, in
+// dir/<UDID>, and returns that folder.
+func WriteBackup(tb testing.TB, dir string, b Backup) string {
+	tb.Helper()
+	root := filepath.Join(dir, b.UDID)
+	put := func(name string, data []byte) {
+		tb.Helper()
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			tb.Fatal(err)
+		}
+		if err := os.WriteFile(p, data, 0o600); err != nil {
+			tb.Fatal(err)
+		}
+	}
+	put("Info.plist", XML(tb, map[string]any{"Device Name": b.DeviceName, "Product Version": "26.1", "Unique Identifier": b.UDID}))
+	put("Manifest.plist", Binary(tb, map[string]any{"Version": "10.0", "IsEncrypted": b.Encrypted}))
+	put("Status.plist", Binary(tb, map[string]any{
+		"SnapshotState": "finished", "Date": b.Completed, "IsFullBackup": false, "BackupState": "new", "Version": "3.3",
+	}))
+	for name, content := range b.Files {
+		put(name, []byte(content))
+	}
+	return root
 }

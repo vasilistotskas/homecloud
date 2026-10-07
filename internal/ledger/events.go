@@ -17,6 +17,17 @@ const (
 	EventDriveHealthChanged = "drive_health_changed"
 	// EventIPhoneBackupChanged: a device's local backup changed state (subject: its UDID).
 	EventIPhoneBackupChanged = "iphone_backup_changed"
+	// EventIPhoneBackupCopied: a finished backup was copied into the archive.
+	EventIPhoneBackupCopied = "iphone_backup_copied"
+	// EventIPhoneBackupCopyRemoved: a copy left the archive: beyond
+	// iphone_backup.keep, or found missing from disk.
+	EventIPhoneBackupCopyRemoved = "iphone_backup_copy_removed"
+	// EventIPhoneBackupCopyDamaged: files of a copy no longer match its
+	// manifest (or read again correctly: files 0).
+	EventIPhoneBackupCopyDamaged = "iphone_backup_copy_damaged"
+	// EventIPhoneBackupPushRefused: a backup pushed from another computer did
+	// not match its manifest and was dropped; the next push sends it again.
+	EventIPhoneBackupPushRefused = "iphone_backup_push_refused"
 )
 
 // Rendition versions, as the downloader names them.

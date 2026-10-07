@@ -100,3 +100,16 @@ func TestCheckIPhoneBackupDirs(t *testing.T) {
 		t.Fatalf("results = %+v", r)
 	}
 }
+
+func TestCheckIncoming(t *testing.T) {
+	dir := t.TempDir()
+	if r := checkIncoming(dir); !r.OK() {
+		t.Fatalf("incoming folder = %+v", r)
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Fatalf("the probe file was left: %v %v", entries, err)
+	}
+	if r := checkIncoming(filepath.Join(dir, "missing")); r.OK() {
+		t.Fatal("a missing incoming folder passed")
+	}
+}

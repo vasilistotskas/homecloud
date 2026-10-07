@@ -101,7 +101,7 @@ func newApp() *program {
 			leaf("notify-test", "send a test push notification through ntfy", runNotifyTest),
 			leaf("install", "start homecloud-agent (next to this binary) at logon and now (Task Scheduler / systemd user unit)", runInstall),
 			leaf("uninstall", "stop starting homecloud-agent at logon", runUninstall),
-		}, icloudCommands()...),
+		}, append(icloudCommands(), iphoneCommands()...)...),
 	}
 }
 
@@ -304,30 +304,30 @@ func runInstall(ctx context.Context, c *call) error {
 	if err != nil {
 		return err
 	}
-	svc, err := agentService()
+	task, err := agentTask()
 	if err != nil {
 		return fmt.Errorf("install: %w", err)
 	}
 	// The agent loads exactly the configuration validated above.
-	svc.Args = []string{"--config", cfgPath}
-	if installErr := platform.InstallAgent(ctx, svc); installErr != nil {
+	task.Args = []string{"--config", cfgPath}
+	if installErr := platform.InstallTask(ctx, task); installErr != nil {
 		return fmt.Errorf("install: %w", installErr)
 	}
-	return printf(c, "registered and started %q -> %s\n", agentName, svc.Executable)
+	return printf(c, "registered and started %q -> %s\n", agentName, task.Executable)
 }
 
-// agentService describes the homecloud-agent executable that sits next to this binary.
-func agentService() (platform.AgentService, error) {
+// agentTask describes the homecloud-agent executable that sits next to this binary.
+func agentTask() (platform.Task, error) {
 	self, err := os.Executable()
 	if err != nil {
-		return platform.AgentService{}, fmt.Errorf("locate executable: %w", err)
+		return platform.Task{}, fmt.Errorf("locate executable: %w", err)
 	}
 	dir := filepath.Dir(self)
 	agent := filepath.Join(dir, agentName+platform.ExeSuffix)
 	if _, statErr := os.Stat(agent); statErr != nil {
-		return platform.AgentService{}, fmt.Errorf("agent binary next to homecloud: %w", statErr)
+		return platform.Task{}, fmt.Errorf("agent binary next to homecloud: %w", statErr)
 	}
-	return platform.AgentService{
+	return platform.Task{
 		Name:        agentName,
 		Description: "homecloud background agent: archive iCloud Photos locally and verify it (https://github.com/vasilistotskas/homecloud)",
 		Executable:  agent,
@@ -336,7 +336,7 @@ func agentService() (platform.AgentService, error) {
 }
 
 func runUninstall(ctx context.Context, c *call) error {
-	if err := platform.UninstallAgent(ctx, agentName); err != nil {
+	if err := platform.UninstallTask(ctx, agentName); err != nil {
 		return fmt.Errorf("uninstall: %w", err)
 	}
 	return printf(c, "removed %q\n", agentName)

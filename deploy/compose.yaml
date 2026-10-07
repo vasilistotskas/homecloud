@@ -51,7 +51,7 @@ services:
       - ${HOMECLOUD_DATA}/config:/config:ro
       - ${HOMECLOUD_DATA}/state:/state
       - ${HOMECLOUD_BACKUPS}:/backups
-      - ${HOMECLOUD_IPHONE_BACKUPS}:/iphone:ro
+      - ${HOMECLOUD_IPHONE_INCOMING}:/iphone
     depends_on:
       - tailscale
     restart: unless-stopped

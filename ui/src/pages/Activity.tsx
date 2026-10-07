@@ -29,6 +29,7 @@ import {
   healthBadge,
   driveSyncListed,
   driveSyncOutcomeBadge,
+  iphoneCopyChangeBadge,
   iphoneStateBadge,
   stateLabel,
   tierLabel,
@@ -41,10 +42,12 @@ import {
   DriveFileChange,
   DriveSyncOutcome,
   EventKind,
+  IPhoneBackupCopyChange,
   RunKind,
   type DriveFileEvent,
   type Event,
   type Run,
+  type IPhoneBackupCopyEvent,
 } from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
@@ -302,6 +305,15 @@ function DriveSyncRuns() {
   );
 }
 
+/** The iPhone backup copy events, for the iPhone filter and "all". */
+const iphoneEventKinds = [
+  EventKind.IPHONE_BACKUP_CHANGED,
+  EventKind.IPHONE_BACKUP_COPIED,
+  EventKind.IPHONE_BACKUP_COPY_REMOVED,
+  EventKind.IPHONE_BACKUP_COPY_DAMAGED,
+  EventKind.IPHONE_BACKUP_PUSH_REFUSED,
+];
+
 const driveEventKinds = [
   EventKind.DRIVE_FILE_ARCHIVED,
   EventKind.DRIVE_FILE_CHANGED,
@@ -345,7 +357,7 @@ const filters = {
       EventKind.QUARANTINED,
       EventKind.QUARANTINE_RELEASED,
       EventKind.DRIVE_HEALTH_CHANGED,
-      EventKind.IPHONE_BACKUP_CHANGED,
+      ...iphoneEventKinds,
       ...driveEventKinds,
     ],
   },
@@ -354,7 +366,7 @@ const filters = {
   changed: { label: "Changed in iCloud", kinds: [EventKind.RENDITION_CHANGED] },
   moved: { label: "Moved", kinds: [EventKind.RENDITION_MOVED] },
   drive: { label: "Drive health", kinds: [EventKind.DRIVE_HEALTH_CHANGED] },
-  iphone: { label: "iPhone backups", kinds: [EventKind.IPHONE_BACKUP_CHANGED] },
+  iphone: { label: "iPhone backups", kinds: iphoneEventKinds },
   icloudDrive: { label: "iCloud Drive", kinds: driveEventKinds },
   states: { label: "State changes", kinds: [EventKind.STATE_CHANGED] },
 } as const;
@@ -362,6 +374,25 @@ type Filter = keyof typeof filters;
 
 function isFilter(v: string | undefined): v is Filter {
   return v !== undefined && Object.hasOwn(filters, v);
+}
+
+function iphoneCopyText(c: IPhoneBackupCopyEvent): string {
+  const done = toDate(c.completedAt);
+  const backup = `${c.deviceName === "" ? "The" : `${c.deviceName}: the`} backup of ${done === undefined ? "?" : formatWhen(done)}`;
+  switch (c.change) {
+    case IPhoneBackupCopyChange.COPIED:
+      return `${backup} was copied into the archive (${formatCount(c.files)} files, ${formatBytes(c.copiedBytes)} written, the rest shared with the copy before)`;
+    case IPhoneBackupCopyChange.REMOVED:
+      return `${backup}: its copy was removed (${c.reason === "retention" ? "older than the copies kept" : "no longer on disk"})`;
+    case IPhoneBackupCopyChange.DAMAGED:
+      return c.files === 0n
+        ? backup
+        : `${backup}: ${formatCount(c.files)} files of its copy no longer match what was copied`;
+    case IPhoneBackupCopyChange.PUSH_REFUSED:
+      return `${backup}, pushed from another computer, was refused: ${c.reason}. The next push sends it again.`;
+    case IPhoneBackupCopyChange.UNSPECIFIED:
+      return backup;
+  }
 }
 
 function describe(e: Event, driveDir: string | undefined): { kind: string; color: BadgeColor; text: string } {
@@ -404,6 +435,14 @@ function describe(e: Event, driveDir: string | undefined): { kind: string; color
     case "driveFile": {
       const b = driveFileChangeBadge[e.detail.value.change];
       return { kind: b.label, color: b.color, text: driveFileText(e.detail.value, driveDir) };
+    }
+    case "iphoneBackupCopy": {
+      const c = e.detail.value;
+      if (c.change === IPhoneBackupCopyChange.DAMAGED && c.files === 0n) {
+        return { kind: "Copy checked", color: "success", text: `${iphoneCopyText(c)}: every file matches again` };
+      }
+      const b = iphoneCopyChangeBadge[c.change];
+      return { kind: b.label, color: b.color, text: iphoneCopyText(c) };
     }
     case undefined:
       return { kind: "Event", color: "informative", text: "" };

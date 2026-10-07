@@ -425,6 +425,9 @@ message IPhoneBackupReport {
   string error = 3;
   // Backup directories that could not be checked.
   repeated string dir_errors = 4;
+  // Backups pushed from another computer that were refused this check, or
+  // why iphone_backup.incoming could not be read.
+  repeated string push_errors = 5;
 }
 
 // IPhoneBackup is one device's current local backup and its verdict.
@@ -445,6 +448,30 @@ message IPhoneBackup {
   repeated string reasons = 10;
   // When every file was last read in full (iphone_backup.read_interval).
   google.protobuf.Timestamp last_full_read_at = 11;
+  // Set when the device's backups arrive from another computer
+  // (iphone_backup.incoming): the verdict is on its newest copy.
+  bool from_copy = 12;
+  // The device's copies in the archive (iphone_backup.keep), newest first.
+  repeated IPhoneBackupCopy copies = 13;
+  // Why the current backup could not be copied into the archive.
+  string copy_error = 14;
+}
+
+// IPhoneBackupCopy is one copy of a device's backup kept in the archive.
+message IPhoneBackupCopy {
+  // When the copied backup finished.
+  google.protobuf.Timestamp completed_at = 1;
+  // The copy's folder: restore it by copying it into Apple's backup folder.
+  string dir = 2;
+  int64 files = 3;
+  int64 size_bytes = 4;
+  // Bytes written for this copy; it shares the rest with the copy before.
+  int64 copied_bytes = 5;
+  // When every file was last checked against the copy's manifest; absent
+  // if never.
+  google.protobuf.Timestamp verified_at = 6;
+  // Files that no longer match the manifest.
+  int64 damaged_files = 7;
 }
 
 // IPhoneBackupState values are ordered from healthy (OK) to most severe
@@ -540,6 +567,7 @@ message Event {
     RenditionMoved rendition_moved = 9;
     IPhoneBackupChanged iphone_backup_changed = 10;
     DriveFileEvent drive_file = 11;
+    IPhoneBackupCopyEvent iphone_backup_copy = 12;
   }
 }
 
@@ -559,6 +587,42 @@ enum EventKind {
   EVENT_KIND_DRIVE_FILE_RESTORED = 12;
   EVENT_KIND_DRIVE_FILE_DAMAGED = 13;
   EVENT_KIND_DRIVE_FILE_REPAIRED = 14;
+  EVENT_KIND_IPHONE_BACKUP_COPIED = 15;
+  EVENT_KIND_IPHONE_BACKUP_COPY_REMOVED = 16;
+  EVENT_KIND_IPHONE_BACKUP_COPY_DAMAGED = 17;
+  EVENT_KIND_IPHONE_BACKUP_PUSH_REFUSED = 18;
+}
+
+// IPhoneBackupCopyEvent is something that happened to a copy of an iPhone
+// backup in the archive, or to a backup pushed from another computer.
+message IPhoneBackupCopyEvent {
+  IPhoneBackupCopyChange change = 1;
+  string udid = 2;
+  // Absent for a refused push.
+  string device_name = 3;
+  // When the backup finished.
+  google.protobuf.Timestamp completed_at = 4;
+  // COPIED: the backup's files; DAMAGED: the files that no longer match.
+  int64 files = 5;
+  // COPIED: the backup's size, and the bytes written for this copy.
+  int64 size_bytes = 6;
+  int64 copied_bytes = 7;
+  // REMOVED: "retention" (beyond iphone_backup.keep) or "missing" (gone
+  // from disk); PUSH_REFUSED: why.
+  string reason = 8;
+}
+
+enum IPhoneBackupCopyChange {
+  I_PHONE_BACKUP_COPY_CHANGE_UNSPECIFIED = 0;
+  // A finished backup was copied into the archive.
+  I_PHONE_BACKUP_COPY_CHANGE_COPIED = 1;
+  // A copy left the archive.
+  I_PHONE_BACKUP_COPY_CHANGE_REMOVED = 2;
+  // Files of a copy no longer match its manifest (0: they do again).
+  I_PHONE_BACKUP_COPY_CHANGE_DAMAGED = 3;
+  // A pushed backup did not match its manifest and was dropped; the next
+  // push sends it again.
+  I_PHONE_BACKUP_COPY_CHANGE_PUSH_REFUSED = 4;
 }
 
 // DriveFileEvent is something that happened to an archived iCloud Drive file.
@@ -856,6 +920,10 @@ message Settings {
   // The homecloud command-line tool installed next to the agent, for commands
   // the owner runs in a terminal (homecloud icloud login).
   string cli = 27;
+  // How many copies of each device's iPhone backups the archive keeps (0:
+  // none), and the folder another computer pushes backups to ("" if none).
+  int32 iphone_backup_keep = 28;
+  string iphone_backup_incoming = 29;
 }
 
 // ToolPin is an external tool and the exact version homecloud requires.

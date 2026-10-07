@@ -8,36 +8,37 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
 )
 
-// On Windows the agent is started at logon by a Task Scheduler task, registered
-// through the documented `schtasks /Create /XML` interface using the Task
-// Scheduler schema (http://schemas.microsoft.com/windows/2004/02/mit/task).
+// On Windows tasks are Task Scheduler tasks started at the user's logon (a
+// job's trigger repeats every Task.Every), registered through the documented
+// `schtasks /Create /XML` interface using the Task Scheduler schema
+// (http://schemas.microsoft.com/windows/2004/02/mit/task).
 
-// InstallAgent registers a logon task for the current user and starts it now.
-func InstallAgent(ctx context.Context, svc AgentService) error {
+// InstallTask registers a logon task for the current user and starts it now.
+func InstallTask(ctx context.Context, t Task) error {
 	sid, user, err := currentUser()
 	if err != nil {
 		return err
 	}
-	doc, err := renderTask(svc, sid, user)
+	doc, err := renderTask(t, sid, user)
 	if err != nil {
 		return err
 	}
-	if err := registerTask(ctx, svc.Name, doc); err != nil {
+	if err := registerTask(ctx, t.Name, doc); err != nil {
 		return err
 	}
-	return schtasks(ctx, "/Run", "/TN", svc.Name)
+	return schtasks(ctx, "/Run", "/TN", t.Name)
 }
 
-// UninstallAgent removes the logon task. A running agent keeps running until it exits.
-func UninstallAgent(ctx context.Context, name string) error {
+// UninstallTask removes the task. A running agent keeps running until it exits.
+func UninstallTask(ctx context.Context, name string) error {
 	return schtasks(ctx, "/Delete", "/TN", name, "/F")
 }
 
@@ -68,13 +69,17 @@ type taskXML struct {
 		StopIfGoingOnBatteries     bool   `xml:"StopIfGoingOnBatteries"`
 		ExecutionTimeLimit         string `xml:"ExecutionTimeLimit"`
 		MultipleInstancesPolicy    string `xml:"MultipleInstancesPolicy"`
-		RestartOnFailure           struct {
+		RestartOnFailure           *struct {
 			Interval string `xml:"Interval"`
 			Count    int    `xml:"Count"`
-		} `xml:"RestartOnFailure"`
+		} `xml:"RestartOnFailure,omitempty"`
 	} `xml:"Settings"`
 	Triggers struct {
+		// triggerBaseType's Repetition precedes logonTriggerType's UserId.
 		LogonTrigger struct {
+			Repetition *struct {
+				Interval string `xml:"Interval"`
+			} `xml:"Repetition,omitempty"`
 			UserID string `xml:"UserId"`
 		} `xml:"LogonTrigger"`
 	} `xml:"Triggers"`
@@ -90,27 +95,40 @@ type taskXML struct {
 
 // renderTask returns the task definition as BOM-prefixed UTF-16LE XML, the
 // encoding Task Scheduler itself uses for exported tasks.
-func renderTask(svc AgentService, userSID, userName string) ([]byte, error) {
-	if !filepath.IsAbs(svc.Executable) || !filepath.IsAbs(svc.WorkingDir) {
-		return nil, fmt.Errorf("agent executable and working dir must be absolute: %q, %q", svc.Executable, svc.WorkingDir)
+func renderTask(task Task, userSID, userName string) ([]byte, error) {
+	if err := task.validate(); err != nil {
+		return nil, err
 	}
 	var t taskXML
 	t.Version = "1.3"
 	t.Xmlns = "http://schemas.microsoft.com/windows/2004/02/mit/task"
-	t.RegistrationInfo.Description = svc.Description
-	t.RegistrationInfo.URI = `\` + svc.Name
+	t.RegistrationInfo.Description = task.Description
+	t.RegistrationInfo.URI = `\` + task.Name
 	p := &t.Principals.Principal
 	p.ID, p.UserID, p.LogonType, p.RunLevel = "Author", userSID, "InteractiveToken", "LeastPrivilege"
 	st := &t.Settings
-	st.ExecutionTimeLimit = "PT0S" // no limit: the agent is long-running
+	// No limit: the agent is long-running, and a job (a first push of a
+	// whole backup) may take hours; IgnoreNew skips repetitions meanwhile.
+	st.ExecutionTimeLimit = "PT0S"
 	st.MultipleInstancesPolicy = "IgnoreNew"
-	st.RestartOnFailure.Interval, st.RestartOnFailure.Count = "PT5M", 3
+	if task.Every == 0 {
+		st.RestartOnFailure = &struct {
+			Interval string `xml:"Interval"`
+			Count    int    `xml:"Count"`
+		}{Interval: "PT5M", Count: 3}
+	} else {
+		// A job that fails runs again at its next repetition. No Duration:
+		// the repetition goes on until logoff.
+		t.Triggers.LogonTrigger.Repetition = &struct {
+			Interval string `xml:"Interval"`
+		}{Interval: fmt.Sprintf("PT%dM", task.Every/time.Minute)}
+	}
 	t.Triggers.LogonTrigger.UserID = userName
 	t.Actions.Context = "Author"
-	t.Actions.Exec.Command, t.Actions.Exec.WorkingDirectory = svc.Executable, svc.WorkingDir
+	t.Actions.Exec.Command, t.Actions.Exec.WorkingDirectory = task.Executable, task.WorkingDir
 	// Arguments is one command line; quote each argument the way Windows parses it.
-	args := make([]string, 0, len(svc.Args))
-	for _, a := range svc.Args {
+	args := make([]string, 0, len(task.Args))
+	for _, a := range task.Args {
 		args = append(args, syscall.EscapeArg(a))
 	}
 	t.Actions.Exec.Arguments = strings.Join(args, " ")

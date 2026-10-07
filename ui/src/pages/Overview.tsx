@@ -68,6 +68,7 @@ import {
   RunKind,
   RunResult,
   type DriveHealth,
+  type IPhoneBackup,
   type RaidArray,
   type StorageHealth,
   type GetInfoResponse,
@@ -938,23 +939,54 @@ function iphoneBackupSummary(run: Run | undefined, settings: Settings | undefine
   }
   if (rep.devices.length === 0) {
     const every = settings === undefined ? "regularly" : formatInterval(settings.iphoneBackupCheckIntervalSeconds);
+    const pushed = settings?.iphoneBackupDirs.length === 0 && settings.iphoneBackupIncoming !== "";
     return {
       tone: "warning",
       label: "No backup yet",
       color: "warning",
-      title: "No iPhone backup on this computer yet",
-      detail: `In Apple's Devices app, turn on "Encrypt local backup" and back up the iPhone once; homecloud then checks it ${every}.`,
+      title: pushed ? "No iPhone backup has arrived yet" : "No iPhone backup on this computer yet",
+      detail: pushed
+        ? `Run "homecloud iphone push" on the computer Apple's Devices app backs the iPhone up to; homecloud then checks it ${every}.`
+        : `In Apple's Devices app, turn on "Encrypt local backup" and back up the iPhone once; homecloud then checks it ${every}.`,
     };
   }
+  const named = (d: IPhoneBackup, text: string) => (rep.devices.length > 1 ? `${d.name}: ${text}` : text);
   const worst = rep.devices.reduce((w, d) => (iphoneSeverity[d.state] > iphoneSeverity[w.state] ? d : w));
   const b = iphoneStateBadge[worst.state];
-  const problems = rep.devices.flatMap((d) => d.reasons.map((r) => (rep.devices.length > 1 ? `${d.name}: ${r}` : r)));
-  return {
-    ...b,
-    tone: b.color === "danger" ? "danger" : b.color === "warning" ? "warning" : "none",
-    title: "An iPhone backup needs attention",
-    detail: sentence(problems.join("; "), "Check it in Apple's Devices app."),
-  };
+  if (iphoneSeverity[worst.state] > 1) {
+    const problems = rep.devices.flatMap((d) => d.reasons.map((r) => named(d, r)));
+    return {
+      ...b,
+      tone: b.color === "danger" ? "danger" : b.color === "warning" ? "warning" : "none",
+      title: "An iPhone backup needs attention",
+      detail: sentence(problems.join("; "), "Check it in Apple's Devices app."),
+    };
+  }
+  const damaged = rep.devices.filter((d) => d.copies.some((c) => c.damagedFiles > 0n));
+  if (damaged.length > 0) {
+    return {
+      label: "Copy damaged",
+      color: "danger",
+      tone: "danger",
+      title: "An iPhone backup copy in the archive is damaged",
+      detail:
+        "Files of a copy no longer match what was copied. Check the archive drive's health; the next backup is copied whole.",
+    };
+  }
+  const notCopied = rep.devices.filter((d) => d.copyError !== "");
+  if (notCopied.length > 0 || rep.pushErrors.length > 0) {
+    return {
+      label: "Not copied",
+      color: "warning",
+      tone: "warning",
+      title: "An iPhone backup couldn't be copied into the archive",
+      detail: sentence(
+        [...notCopied.map((d) => named(d, d.copyError)), ...rep.pushErrors].join("; "),
+        "It is tried again at the next check.",
+      ),
+    };
+  }
+  return { ...b, tone: "none", title: "", detail: "" };
 }
 
 function IPhoneBackupCard({ overview, settings }: { overview: Overview; settings: Settings | undefined }) {
@@ -998,15 +1030,27 @@ function IPhoneBackupCard({ overview, settings }: { overview: Overview; settings
             "Size",
             `${formatBytes(d.sizeBytes)} · ${formatCount(d.files)} files · ${d.encrypted ? "encrypted" : "not encrypted"}`,
           ],
-          ["Every file read", read === undefined ? "Not yet" : formatWhen(read)],
+          [d.fromCopy ? "Every file checked" : "Every file read", read === undefined ? "Not yet" : formatWhen(read)],
         ];
+        if (d.fromCopy) facts.push(["Source", "Pushed from another computer"]);
         if (d.reasons.length > 0) facts.push(["Problems", d.reasons.join("; ")]);
+        const newest = toDate(d.copies[0]?.completedAt);
+        if (newest !== undefined) {
+          const onDisk = d.copies.reduce((n, c) => n + c.copiedBytes, 0n);
+          facts.push([
+            "Copies",
+            `${d.copies.length} in the archive · newest ${formatWhen(newest)} · ${formatBytes(onDisk)} on disk`,
+          ]);
+        }
+        const damagedCopies = d.copies.filter((c) => c.damagedFiles > 0n).length;
+        if (damagedCopies > 0) facts.push(["Damaged copies", formatCount(BigInt(damagedCopies))]);
+        if (d.copyError !== "") facts.push(["Not copied", d.copyError]);
         return <Facts key={d.dir} facts={facts} />;
       })}
       {footer.length > 0 && <Facts facts={footer} />}
       <Caption1 className={styles.muted}>
-        Apple&apos;s Devices app makes the backups; homecloud only reads them and alerts when one is old, unencrypted,
-        unfinished or damaged.
+        Apple&apos;s Devices app makes the backups; homecloud reads them, keeps verified copies in the archive, and
+        alerts when one is old, unencrypted, unfinished or damaged.
         {checked !== undefined && ` Checked ${formatWhen(checked)}.`}
       </Caption1>
     </Card>

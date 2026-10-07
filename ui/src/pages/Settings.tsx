@@ -216,11 +216,30 @@ export function SettingsPage() {
       </Group>
 
       <Group title="iPhone backups">
+        {s.iphoneBackupDirs.length > 0 && (
+          <Row
+            label="Watched folders"
+            detail={`${s.iphoneBackupDirs.join(" · ")} (read only; Apple's Devices app writes the backups)`}
+            mono
+          />
+        )}
+        {s.iphoneBackupIncoming !== "" && (
+          <Row
+            label="Pushed from another computer"
+            detail={`${s.iphoneBackupIncoming} (where "homecloud iphone push" sends finished backups)`}
+            mono
+          />
+        )}
         <Row
-          label="Watched folders"
-          detail={`${s.iphoneBackupDirs.join(" · ")} (read only; Apple's Devices app writes the backups)`}
-          mono
-        />
+          label="Copies kept"
+          detail={
+            s.iphoneBackupKeep === 0
+              ? "None: the backups are only checked"
+              : "Of each iPhone, newest first, in the archive's iPhone backups folder; unchanged files are shared between copies"
+          }
+        >
+          <Text>{s.iphoneBackupKeep}</Text>
+        </Row>
         <Row
           label="Check backups"
           detail={`Alerts when the newest backup is older than ${formatSpan(s.iphoneBackupMaxAgeSeconds)}, unencrypted, unfinished, unreadable, or ${s.iphoneBackupMaxShrinkPercent}% smaller than the last healthy one`}

@@ -458,6 +458,8 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv3.GetSetti
 		IphoneBackupMaxAgeSeconds:        int64(c.IPhoneBackup.MaxAge.Std() / time.Second),
 		IphoneBackupCheckIntervalSeconds: int64(c.IPhoneBackup.CheckInterval.Std() / time.Second),
 		IphoneBackupMaxShrinkPercent:     c.IPhoneBackup.MaxShrinkPercent,
+		IphoneBackupKeep:                 int32(c.IPhoneBackup.Keep), //nolint:gosec // validated to 0..100
+		IphoneBackupIncoming:             c.IPhoneBackup.Incoming,
 		DriveDir:                         filepath.Join(c.Storage.Root, drive.Dir),
 		DriveSyncIntervalSeconds:         int64(c.Drive.SyncInterval.Std() / time.Second),
 		DriveWorkers:                     int32(c.Drive.Workers), //nolint:gosec // validated 1..16

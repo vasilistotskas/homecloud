@@ -9,79 +9,119 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 )
 
-// On Linux the agent runs as a systemd user unit (systemd.service(5)), enabled
-// for default.target so it starts with the user's service manager. Headless
-// hosts additionally need `loginctl enable-linger` (an operator decision).
+// On Linux tasks are systemd user units (systemd.service(5)): the agent is a
+// service enabled for default.target, so it starts with the user's service
+// manager; a job is a oneshot service a timer (systemd.timer(5)) starts every
+// Task.Every. Headless hosts additionally need `loginctl enable-linger` (an
+// operator decision).
 
-// InstallAgent writes the user unit, reloads systemd and enables + starts it.
-func InstallAgent(ctx context.Context, svc AgentService) error {
-	unit, err := renderUnit(svc)
+// InstallTask writes the user units, reloads systemd and enables + starts the
+// service (the agent) or its timer (a job).
+func InstallTask(ctx context.Context, t Task) error {
+	unit, err := renderUnit(t)
 	if err != nil {
 		return err
 	}
-	path, err := unitPath(svc.Name)
-	if err != nil {
+	if err := writeUnit(t.Name+".service", unit); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // standard systemd user unit dir permissions
-		return fmt.Errorf("create unit dir: %w", err)
-	}
-	if err := os.WriteFile(path, unit, 0o644); err != nil { //nolint:gosec // unit files are not secret
-		return fmt.Errorf("write unit: %w", err)
+	start := t.Name + ".service"
+	if t.Every != 0 {
+		if err := writeUnit(t.Name+".timer", renderTimer(t)); err != nil {
+			return err
+		}
+		start = t.Name + ".timer"
 	}
 	if err := systemctl(ctx, "daemon-reload"); err != nil {
 		return err
 	}
-	return systemctl(ctx, "enable", "--now", svc.Name+".service")
+	return systemctl(ctx, "enable", "--now", start)
 }
 
-// UninstallAgent disables and stops the unit and removes its file.
-func UninstallAgent(ctx context.Context, name string) error {
-	if err := systemctl(ctx, "disable", "--now", name+".service"); err != nil {
-		return err
-	}
-	path, err := unitPath(name)
+// UninstallTask disables and stops the task (its timer, if it has one) and
+// removes its unit files.
+func UninstallTask(ctx context.Context, name string) error {
+	dir, err := unitDir()
 	if err != nil {
 		return err
 	}
-	if err := os.Remove(path); err != nil {
-		return fmt.Errorf("remove unit: %w", err)
+	units := []string{name + ".service"}
+	if _, err := os.Stat(filepath.Join(dir, name+".timer")); err == nil {
+		units = []string{name + ".timer", name + ".service"}
+	}
+	for _, u := range units {
+		if err := systemctl(ctx, "disable", "--now", u); err != nil {
+			return err
+		}
+		if err := os.Remove(filepath.Join(dir, u)); err != nil {
+			return fmt.Errorf("remove unit %s: %w", u, err)
+		}
 	}
 	return systemctl(ctx, "daemon-reload")
 }
 
-func unitPath(name string) (string, error) {
+func unitDir() (string, error) {
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("locate config dir: %w", err)
 	}
-	return filepath.Join(dir, "systemd", "user", name+".service"), nil
+	return filepath.Join(dir, "systemd", "user"), nil
 }
 
-// renderUnit builds the unit file. Type=notify makes systemd wait for READY=1,
-// so startup failures (volume, lock, config) surface as unit failures.
-func renderUnit(svc AgentService) ([]byte, error) {
-	if !filepath.IsAbs(svc.Executable) || !filepath.IsAbs(svc.WorkingDir) {
-		return nil, fmt.Errorf("agent executable and working dir must be absolute: %q, %q", svc.Executable, svc.WorkingDir)
+func writeUnit(name string, body []byte) error {
+	dir, err := unitDir()
+	if err != nil {
+		return err
 	}
-	for _, s := range append([]string{svc.Description, svc.Executable, svc.WorkingDir}, svc.Args...) {
+	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // standard systemd user unit dir permissions
+		return fmt.Errorf("create unit dir: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), body, 0o644); err != nil { //nolint:gosec // unit files are not secret
+		return fmt.Errorf("write unit %s: %w", name, err)
+	}
+	return nil
+}
+
+// renderUnit builds the service unit. The agent's Type=notify makes systemd
+// wait for READY=1, so startup failures (volume, lock, config) surface as unit
+// failures; a job is a oneshot service its timer starts, so it has no
+// [Install] section of its own.
+func renderUnit(t Task) ([]byte, error) {
+	if err := t.validate(); err != nil {
+		return nil, err
+	}
+	for _, s := range append([]string{t.Description, t.Executable, t.WorkingDir}, t.Args...) {
 		if strings.ContainsFunc(s, unicode.IsControl) {
 			return nil, fmt.Errorf("unit values must not contain control characters: %q", s)
 		}
 	}
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "[Unit]\nDescription=%s\n\n", escapeSpecifiers(svc.Description))
-	exec := []string{quoteExecArg(svc.Executable)}
-	for _, a := range svc.Args {
+	fmt.Fprintf(&b, "[Unit]\nDescription=%s\n\n", escapeSpecifiers(t.Description))
+	exec := []string{quoteExecArg(t.Executable)}
+	for _, a := range t.Args {
 		exec = append(exec, quoteExecArg(a))
 	}
+	if t.Every != 0 {
+		fmt.Fprintf(&b, "[Service]\nType=oneshot\nExecStart=%s\nWorkingDirectory=%s\n",
+			strings.Join(exec, " "), escapeSpecifiers(t.WorkingDir))
+		return b.Bytes(), nil
+	}
 	fmt.Fprintf(&b, "[Service]\nType=notify\nExecStart=%s\nWorkingDirectory=%s\nRestart=on-failure\nRestartSec=10s\n\n",
-		strings.Join(exec, " "), escapeSpecifiers(svc.WorkingDir))
+		strings.Join(exec, " "), escapeSpecifiers(t.WorkingDir))
 	b.WriteString("[Install]\nWantedBy=default.target\n")
 	return b.Bytes(), nil
+}
+
+// renderTimer builds a job's timer: it starts the job a minute after the
+// user's service manager starts, then Every after each run ends, so runs
+// never overlap.
+func renderTimer(t Task) []byte {
+	return fmt.Appendf(nil, "[Unit]\nDescription=%s\n\n[Timer]\nOnStartupSec=1min\nOnUnitInactiveSec=%dmin\n\n[Install]\nWantedBy=timers.target\n",
+		escapeSpecifiers(t.Description), t.Every/time.Minute)
 }
 
 // quoteExecArg quotes one ExecStart= item per systemd.syntax(7) "Quoting" and

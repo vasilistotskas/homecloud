@@ -17,6 +17,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
+	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 )
@@ -218,18 +219,28 @@ func iphoneBackupToProto(detail string) (*agentv3.IPhoneBackupReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &agentv3.IPhoneBackupReport{Archived: int64(rep.Archived), Error: rep.Error, DirErrors: rep.DirErrors}
+	out := &agentv3.IPhoneBackupReport{
+		Archived: int64(rep.Archived), Error: rep.Error, DirErrors: rep.DirErrors, PushErrors: rep.PushErrors,
+	}
 	for _, d := range rep.Devices {
 		state, err := lookup(iphoneBackupStates, d.State, "iphone backup state")
 		if err != nil {
 			return nil, err
 		}
-		out.Devices = append(out.Devices, &agentv3.IPhoneBackup{
+		dev := &agentv3.IPhoneBackup{
 			Udid: d.UDID, Name: d.Name, ProductVersion: d.ProductVersion, Dir: d.Dir,
 			Encrypted: d.Encrypted, CompletedAt: optionalTimePtr(d.CompletedAt),
 			Files: d.Files, SizeBytes: d.Bytes, State: state, Reasons: d.Reasons,
 			LastFullReadAt: optionalTimePtr(d.LastFullReadAt),
-		})
+			FromCopy:       d.FromCopy, CopyError: d.CopyError,
+		}
+		for _, c := range d.Copies {
+			dev.Copies = append(dev.Copies, &agentv3.IPhoneBackupCopy{
+				CompletedAt: timestamppb.New(c.CompletedAt), Dir: c.Dir, Files: c.Files, SizeBytes: c.Bytes,
+				CopiedBytes: c.CopiedBytes, VerifiedAt: optionalTimePtr(c.VerifiedAt), DamagedFiles: c.DamagedFiles,
+			})
+		}
+		out.Devices = append(out.Devices, dev)
 	}
 	return out, nil
 }
@@ -303,20 +314,32 @@ func appleState(d agentv3.DownloadOutcome) agentv3.AppleAccountState {
 
 // eventKindNames maps API event kinds to the ledger's event kind names.
 var eventKindNames = map[agentv3.EventKind]string{
-	agentv3.EventKind_EVENT_KIND_RENDITION_CHANGED:     ledger.EventRenditionChanged,
-	agentv3.EventKind_EVENT_KIND_STATE_CHANGED:         ledger.EventStateChanged,
-	agentv3.EventKind_EVENT_KIND_QUARANTINED:           ledger.EventQuarantined,
-	agentv3.EventKind_EVENT_KIND_QUARANTINE_RELEASED:   ledger.EventQuarantineReleased,
-	agentv3.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:  ledger.EventDriveHealthChanged,
-	agentv3.EventKind_EVENT_KIND_RENDITION_MOVED:       ledger.EventRenditionMoved,
-	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED: ledger.EventIPhoneBackupChanged,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED:   ledger.EventDriveFileArchived,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_CHANGED:    ledger.EventDriveFileChanged,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_MOVED:      ledger.EventDriveFileMoved,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DELETED:    ledger.EventDriveFileDeleted,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_RESTORED:   ledger.EventDriveFileRestored,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED:    ledger.EventDriveFileDamaged,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_REPAIRED:   ledger.EventDriveFileRepaired,
+	agentv3.EventKind_EVENT_KIND_RENDITION_CHANGED:          ledger.EventRenditionChanged,
+	agentv3.EventKind_EVENT_KIND_STATE_CHANGED:              ledger.EventStateChanged,
+	agentv3.EventKind_EVENT_KIND_QUARANTINED:                ledger.EventQuarantined,
+	agentv3.EventKind_EVENT_KIND_QUARANTINE_RELEASED:        ledger.EventQuarantineReleased,
+	agentv3.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:       ledger.EventDriveHealthChanged,
+	agentv3.EventKind_EVENT_KIND_RENDITION_MOVED:            ledger.EventRenditionMoved,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED:      ledger.EventIPhoneBackupChanged,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED:        ledger.EventDriveFileArchived,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_CHANGED:         ledger.EventDriveFileChanged,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_MOVED:           ledger.EventDriveFileMoved,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DELETED:         ledger.EventDriveFileDeleted,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_RESTORED:        ledger.EventDriveFileRestored,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED:         ledger.EventDriveFileDamaged,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_REPAIRED:        ledger.EventDriveFileRepaired,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPIED:       ledger.EventIPhoneBackupCopied,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPY_REMOVED: ledger.EventIPhoneBackupCopyRemoved,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPY_DAMAGED: ledger.EventIPhoneBackupCopyDamaged,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_PUSH_REFUSED: ledger.EventIPhoneBackupPushRefused,
+}
+
+// iphoneCopyChanges maps the ledger's iPhone backup copy event kinds to the API's.
+var iphoneCopyChanges = map[string]agentv3.IPhoneBackupCopyChange{
+	ledger.EventIPhoneBackupCopied:      agentv3.IPhoneBackupCopyChange_I_PHONE_BACKUP_COPY_CHANGE_COPIED,
+	ledger.EventIPhoneBackupCopyRemoved: agentv3.IPhoneBackupCopyChange_I_PHONE_BACKUP_COPY_CHANGE_REMOVED,
+	ledger.EventIPhoneBackupCopyDamaged: agentv3.IPhoneBackupCopyChange_I_PHONE_BACKUP_COPY_CHANGE_DAMAGED,
+	ledger.EventIPhoneBackupPushRefused: agentv3.IPhoneBackupCopyChange_I_PHONE_BACKUP_COPY_CHANGE_PUSH_REFUSED,
 }
 
 // driveFileChanges maps the ledger's iCloud Drive event kinds to the API's.
@@ -469,6 +492,27 @@ func eventToProto(e ledger.Event) (*agentv3.Event, error) {
 			out.Detail = &agentv3.Event_DriveFile{DriveFile: ev}
 			// A Drive event names a file, not a Photos asset.
 			out.Asset = &agentv3.AssetRef{Library: e.Library, AssetId: e.Asset, Filename: path.Base(ev.Path)}
+		}
+	case ledger.EventIPhoneBackupCopied, ledger.EventIPhoneBackupCopyRemoved, ledger.EventIPhoneBackupCopyDamaged,
+		ledger.EventIPhoneBackupPushRefused:
+		var d struct {
+			UDID        string `json:"udid"`
+			DeviceName  string `json:"device_name"`
+			Stamp       string `json:"stamp"`
+			Files       int64  `json:"files"`
+			Bytes       int64  `json:"bytes"`
+			CopiedBytes int64  `json:"copied_bytes"`
+			Reason      string `json:"reason"`
+		}
+		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
+			var completed time.Time
+			if completed, err = iphonecopy.ParseStamp(d.Stamp); err == nil {
+				out.Detail = &agentv3.Event_IphoneBackupCopy{IphoneBackupCopy: &agentv3.IPhoneBackupCopyEvent{
+					Change: iphoneCopyChanges[e.Kind], Udid: d.UDID, DeviceName: d.DeviceName,
+					CompletedAt: timestamppb.New(completed), Files: d.Files, SizeBytes: d.Bytes,
+					CopiedBytes: d.CopiedBytes, Reason: d.Reason,
+				}}
+			}
 		}
 	default:
 		err = fmt.Errorf("unknown event kind %q", e.Kind)

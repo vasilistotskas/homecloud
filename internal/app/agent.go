@@ -42,6 +42,13 @@ const (
 	alertIPhonePrefix = "iphone-backup/"
 	// alertIPhoneCheck: a configured backup directory could not be checked.
 	alertIPhoneCheck = "iphone-backup-check"
+	// alertIPhoneCopy + UDID: a device's backup could not be copied.
+	alertIPhoneCopy = "iphone-copy/"
+	// alertIPhoneCopyDamaged + UDID: a copy in the archive is damaged.
+	alertIPhoneCopyDamaged = "iphone-copy-damaged/"
+	// alertIPhonePush: a backup pushed from another computer was refused,
+	// or the incoming folder could not be read.
+	alertIPhonePush = "iphone-push"
 )
 
 // CycleRunKind is the ledger run kind of a sync cycle.

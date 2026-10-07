@@ -9,6 +9,7 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup/iphonebackuptest"
+	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 )
 
@@ -53,7 +54,7 @@ func TestIPhoneBackupCheckWithoutBackups(t *testing.T) {
 	if ok || !isReport || len(r.Devices) != 0 || r.Error != "" {
 		t.Fatalf("check without backups = %+v, ok=%v; want a completed, unhealthy check", rep, ok)
 	}
-	if countTitle(n, "homecloud: no iPhone backup on this computer") != 1 {
+	if countTitle(n, "homecloud: no iPhone backup yet") != 1 {
 		t.Fatalf("alerts = %v", n.titles())
 	}
 }
@@ -153,6 +154,115 @@ func TestIPhoneBackupUnreadableDirectoryAlerts(t *testing.T) {
 		t.Fatalf("check = %+v, ok=%v", r, ok)
 	}
 	if countTitle(n, "homecloud: iPhone backups could not be checked") != 1 {
+		t.Fatalf("alerts = %v", n.titles())
+	}
+}
+
+// lastIPhoneReport returns the report of the agent's last iPhone backup check.
+func lastIPhoneReport(t *testing.T, agent *Agent) (IPhoneBackupReport, bool) {
+	t.Helper()
+	run := lastRun(t, agent, IPhoneBackupRunKind)
+	rep, err := ParseIPhoneBackupReport(run.Detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rep, *run.OK
+}
+
+func TestIPhoneBackupCopiesAreKeptAndPruned(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
+	agent.cfg.IPhoneBackup.Keep = 2
+	ctx := t.Context()
+	dir := agent.cfg.IPhoneBackup.Dirs[0]
+	for i := range 3 {
+		writeIPhoneBackup(t, dir, true, clock.Add(-time.Hour))
+		if _, ok := agent.checkIPhoneBackups(ctx); !ok {
+			t.Fatalf("check %d not healthy: %v", i, n.titles())
+		}
+		clock = clock.Add(25 * time.Hour)
+	}
+	copies, err := agent.db.IPhoneBackupCopies(ctx)
+	if err != nil || len(copies) != 2 || copies[0].Stamp != iphonecopy.Stamp(clock.Add(-26*time.Hour)) {
+		t.Fatalf("copies = %+v, %v", copies, err)
+	}
+	events, err := agent.db.Events(ctx, []string{ledger.EventIPhoneBackupCopied, ledger.EventIPhoneBackupCopyRemoved}, 0, 10)
+	if err != nil || len(events) != 4 {
+		t.Fatalf("copy events = %d, %v; want three copies and one removal", len(events), err)
+	}
+	copyDir := filepath.Join(agent.cfg.Storage.Root, IPhoneCopiesFolder, testUDID, copies[0].Stamp, "ab", "ab12")
+	if b, readErr := os.ReadFile(copyDir); readErr != nil || string(b) != "data" { //nolint:gosec // a test file
+		t.Fatalf("copied file = %q, %v", b, readErr)
+	}
+}
+
+func TestIPhoneBackupCopyDamageIsFoundAndAlerted(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
+	agent.cfg.IPhoneBackup.Keep = 3
+	ctx := t.Context()
+	writeIPhoneBackup(t, agent.cfg.IPhoneBackup.Dirs[0], true, clock.Add(-time.Hour))
+	if _, ok := agent.checkIPhoneBackups(ctx); !ok {
+		t.Fatal("first check not healthy")
+	}
+	copies, err := agent.db.IPhoneBackupCopies(ctx)
+	if err != nil || len(copies) != 1 {
+		t.Fatalf("copies = %+v, %v", copies, err)
+	}
+	damaged := filepath.Join(agent.cfg.Storage.Root, IPhoneCopiesFolder, testUDID, copies[0].Stamp, "ab", "ab12")
+	if err = os.WriteFile(damaged, []byte("rot!"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(agent.cfg.IPhoneBackup.ReadInterval.Std())
+	writeIPhoneBackup(t, agent.cfg.IPhoneBackup.Dirs[0], true, clock.Add(-time.Hour))
+	if _, ok := agent.checkIPhoneBackups(ctx); ok {
+		t.Fatal("a damaged copy must make the check unhealthy")
+	}
+	if countTitle(n, "homecloud: an iPhone backup copy is damaged") != 1 {
+		t.Fatalf("alerts = %v", n.titles())
+	}
+	copies, err = agent.db.IPhoneBackupCopies(ctx)
+	if err != nil || len(copies) != 2 || copies[1].DamagedFiles != 1 || copies[0].DamagedFiles != 0 {
+		t.Fatalf("copies after damage = %+v, %v", copies, err)
+	}
+	// The new copy was made whole, not linked to the damaged one.
+	if b, err := os.ReadFile(filepath.Join(agent.cfg.Storage.Root, IPhoneCopiesFolder, testUDID, copies[0].Stamp, "ab", "ab12")); err != nil || string(b) != "data" {
+		t.Fatalf("new copy = %q, %v", b, err)
+	}
+}
+
+func TestIPhoneBackupsPushedFromAnotherComputer(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
+	agent.cfg.IPhoneBackup.Dirs = nil
+	agent.cfg.IPhoneBackup.Incoming = t.TempDir()
+	agent.cfg.IPhoneBackup.Keep = 3
+	ctx := t.Context()
+
+	// The computer with the backups pushes one.
+	pc := t.TempDir()
+	writeIPhoneBackup(t, pc, true, clock.Add(-time.Hour))
+	b := iphonebackup.Inspect(ctx, filepath.Join(pc, testUDID), testUDID)
+	if res, err := iphonecopy.Push(ctx, b, agent.cfg.IPhoneBackup.Incoming); err != nil || res.Outcome != iphonecopy.PushSent {
+		t.Fatalf("push = %+v, %v", res, err)
+	}
+	if err := agent.maintain(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rep, ok := lastIPhoneReport(t, agent)
+	if !ok || len(rep.Devices) != 1 {
+		t.Fatalf("check after a push: ok=%v report=%+v alerts=%v", ok, rep, n.titles())
+	}
+	d := rep.Devices[0]
+	if !d.FromCopy || d.State != iphonebackup.StateOK || d.Name != "Test iPhone" || len(d.Copies) != 1 || !d.Encrypted {
+		t.Fatalf("device = %+v", d)
+	}
+	// Nothing pushed for longer than max_age: the newest copy is stale.
+	clock = clock.Add(agent.cfg.IPhoneBackup.MaxAge.Std() + 2*time.Hour)
+	if _, ok := agent.checkIPhoneBackups(ctx); ok {
+		t.Fatal("a stale copy must make the check unhealthy")
+	}
+	if countTitle(n, "homecloud: iPhone backup needs attention") != 1 {
 		t.Fatalf("alerts = %v", n.titles())
 	}
 }

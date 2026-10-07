@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 )
 
@@ -20,7 +21,7 @@ func decodeUTF16LE(t *testing.T, b []byte) string {
 }
 
 func TestRenderTask(t *testing.T) {
-	doc, err := renderTask(AgentService{
+	doc, err := renderTask(Task{
 		Name:        "homecloud-agent",
 		Description: "homecloud <agent> & friends",
 		Executable:  `C:\Users\me\AppData\Local\Programs\homecloud\homecloud-agent.exe`,
@@ -55,8 +56,32 @@ func TestRenderTask(t *testing.T) {
 }
 
 func TestRenderTaskRejectsRelativePaths(t *testing.T) {
-	if _, err := renderTask(AgentService{Executable: "homecloud-agent.exe", WorkingDir: `C:\x`}, "S-1", `H\u`); err == nil {
+	if _, err := renderTask(Task{Executable: "homecloud-agent.exe", WorkingDir: `C:\x`}, "S-1", `H\u`); err == nil {
 		t.Fatal("want error for relative executable")
+	}
+	if _, err := renderTask(Task{Executable: `C:\x\a.exe`, WorkingDir: `C:\x`, Every: 30 * time.Second}, "S-1", `H\u`); err == nil {
+		t.Fatal("want error for an interval under a minute")
+	}
+}
+
+func TestRenderPeriodicTask(t *testing.T) {
+	doc, err := renderTask(Task{
+		Name:       "homecloud-iphone-push",
+		Executable: `C:\Programs\homecloud\homecloud.exe`,
+		Args:       []string{"iphone", "push"},
+		WorkingDir: `C:\Programs\homecloud`,
+		Every:      time.Hour,
+	}, "S-1-5-21-1-2-3-1001", `HOST\me`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	xml := decodeUTF16LE(t, doc)
+	// Repetition (triggerBaseType) must come before UserId (logonTriggerType).
+	if !strings.Contains(xml, "<LogonTrigger>\n      <Repetition>\n        <Interval>PT60M</Interval>\n      </Repetition>\n      <UserId>HOST\\me</UserId>") {
+		t.Fatalf("periodic trigger:\n%s", xml)
+	}
+	if strings.Contains(xml, "RestartOnFailure") {
+		t.Fatalf("a job is not restarted; its next repetition runs it again:\n%s", xml)
 	}
 }
 

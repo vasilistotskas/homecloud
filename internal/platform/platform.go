@@ -7,8 +7,9 @@
 //	SameVolume(a, b) (bool, error)       whether two paths share a volume
 //	DiskSpace(path) (Space, error)       free/total bytes available to the caller
 //	AcquireInstance(name) (*Lock, error) single-instance guard for the agent
-//	InstallAgent(ctx, AgentService)      start the agent at logon, and now
-//	UninstallAgent(ctx, name)            remove that registration
+//	InstallTask(ctx, Task)               start the agent at logon (and now), or run
+//	                                     a job every Task.Every after logon
+//	UninstallTask(ctx, name)             remove that registration
 //	NotifyReady() / NotifyStopping()     service-manager readiness protocol
 //	StateDir() (string, error)           per-user runtime state directory
 //	WriteSecretFile(path, data) error    atomic write readable only by the current user
@@ -18,6 +19,7 @@
 //
 //	OpenURL(url) error                   open a URL in the default browser
 //	MarkHidden(path) error               hide a file or folder from file managers
+//	FileID(*os.File) (FileIdentity, error) what identifies a file (shared by its hard links)
 //	StorageOf(path) (Storage, error)     drives (and Linux md arrays) holding path
 //	ReadDriveHealth(ctx, Drive)          SMART health the OS itself reports for a
 //	                                     drive (Windows: NVMe health log; Linux: udisks)
@@ -26,6 +28,8 @@ package platform
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
+	"time"
 )
 
 // ErrAlreadyRunning is returned by AcquireInstance when another process holds the lock.
@@ -44,13 +48,35 @@ func (s Space) FreePercent() float64 {
 	return float64(s.Free) / float64(s.Total) * 100
 }
 
-// AgentService describes how the background agent is started at logon.
-type AgentService struct {
+// Task is a program the user's service manager runs: the agent, started at
+// logon and restarted when it fails (Every 0), or a job run every Every while
+// the user is logged on, such as "homecloud iphone push".
+type Task struct {
 	Name        string // task / unit name, e.g. "homecloud-agent"
 	Description string
-	Executable  string   // absolute path to homecloud-agent
-	Args        []string // arguments passed to the agent
+	Executable  string   // absolute path
+	Args        []string // arguments passed to it
 	WorkingDir  string
+	// Every is a job's interval, whole minutes from 1m to 31 days (Task
+	// Scheduler's range for a repetition); 0 for the agent.
+	Every time.Duration
+}
+
+// Repetition bounds of Task.Every (Task Scheduler schema, repetitionType).
+const (
+	minTaskEvery = time.Minute
+	maxTaskEvery = 31 * 24 * time.Hour
+)
+
+// validate checks what both service managers need of a task.
+func (t Task) validate() error {
+	if !filepath.IsAbs(t.Executable) || !filepath.IsAbs(t.WorkingDir) {
+		return fmt.Errorf("task executable and working dir must be absolute: %q, %q", t.Executable, t.WorkingDir)
+	}
+	if t.Every != 0 && (t.Every < minTaskEvery || t.Every > maxTaskEvery || t.Every%time.Minute != 0) {
+		return fmt.Errorf("a task's interval must be whole minutes from %s to %s, got %s", minTaskEvery, maxTaskEvery, t.Every)
+	}
+	return nil
 }
 
 // ErrLowSpace marks a volume whose free space is below the configured minimum.

@@ -76,6 +76,7 @@ keep = 14
 
 [iphone_backup]
 dirs = ['@IPHONE_DIR@']
+keep = 3
 max_age = "168h"
 check_interval = "24h"
 max_shrink_percent = 50
@@ -128,7 +129,7 @@ func TestLoadValid(t *testing.T) {
 		Backup:   Backup{Dir: testBackupDir, Interval: Duration(24 * time.Hour), Keep: 14},
 		Drive:    Drive{SyncInterval: Duration(6 * time.Hour), Workers: 4, StallTimeout: Duration(2 * time.Minute)},
 		IPhoneBackup: IPhoneBackup{
-			Dirs: []string{testIPhoneDir}, MaxAge: Duration(168 * time.Hour),
+			Dirs: []string{testIPhoneDir}, Keep: 3, MaxAge: Duration(168 * time.Hour),
 			CheckInterval: Duration(24 * time.Hour), MaxShrinkPercent: 50,
 			ReadInterval: Duration(168 * time.Hour), StalledAfter: Duration(6 * time.Hour),
 		},
@@ -219,6 +220,12 @@ func TestValidate(t *testing.T) {
 		{"iphone max age too short", func(c *Config) { c.IPhoneBackup.MaxAge = Duration(time.Minute) }, "iphone_backup.max_age"},
 		{"iphone checks too frequent", func(c *Config) { c.IPhoneBackup.CheckInterval = Duration(time.Minute) }, "iphone_backup.check_interval"},
 		{"iphone shrink 100", func(c *Config) { c.IPhoneBackup.MaxShrinkPercent = 100 }, "iphone_backup.max_shrink_percent"},
+		{"iphone keep negative", func(c *Config) { c.IPhoneBackup.Keep = -1 }, "iphone_backup.keep"},
+		{"iphone keep too many", func(c *Config) { c.IPhoneBackup.Keep = 101 }, "iphone_backup.keep"},
+		{"relative incoming", func(c *Config) { c.IPhoneBackup.Incoming = "incoming" }, "iphone_backup.incoming"},
+		{"incoming without copies", func(c *Config) {
+			c.IPhoneBackup.Incoming, c.IPhoneBackup.Keep = filepath.Join(testTools, "incoming"), 0
+		}, "iphone_backup.keep must be at least 1"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

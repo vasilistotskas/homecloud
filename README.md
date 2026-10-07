@@ -8,7 +8,7 @@ recent 30 days.
 - Status: **P1 done, M1–M4 live, P2 built** (its iPhone monitor waits for the first encrypted
   backup): iCloud Photos archive with verification, scheduled integrity re-checks, ledger backups,
   drive health, library browser, local API, web and desktop apps, a monitor of the local iPhone
-  backups, homecloud's own iCloud sign-in and the iCloud Drive archive (`Drive/`, never deletes)
+  backups with verified copies of them in the archive, homecloud's own iCloud sign-in and the iCloud Drive archive (`Drive/`, never deletes)
   with its own Overview card, Activity tab and events. No deletion capability exists yet (P3).
 
 ## How it works
@@ -47,10 +47,12 @@ flowchart TB
         ledger[("homecloud.db<br/>ledger + audit log")]
         exports[("manifest.csv<br/>README.txt")]
         thumbs[(".cache/thumbnails")]
+        iphonecopies[("iPhone backups/<br/>verified copies")]
     end
 
     subgraph outside["Outside the archive"]
         iphone[("iphone_backup.dirs<br/>MobileSync\Backup")]
+        incoming[("iphone_backup.incoming<br/>(a NAS shared folder)")]
         backups[("backup.dir · ledger snapshots<br/>(another drive)")]
     end
     phone["Phone (ntfy app)"]
@@ -73,6 +75,9 @@ flowchart TB
     maint -- "checked snapshot" --> backups
     devices --> iphone
     maint -- "read only" --> iphone
+    maint -- "verified, deduplicated copies" --> iphonecopies
+    push["homecloud iphone push<br/>(the computer that backs up)"] -- "changed files + manifest" --> incoming
+    incoming -- "checked, taken in" --> maint
     cli -- "one ledger writer at a time" --> ledger
     cli -- "icloud login · drive ls<br/>(read only)" --> drivesvc
     cli --> session[("icloud-session.json<br/>state dir, owner only")]
@@ -101,7 +106,7 @@ flowchart TD
     due -- "scrub (schedule.scrub_interval)" --> scrub["Re-hash the photo and Drive files confirmed longest ago<br/>(schedule.scrub_fraction of each per run)"]
     due -- "iCloud Drive (drive.sync_interval)" --> dsync["List iCloud Drive; download new/changed files,<br/>check size + Apple's signature (ZIP check for packages),<br/>keep replaced copies in .versions, record deletions"]
     due -- "backup (backup.interval)" --> snap["Checked ledger snapshot to backup.dir"]
-    due -- "iPhone backups (iphone_backup.check_interval)" --> phone["Judge every device backup: encrypted, finished,<br/>newer than max_age, not shrunk; read every file<br/>once per read_interval"]
+    due -- "iPhone backups (iphone_backup.check_interval)" --> phone["Judge every device backup: encrypted, finished,<br/>newer than max_age, not shrunk; read every file<br/>once per read_interval; copy healthy ones (and take in<br/>pushed ones) as verified copies, keep iphone_backup.keep"]
     due -- no --> wait(["Wait for the next cycle"])
     scrub --> wait
     snap --> wait
@@ -159,7 +164,7 @@ docker run --rm -v /srv/archive:/archive --entrypoint homecloud homecloud archiv
 | `/config` (read-only) | `config.toml` | found through `HOMECLOUD_CONFIG` |
 | `/state` | the agent's and kei's state, including both iCloud sessions: keep it private | `XDG_STATE_HOME`, `KEI_DATA_DIR` |
 | `/backups` | ledger snapshots, **on another drive than `/archive`** (doctor checks) | `backup.dir = '/backups'` |
-| `/iphone` (read-only) | the iPhone backups to monitor | `iphone_backup.dirs = ['/iphone']` |
+| `/iphone` | backups pushed from the computer Apple's Devices app backs up to (`homecloud iphone push`) | `iphone_backup.incoming = '/iphone'`, `dirs = []`, `keep` ≥ 1 |
 
 Tools: `kei.binary = '/opt/kei/kei'`, `ffmpeg.ffmpeg = '/opt/ffmpeg/bin/ffmpeg'`,
 `ffmpeg.ffprobe = '/opt/ffmpeg/bin/ffprobe'`. Run it as the user that owns the folders
@@ -183,6 +188,16 @@ MagicDNS and HTTPS certificates for the tailnet, copy `deploy/homecloud.env.exam
 `web.public_origin` to that address, then
 `docker compose up -d` and sign in with the link `docker compose exec homecloud homecloud open
 --print` prints.
+
+**iPhone backups on a NAS:** Apple's Devices app keeps backing up to the PC, and the PC sends
+each finished backup to the NAS. Create a shared folder in UGOS (say `homecloud-iphone`, the
+NAS folder `HOMECLOUD_IPHONE_INCOMING` names) that the NAS user owning the homecloud folders can
+write; on the PC, save that user's credentials once (`cmdkey /add:<nas> /user:<user> /pass`,
+typed by you) and run
+`homecloud iphone install-push --from C:\Users\<you>\Apple\MobileSync\Backup --to \\<nas>\homecloud-iphone --every 1h`.
+Each push sends only the files that differ from the newest copy on the NAS, with the backup's
+SHA-256 manifest; the NAS checks every file against it before keeping the copy. Nothing breaks
+while the PC is off.
 
 ### Desktop app
 
@@ -223,7 +238,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[schedule]` | `sync_interval`, `scrub_interval`, `scrub_fraction` |
 | `[backup]` | `dir` (must be on another drive than `storage.root`), `interval`, `keep` |
 | `[drive]` | `sync_interval` (≥ 15m), `workers` (parallel downloads, 1–16), `stall_timeout` (a download receiving nothing this long is retried next sync, 30s–10m) |
-| `[iphone_backup]` | `dirs` (absolute paths, written out: Apple Devices uses `C:\Users\<you>\Apple\MobileSync\Backup`, desktop iTunes `C:\Users\<you>\AppData\Roaming\Apple Computer\MobileSync\Backup`), `max_age`, `check_interval` (≤ `max_age`), `read_interval` (how often every backup file is read in full, ≥ `check_interval`), `stalled_after` (a backup still running this long counts as unfinished), `max_shrink_percent` |
+| `[iphone_backup]` | `dirs` (absolute paths, written out: Apple Devices uses `C:\Users\<you>\Apple\MobileSync\Backup`, desktop iTunes `C:\Users\<you>\AppData\Roaming\Apple Computer\MobileSync\Backup`; may be empty with `incoming`), `incoming` (a folder another computer pushes finished backups to; `""` for none), `keep` (copies of each device's backups kept under `<storage.root>/iPhone backups`, newest first, 0–100; 0 keeps none; ≥ 1 with `incoming`), `max_age`, `check_interval` (≤ `max_age`), `read_interval` (how often every backup file is read in full, ≥ `check_interval`), `stalled_after` (a backup still running this long counts as unfinished), `max_shrink_percent` |
 | `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files under `<storage.root>\logs` on Windows (Linux logs to journald) |
 | `[drive_health]` | Linux only: `source`, where the SMART data of the drives under the archive comes from: `"udisks"` (a desktop's udisks2, no rights needed) or `"smartctl"` (a server or the container). Windows reads NVMe health itself and has no such section |
 | `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m) |
@@ -233,7 +248,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | Command | Purpose |
 |---|---|
 | `homecloud archive init --root R` | Mark `R` as a new archive (writes `homecloud-archive.json`, never replaces one) and print its id for `storage.archive_id` |
-| `homecloud doctor` | Read-only checks: archive root and identity, free space, backup dir on another drive, generated kei config, pinned tool versions, iPhone backup folders |
+| `homecloud doctor` | Read-only checks: archive root and identity, free space, backup dir on another drive, generated kei config, pinned tool versions, the health of every drive and RAID array under the archive, iPhone backup folders and the incoming folder |
 | `homecloud open [--print]` | Open the web app in the browser, signed in through a one-time code; `--print` prints the link instead (another device, or a NAS) |
 | `homecloud status` | Asset counts by state |
 | `homecloud quarantine list` | Files that failed a check, with the reason |
@@ -244,6 +259,8 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud icloud login` | Sign in to iCloud in a terminal (password, then a code from a trusted device or `sms N`); the password is used once and never stored |
 | `homecloud icloud status` | Check that the saved iCloud session still works |
 | `homecloud drive ls [--folder ID]` | List an iCloud Drive folder (read only) |
+| `homecloud iphone push --from DIR --to DIR` | Send each device's finished backup in `DIR` (repeatable) to another device's `iphone_backup.incoming`: only files that differ from its newest copy, with the backup's manifest; a backup in progress or changing meanwhile waits for the next push |
+| `homecloud iphone install-push --from … --to … --every 1h` / `uninstall-push` | Push on a schedule while you are logged on (a Task Scheduler task, or a systemd user timer) |
 
 `verify` and `quarantine release` write the ledger, which the running agent owns: while it runs
 they refuse, and the same actions are in the app (Sync now, Quarantine → Release).

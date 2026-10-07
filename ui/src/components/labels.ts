@@ -2,6 +2,7 @@ import {
   AssetState,
   DriveFileChange,
   HealthState,
+  IPhoneBackupCopyChange,
   DriveSyncOutcome,
   IPhoneBackupState,
   MediaType,
@@ -55,6 +56,14 @@ export const healthBadge: Record<HealthState, Labelled> = {
   [HealthState.WARNING]: { label: "Warning", color: "warning" },
   [HealthState.FAILING]: { label: "Failing", color: "danger" },
   [HealthState.UNAVAILABLE]: { label: "Health unavailable", color: "informative" },
+};
+
+export const iphoneCopyChangeBadge: Record<IPhoneBackupCopyChange, Labelled> = {
+  [IPhoneBackupCopyChange.UNSPECIFIED]: { label: "iPhone copy", color: "informative" },
+  [IPhoneBackupCopyChange.COPIED]: { label: "Backup copied", color: "success" },
+  [IPhoneBackupCopyChange.REMOVED]: { label: "Copy removed", color: "informative" },
+  [IPhoneBackupCopyChange.DAMAGED]: { label: "Copy damaged", color: "danger" },
+  [IPhoneBackupCopyChange.PUSH_REFUSED]: { label: "Push refused", color: "warning" },
 };
 
 /** What a running md sync action is doing, for people. */

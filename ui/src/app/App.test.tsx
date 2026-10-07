@@ -265,6 +265,98 @@ describe("App", () => {
     expect(screen.getByText(/Test iPhone · iOS 26.1/)).toBeInTheDocument();
   });
 
+  it("shows the archive's copies of a pushed iPhone backup", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 10n },
+              lastIphoneBackup: {
+                result: RunResult.OK,
+                finishedAt: { seconds: 1_790_000_000n },
+                iphoneBackup: {
+                  devices: [
+                    {
+                      udid: "U",
+                      name: "Test iPhone",
+                      productVersion: "26.1",
+                      encrypted: true,
+                      completedAt: { seconds: 1_789_990_000n },
+                      files: 12n,
+                      sizeBytes: 2048n,
+                      state: IPhoneBackupState.OK,
+                      fromCopy: true,
+                      copies: [
+                        { completedAt: { seconds: 1_789_990_000n }, files: 12n, sizeBytes: 2048n, copiedBytes: 512n },
+                        { completedAt: { seconds: 1_789_900_000n }, files: 12n, sizeBytes: 2048n, copiedBytes: 2048n },
+                      ],
+                    },
+                  ],
+                },
+              },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("Pushed from another computer")).toBeInTheDocument();
+    expect(screen.getByText(/^2 in the archive · newest .* · 2.5 KiB on disk$/)).toBeInTheDocument();
+    expect(screen.getByText("Every file checked")).toBeInTheDocument();
+  });
+
+  it("warns about a damaged iPhone backup copy", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield {
+            overview: create(OverviewSchema, {
+              assets: { verified: 10n },
+              lastIphoneBackup: {
+                result: RunResult.OK,
+                finishedAt: { seconds: 1_790_000_000n },
+                iphoneBackup: {
+                  devices: [
+                    {
+                      udid: "U",
+                      name: "Test iPhone",
+                      productVersion: "26.1",
+                      encrypted: true,
+                      completedAt: { seconds: 1_789_990_000n },
+                      files: 12n,
+                      sizeBytes: 2048n,
+                      state: IPhoneBackupState.OK,
+                      fromCopy: true,
+                      copies: [
+                        {
+                          completedAt: { seconds: 1_789_990_000n },
+                          files: 12n,
+                          sizeBytes: 2048n,
+                          copiedBytes: 2048n,
+                          damagedFiles: 2n,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              },
+            }),
+          };
+          await never();
+        },
+        getSettings: () => ({ settings }),
+        listRuns: () => create(ListRunsResponseSchema),
+      });
+    });
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("An iPhone backup copy in the archive is damaged")).toBeInTheDocument();
+    expect(screen.getByText("Damaged copies")).toBeInTheDocument();
+  });
+
   it("asks for a first iPhone backup when none exists", async () => {
     const transport = createRouterTransport(({ service }) => {
       service(AgentService, {

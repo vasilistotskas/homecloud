@@ -180,12 +180,21 @@ type Logs struct {
 // MaxBytes is MaxSizeMB in bytes.
 func (l Logs) MaxBytes() int64 { return int64(l.MaxSizeMB) << 20 }
 
-// IPhoneBackup configures the monitor of local iPhone backups, which Apple's
-// Devices app (or iTunes, or idevicebackup2) writes; homecloud only reads them.
+// IPhoneBackup configures the monitor of iPhone backups, which Apple's
+// Devices app (or iTunes, or idevicebackup2) writes (homecloud only reads
+// them), and the copies of them kept in the archive.
 type IPhoneBackup struct {
-	// Dirs are the backup directories to watch, as absolute paths, e.g.
-	// C:\Users\<you>\Apple\MobileSync\Backup for the Apple Devices app.
+	// Dirs are the backup directories on this computer to watch, as absolute
+	// paths, e.g. C:\Users\<you>\Apple\MobileSync\Backup for the Apple
+	// Devices app. Empty when backups only arrive through Incoming.
 	Dirs []string `toml:"dirs"`
+	// Incoming is a folder another computer pushes finished backups to with
+	// "homecloud iphone push" (on a NAS, a shared folder); "" when backups
+	// are made on this computer only.
+	Incoming string `toml:"incoming"`
+	// Keep is how many copies of each device's backups the archive keeps
+	// under <storage.root>/iPhone backups, newest first; 0 keeps none.
+	Keep int `toml:"keep"`
 	// MaxAge is the oldest acceptable finished backup.
 	MaxAge Duration `toml:"max_age"`
 	// CheckInterval is how often the backups' metadata and sizes are checked.
@@ -274,6 +283,10 @@ func Load(path string) (*Config, error) {
 	}
 	return &cfg, nil
 }
+
+// maxIPhoneCopies bounds iphone_backup.keep, and with it the hard links one
+// backed-up file gets (NTFS allows 1024 per file).
+const maxIPhoneCopies = 100
 
 var (
 	versionPattern   = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
@@ -414,8 +427,17 @@ func (c *Config) Validate() error {
 	}
 
 	ib := c.IPhoneBackup
-	if len(ib.Dirs) == 0 {
-		add("iphone_backup.dirs must name at least one backup directory")
+	if len(ib.Dirs) == 0 && ib.Incoming == "" {
+		add("iphone_backup.dirs or iphone_backup.incoming must name where backups are")
+	}
+	if ib.Incoming != "" && !filepath.IsAbs(ib.Incoming) {
+		add("iphone_backup.incoming must be an absolute path, got %q", ib.Incoming)
+	}
+	switch {
+	case ib.Keep < 0 || ib.Keep > maxIPhoneCopies:
+		add("iphone_backup.keep must be between 0 and %d, got %d", maxIPhoneCopies, ib.Keep)
+	case ib.Incoming != "" && ib.Keep == 0:
+		add("iphone_backup.keep must be at least 1 when iphone_backup.incoming is set: pushed backups are kept only as copies")
 	}
 	seenDirs := map[string]bool{}
 	for _, d := range ib.Dirs {
