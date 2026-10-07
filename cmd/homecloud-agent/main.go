@@ -84,13 +84,22 @@ func run() (err error) {
 		log.Info("kei configuration written", "path", cfg.Kei.Config)
 	}
 
-	// The archive holds the only copy of the library: nobody but this account
-	// (with SYSTEM and Administrators) may read or change it.
-	if changed, privErr := platform.MakePrivate(cfg.Storage.Root); privErr != nil {
-		log.Error("making the archive private failed; not starting", "path", cfg.Storage.Root, "err", privErr)
-		return privErr
-	} else if changed {
-		log.Info("archive made private to this account", "path", cfg.Storage.Root)
+	// The archive holds the only copy of the library and the ledger backups all
+	// it knows: nobody but this account (with SYSTEM and Administrators) may
+	// read or change them. kei's folder was made private as its configuration
+	// was written; a backup folder not created yet is made private by the
+	// first backup.
+	private := []string{cfg.Storage.Root}
+	if _, statErr := os.Stat(cfg.Backup.Dir); statErr == nil {
+		private = append(private, cfg.Backup.Dir)
+	}
+	for _, dir := range private {
+		if changed, privErr := platform.MakePrivate(dir); privErr != nil {
+			log.Error("making a folder private failed; not starting", "path", dir, "err", privErr)
+			return privErr
+		} else if changed {
+			log.Info("folder made private to this account", "path", dir)
+		}
 	}
 
 	if doctorErr := doctor.Err(doctor.Run(ctx, cfg)); doctorErr != nil {
