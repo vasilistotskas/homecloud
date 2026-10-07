@@ -11,11 +11,12 @@
 # smartctl.socket = '/run/homecloud-smartctl/smartctl.sock' in config.toml.
 # The tailnet needs MagicDNS and HTTPS certificates enabled.
 #
-# Allow your devices only port 443 of this node in the tailnet policy (a
-# grant with "ip": ["tcp:443"]). In userspace networking, Tailscale hands a
+# The node joins the tailnet as tag:homecloud. Before the first start, let
+# your tailnet's admins own that tag and give your devices port 443 of it
+# alone (README, "On a NAS"): in userspace networking Tailscale hands a
 # tailnet connection to any port of the node to 127.0.0.1 at that port, so
-# without the grant your devices can also reach the agent's plain-HTTP port,
-# where requests still need a sign-in.
+# without the policy your devices could also reach the agent's plain-HTTP
+# port, where requests still need a sign-in.
 
 services:
   tailscale:
@@ -30,6 +31,8 @@ services:
       TS_SERVE_CONFIG: /serve/serve.json
       # Userspace networking needs no kernel device or extra capabilities.
       TS_USERSPACE: "true"
+      # A tagged node, so the tailnet policy can allow exactly port 443 of it.
+      TS_EXTRA_ARGS: --advertise-tags=tag:homecloud
     volumes:
       - ${HOMECLOUD_DATA}/tailscale:/var/lib/tailscale
       - ./serve.json:/serve/serve.json:ro

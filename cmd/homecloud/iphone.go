@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
 	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
+	"github.com/vasilistotskas/homecloud/internal/logfile"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
@@ -51,11 +53,15 @@ func iphoneCommands() []*command {
 				usage: "send each device's finished backup that the other homecloud does not hold yet (only the files that changed)",
 				define: func(f *flags) action {
 					from, to := pushFlags(f)
+					logged := f.Bool("log", false, "write what the push does to "+pushLogFile+" in homecloud's log folder instead of the terminal (the scheduled push on Windows has no console)")
 					return func(ctx context.Context, c *call) error {
 						if err := requireFrom(*from); err != nil {
 							return err
 						}
-						return runIPhonePush(ctx, c, *from, *to)
+						if *logged {
+							return runLoggedPush(ctx, *from, *to)
+						}
+						return runIPhonePush(ctx, *from, *to, terminalPush{c})
 					}
 				},
 			},
@@ -92,34 +98,70 @@ func iphoneCommands() []*command {
 	}}
 }
 
-// runIPhonePush pushes every finished backup in the from folders. A backup
-// in progress, or one that changes while it is sent, is left for the next
-// push; that is not an error.
-func runIPhonePush(ctx context.Context, c *call, from []string, to string) error {
+// pushOutcome is what pushing one device's backup did.
+type pushOutcome int
+
+const (
+	pushRunning  pushOutcome = iota // a backup is running: pushed once it finishes
+	pushChanged                     // it changed while it was sent: pushed again next time
+	pushArchived                    // the archive holds it already
+	pushPending                     // pushed before; the archive has not taken it in yet
+	pushSent                        // pushed now
+)
+
+// pushReport is what pushing one device's backup did.
+type pushReport struct {
+	device    string
+	completed time.Time
+	outcome   pushOutcome
+	// sent counts what a push sent (pushSent).
+	sent iphonecopy.PushResult
+}
+
+// pushReporter tells what a push does: on the terminal (terminalPush) or in
+// the push log (logPush), since the scheduled push on Windows has no console.
+type pushReporter interface {
+	// noBackup: a folder holds no backup.
+	noBackup(ctx context.Context, dir string) error
+	// done: what pushing one device's backup did.
+	done(ctx context.Context, r pushReport) error
+	// failed: a folder or a device's backup could not be pushed. The push
+	// goes on with the others and fails at the end.
+	failed(ctx context.Context, err error)
+}
+
+// runIPhonePush pushes every finished backup in the from folders, telling r
+// what it does. A backup in progress, or one that changes while it is sent,
+// is left for the next push; that is not an error.
+func runIPhonePush(ctx context.Context, from []string, to string, r pushReporter) error {
 	key, err := pushKey()
 	if err != nil {
 		return err
 	}
 	var errs []error
+	fail := func(err error) {
+		r.failed(ctx, err)
+		errs = append(errs, err)
+	}
 	for _, dir := range from {
 		backups, _, err := iphonebackup.Scan(ctx, dir)
 		if err != nil {
-			errs = append(errs, err)
+			fail(err)
 			continue
 		}
 		if len(backups) == 0 {
-			if err := printf(c, "%s: no backup\n", dir); err != nil {
+			if err := r.noBackup(ctx, dir); err != nil {
 				return err
 			}
 			continue
 		}
 		for _, b := range backups {
-			line, err := pushOne(ctx, b, to, key)
+			report, err := pushOne(ctx, b, to, key)
 			if err != nil {
-				errs = append(errs, err)
+				fail(err)
 				continue
 			}
-			if err := printf(c, "%s\n", line); err != nil {
+			if err := r.done(ctx, report); err != nil {
 				return err
 			}
 		}
@@ -127,33 +169,137 @@ func runIPhonePush(ctx context.Context, c *call, from []string, to string) error
 	return errors.Join(errs...)
 }
 
-func pushOne(ctx context.Context, b iphonebackup.Backup, to string, key iphonecopy.PushKey) (string, error) {
-	name := b.DeviceName
-	if name == "" {
-		name = filepath.Base(b.Dir)
+func pushOne(ctx context.Context, b iphonebackup.Backup, to string, key iphonecopy.PushKey) (pushReport, error) {
+	r := pushReport{device: b.DeviceName, completed: b.CompletedAt}
+	if r.device == "" {
+		r.device = filepath.Base(b.Dir)
 	}
 	switch {
 	case b.InProgress:
-		return name + ": a backup is running; it is pushed once it finishes", nil
+		r.outcome = pushRunning
+		return r, nil
 	case b.Err != nil:
-		return "", fmt.Errorf("%s: %w", name, b.Err)
+		return r, fmt.Errorf("%s: %w", r.device, b.Err)
 	}
 	res, err := iphonecopy.Push(ctx, b, to, key)
 	switch {
 	case errors.Is(err, iphonecopy.ErrChanged):
-		return name + ": the backup changed while it was sent; it is pushed again next time", nil
+		r.outcome = pushChanged
+		return r, nil
 	case err != nil:
-		return "", fmt.Errorf("%s: %w", name, err)
+		return r, fmt.Errorf("%s: %w", r.device, err)
 	}
-	when := b.CompletedAt.Local().Format(time.DateTime)
 	switch res.Outcome {
 	case iphonecopy.PushArchived:
-		return fmt.Sprintf("%s: the backup of %s is already archived", name, when), nil
+		r.outcome = pushArchived
 	case iphonecopy.PushPending:
-		return fmt.Sprintf("%s: the backup of %s was pushed and waits for homecloud to take it in", name, when), nil
+		r.outcome = pushPending
+	case iphonecopy.PushSent:
+		r.outcome, r.sent = pushSent, res
 	default:
-		return fmt.Sprintf("%s: pushed the backup of %s: %d of %d files (%d MB)", name, when, res.Sent, res.Files, res.SentBytes>>20), nil
+		return r, fmt.Errorf("%s: unknown push outcome %q", r.device, res.Outcome)
 	}
+	return r, nil
+}
+
+// terminalPush tells a push on the terminal, a line per device; the errors
+// are printed when the push ends (main).
+type terminalPush struct{ c *call }
+
+func (t terminalPush) noBackup(_ context.Context, dir string) error {
+	return printf(t.c, "%s: no backup\n", dir)
+}
+
+func (t terminalPush) done(_ context.Context, r pushReport) error {
+	when := r.completed.Local().Format(time.DateTime)
+	switch r.outcome {
+	case pushRunning:
+		return printf(t.c, "%s: a backup is running; it is pushed once it finishes\n", r.device)
+	case pushChanged:
+		return printf(t.c, "%s: the backup changed while it was sent; it is pushed again next time\n", r.device)
+	case pushArchived:
+		return printf(t.c, "%s: the backup of %s is already archived\n", r.device, when)
+	case pushPending:
+		return printf(t.c, "%s: the backup of %s was pushed and waits for homecloud to take it in\n", r.device, when)
+	case pushSent:
+		return printf(t.c, "%s: pushed the backup of %s: %d of %d files (%d MB)\n",
+			r.device, when, r.sent.Sent, r.sent.Files, r.sent.SentBytes>>20)
+	}
+	return fmt.Errorf("unknown push outcome %d", r.outcome)
+}
+
+func (terminalPush) failed(context.Context, error) {}
+
+// pushLogFile is the logged push's log (--log), in homecloud's log folder.
+const pushLogFile = "iphone-push.log"
+
+// The push log's rotation: a push writes a few lines, so this keeps months
+// of hourly pushes.
+const (
+	pushLogMaxBytes   = 1 << 20
+	pushLogMaxBackups = 3
+)
+
+// logPush tells a push in the push log, as JSON lines like the agent's.
+type logPush struct{ log *slog.Logger }
+
+func (l logPush) noBackup(ctx context.Context, dir string) error {
+	l.log.InfoContext(ctx, "no backup in this folder", "dir", dir)
+	return nil
+}
+
+func (l logPush) done(ctx context.Context, r pushReport) error {
+	switch r.outcome {
+	case pushRunning:
+		l.log.InfoContext(ctx, "backup running; pushed once it finishes", "device", r.device)
+	case pushChanged:
+		l.log.InfoContext(ctx, "backup changed while it was sent; pushed again next time", "device", r.device, "completed", r.completed)
+	case pushArchived:
+		l.log.InfoContext(ctx, "backup already archived", "device", r.device, "completed", r.completed)
+	case pushPending:
+		l.log.InfoContext(ctx, "backup pushed before; waits for homecloud to take it in", "device", r.device, "completed", r.completed)
+	case pushSent:
+		l.log.InfoContext(ctx, "backup pushed", "device", r.device, "completed", r.completed,
+			"files_sent", r.sent.Sent, "files", r.sent.Files, "bytes_sent", r.sent.SentBytes)
+	default:
+		return fmt.Errorf("unknown push outcome %d", r.outcome)
+	}
+	return nil
+}
+
+func (l logPush) failed(ctx context.Context, err error) {
+	l.log.ErrorContext(ctx, "backup not pushed; tried again next push", "err", err)
+}
+
+// runLoggedPush pushes as runIPhonePush does and writes what happens to the
+// push log, from start to finish: the scheduled push on Windows runs without
+// a console, so nothing else would keep it.
+func runLoggedPush(ctx context.Context, from []string, to string) (err error) {
+	dir, err := platform.LogDir()
+	if err != nil {
+		return err
+	}
+	var log *slog.Logger
+	file, err := logfile.New(filepath.Join(dir, pushLogFile), logfile.Options{
+		MaxBytes:   pushLogMaxBytes,
+		MaxBackups: pushLogMaxBackups,
+		OnError:    func(err error) { log.WarnContext(ctx, "push log not rotated", "err", err) },
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	log = slog.New(slog.NewJSONHandler(file, nil))
+	started := time.Now()
+	log.InfoContext(ctx, "push started", "from", from, "to", to, "version", version)
+	err = runIPhonePush(ctx, from, to, logPush{log})
+	attrs := []any{"ok", err == nil, "duration_ms", time.Since(started).Milliseconds()}
+	if err != nil {
+		log.ErrorContext(ctx, "push finished", append(attrs, "err", err)...)
+	} else {
+		log.InfoContext(ctx, "push finished", attrs...)
+	}
+	return err
 }
 
 // pushKey reads the key this computer signs pushes with.
@@ -239,6 +385,15 @@ func runInstallPush(ctx context.Context, c *call, from []string, to string, ever
 	for _, d := range from {
 		args = append(args, "--from", d)
 	}
+	where := "the journal"
+	if !platform.TaskOutputKept {
+		args = append(args, "--log")
+		dir, err := platform.LogDir()
+		if err != nil {
+			return err
+		}
+		where = filepath.Join(dir, pushLogFile)
+	}
 	task := platform.Task{
 		Name:        pushTaskName,
 		Description: "homecloud: send this computer's iPhone backups to homecloud on another device (https://github.com/vasilistotskas/homecloud)",
@@ -250,7 +405,8 @@ func runInstallPush(ctx context.Context, c *call, from []string, to string, ever
 	if err := platform.InstallTask(ctx, task); err != nil {
 		return fmt.Errorf("install-push: %w", err)
 	}
-	return printf(c, "registered %q: pushes every %s while you are logged on, starting now\n", pushTaskName, every)
+	return printf(c, "registered %q: pushes every %s while you are logged on, starting now; what it does is in %s\n",
+		pushTaskName, every, where)
 }
 
 func runUninstallPush(ctx context.Context, c *call) error {

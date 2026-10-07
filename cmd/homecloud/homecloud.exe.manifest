@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  The CLI's Windows application manifest, embedded by `go generate` (see
+  resource.go). consoleAllocationPolicy "detached" (Windows 11 24H2 and later,
+  ignored before): the CLI gets a console only when it is started from one, so
+  a scheduled task (homecloud iphone push) runs without opening a window.
+  https://learn.microsoft.com/windows/console/console-allocation-policy
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application>
+    <windowsSettings>
+      <consoleAllocationPolicy xmlns="http://schemas.microsoft.com/SMI/2024/WindowsSettings">detached</consoleAllocationPolicy>
+    </windowsSettings>
+  </application>
+</assembly>

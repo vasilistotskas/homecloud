@@ -34,6 +34,7 @@ require (
 	cel.dev/expr v0.25.3 // indirect
 	connectrpc.com/otelconnect v0.9.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/akavel/rsrc v0.10.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/bufbuild/buf v1.73.0 // indirect
 	github.com/bufbuild/protocompile v0.14.2-0.20260910151042-7436f7c76201 // indirect
@@ -57,6 +58,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jdx/go-netrc v1.0.0 // indirect
+	github.com/josephspurrier/goversioninfo v1.7.0 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/klauspost/pgzip v1.2.6 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
@@ -111,5 +113,6 @@ require (
 tool (
 	connectrpc.com/connect/cmd/protoc-gen-connect-go
 	github.com/bufbuild/buf/cmd/buf
+	github.com/josephspurrier/goversioninfo/cmd/goversioninfo
 	google.golang.org/protobuf/cmd/protoc-gen-go
 )

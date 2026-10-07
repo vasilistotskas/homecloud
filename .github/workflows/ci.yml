@@ -59,6 +59,8 @@ jobs:
               - 'go.sum'
               - '.golangci.yml'
               - 'internal/**'
+              # The CLI's Windows manifest and the resources made from it.
+              - 'cmd/**'
               - 'gen/**'
               # The Go build embeds the web app (ui/embed.go).
               - 'ui/**'
@@ -183,6 +185,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # The CLI's Windows resources must be generated from its manifest.
+      - name: Generated resources are current
+        run: |
+          go generate ./cmd/homecloud
+          git diff --exit-code -- cmd/homecloud
       - name: Vet
         run: go vet ./...
       - name: Test

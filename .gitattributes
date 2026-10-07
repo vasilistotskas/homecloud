@@ -6,3 +6,4 @@
 *.mov binary
 *.mp4 binary
 *.bplist binary
+*.syso binary

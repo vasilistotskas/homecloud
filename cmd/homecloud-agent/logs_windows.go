@@ -43,17 +43,8 @@ type agentLogs struct {
 	closers []io.Closer
 }
 
-// logDir is the folder of the agent's logs.
-func logDir() (string, error) {
-	state, err := platform.StateDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(state, "logs"), nil
-}
-
 func openLogs(cfg config.Logs) (*agentLogs, error) {
-	dir, err := logDir()
+	dir, err := platform.LogDir()
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +171,7 @@ func reportStartupFailure(err error) {
 	if errors.Is(err, platform.ErrAlreadyRunning) {
 		return
 	}
-	dir, dirErr := logDir()
+	dir, dirErr := platform.LogDir()
 	if dirErr != nil {
 		return
 	}

@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -85,5 +87,66 @@ func TestIPhonePushNeedsAKey(t *testing.T) {
 	out, err := cli(t, "", "iphone", "push", "--from", t.TempDir(), "--to", t.TempDir())
 	if err == nil || !strings.Contains(err.Error(), "push-key --set") {
 		t.Fatalf("push without a key: %v\n%s", err, out)
+	}
+}
+
+// TestIPhonePushLogged: with --log nothing goes to the terminal, which the
+// scheduled push on Windows does not have; the push log holds the push from
+// start to finish, failures included.
+func TestIPhonePushLogged(t *testing.T) {
+	state := platformtest.StateDir(t)
+	logPath := filepath.Join(state, "logs", pushLogFile)
+	backups, incoming := t.TempDir(), t.TempDir()
+	push := func() (string, error) {
+		t.Helper()
+		var out bytes.Buffer
+		err := newApp().execute(t.Context(), &call{stdout: &out, stderr: &out},
+			[]string{"iphone", "push", "--from", backups, "--to", incoming, "--log"})
+		return out.String(), err
+	}
+
+	// No push key yet: the push fails, and says so in its log.
+	if out, err := push(); err == nil || out != "" {
+		t.Fatalf("push without a key = %q, %v; want an error and no output", out, err)
+	}
+	if out, err := cli(t, iphonecopy.PushKey{5}.String()+"\n", "iphone", "push-key", "--set"); err != nil {
+		t.Fatalf("push-key --set: %v\n%s", err, out)
+	}
+	iphonebackuptest.WriteBackup(t, backups, iphonebackuptest.Backup{
+		UDID: "00008110-001A2B3C4D5E801E", DeviceName: "Test iPhone",
+		Completed: time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC), Encrypted: true,
+		Files: map[string]string{"Manifest.db": "manifest", "0a/0a1b2c3d": "photos"},
+	})
+	if out, err := push(); err != nil || out != "" {
+		t.Fatalf("logged push = %q, %v; want nothing on the terminal", out, err)
+	}
+
+	data, err := os.ReadFile(logPath) //nolint:gosec // the test's own state folder
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msgs []string
+	for line := range strings.Lines(string(data)) {
+		var rec struct {
+			Msg       string `json:"msg"`
+			OK        *bool  `json:"ok"`
+			Device    string `json:"device"`
+			FilesSent int    `json:"files_sent"`
+			Err       string `json:"err"`
+		}
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("log line %q: %v", line, err)
+		}
+		msgs = append(msgs, rec.Msg)
+		switch {
+		case rec.Msg == "backup pushed" && (rec.Device != "Test iPhone" || rec.FilesSent != 5):
+			t.Fatalf("pushed line = %s", line)
+		case rec.Msg == "push finished" && len(msgs) <= 2 && (*rec.OK || !strings.Contains(rec.Err, "push key")):
+			t.Fatalf("first push's end = %s; want the missing key", line)
+		}
+	}
+	want := []string{"push started", "push finished", "push started", "backup pushed", "push finished"}
+	if !slices.Equal(msgs, want) {
+		t.Fatalf("log = %q, want %q", msgs, want)
 	}
 }

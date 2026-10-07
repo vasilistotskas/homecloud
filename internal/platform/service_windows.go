@@ -19,6 +19,11 @@ import (
 // `schtasks /Create /XML` interface using the Task Scheduler schema
 // (http://schemas.microsoft.com/windows/2004/02/mit/task).
 
+// TaskOutputKept reports whether what a task's program writes to its standard
+// output is kept. Task Scheduler gives it none, and the CLI starts detached
+// from any console (its manifest), so a task's program writes its own log.
+const TaskOutputKept = false
+
 // InstallTask registers a logon task for the current user and starts it now.
 func InstallTask(ctx context.Context, t Task) error {
 	sid, user, err := currentUser()

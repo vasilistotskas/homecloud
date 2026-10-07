@@ -306,10 +306,34 @@ MagicDNS and HTTPS certificates for the tailnet, copy `deploy/homecloud.env.exam
 `deploy/.env` and fill it in (including the archive's drives, `HOMECLOUD_DRIVE_1`/`_2`), set
 `web.public_origin` to that address and `smartctl.socket` as above, then
 `docker compose up -d` and sign in with the link `docker compose exec homecloud homecloud open
---print` prints. In the tailnet policy, allow your devices only port 443 of the node (a grant
-with `"ip": ["tcp:443"]`): in userspace networking Tailscale hands a connection to any port of
-the node to `127.0.0.1` at that port, so without it your devices also reach the agent's
-plain-HTTP port (where requests still need a sign-in).
+--print` prints.
+
+**Tailnet policy (before the first start):** the node joins as `tag:homecloud`
+(`TS_EXTRA_ARGS` in the compose file), and your devices may reach port 443 of it and nothing
+else. In userspace networking Tailscale hands a connection to any port of the node to
+`127.0.0.1` at that port, so without this your devices could also reach the agent's
+plain-HTTP port (where requests still need a sign-in). In the admin console's policy file, let
+the tailnet's admins own the tag, grant that one port, and add tests, which Tailscale runs on
+every change to the policy and refuses the change when one fails (`<you>` is your Tailscale
+login, `8790` the port of `web.listen`):
+
+```json
+"tagOwners": {
+  "tag:homecloud": ["autogroup:admin"]
+},
+"grants": [
+  { "src": ["autogroup:member"], "dst": ["tag:homecloud"], "ip": ["tcp:443"] }
+],
+"tests": [
+  { "src": "<you>", "proto": "tcp", "accept": ["tag:homecloud:443"], "deny": ["tag:homecloud:8790"] }
+]
+```
+
+No other rule may reach `tag:homecloud`. The default policy's allow-all rule (a grant from `*`
+to `*`, or in older tailnets an ACL to `*:*`) does: make its destination `autogroup:member` (in
+ACL syntax `autogroup:member:*`), the devices of your tailnet's users, which a tagged node never
+is. Devices you tagged before then need rules of their own. The NAS's SMB share
+belongs to the NAS itself, not to this node, so the iPhone push is not affected.
 
 **iPhone backups on a NAS:** Apple's Devices app keeps backing up to the PC, and the PC sends
 each finished backup to the NAS. Create a shared folder in UGOS (say `homecloud-iphone`, the
@@ -322,7 +346,10 @@ is a secret: anything holding it can push backups to the NAS). Then run
 Each push is signed with that key and sends only the files that differ from the newest copy on
 the NAS, with the backup's SHA-256 manifest; the NAS takes in only signed pushes, checks every
 file against the manifest and the copy's own plists (the right iPhone, encrypted, finished, not
-dated in the future) before keeping it. Nothing breaks while the PC is off.
+dated in the future) before keeping it. Nothing breaks while the PC is off. On Windows the
+scheduled push opens no window (Windows 11 24H2 or later) and writes what it does to
+`%LOCALAPPDATA%\homecloud\logs\iphone-push.log`; Task Scheduler shows whether its last run
+failed.
 
 ### Desktop app
 
@@ -385,8 +412,8 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud icloud login` | Sign in to iCloud in a terminal (password, then a code from a trusted device or `sms N`); the password is used once and never stored |
 | `homecloud icloud status` | Check that the saved iCloud session still works |
 | `homecloud drive ls [--folder ID]` | List an iCloud Drive folder (read only) |
-| `homecloud iphone push --from DIR --to DIR` | Send each device's finished backup in `DIR` (repeatable) to another device's `iphone_backup.incoming`: only files that differ from its newest copy, with the backup's manifest; a backup in progress or changing meanwhile waits for the next push |
-| `homecloud iphone install-push --from … --to … --every 1h` / `uninstall-push` | Push on a schedule while you are logged on (a Task Scheduler task, or a systemd user timer) |
+| `homecloud iphone push --from DIR --to DIR [--log]` | Send each device's finished backup in `DIR` (repeatable) to another device's `iphone_backup.incoming`: only files that differ from its newest copy, with the backup's manifest; a backup in progress or changing meanwhile waits for the next push. `--log` writes what it does to `iphone-push.log` in homecloud's log folder instead of the terminal |
+| `homecloud iphone install-push --from … --to … --every 1h` / `uninstall-push` | Push on a schedule while you are logged on: a Task Scheduler task that pushes with `--log` and opens no window, or a systemd user timer whose output goes to the journal |
 | `homecloud iphone push-key` / `push-key --set` | Show this computer's key for pushed backups, creating it (run where the archive is); `--set` saves that key on the computer that pushes (pasted, or on standard input) |
 | `homecloud smartctl serve` | Linux: answer the agent's drive health requests on `smartctl.socket`, the container's smartctl sidecar (`deploy/compose.yaml`) |
 
@@ -404,7 +431,8 @@ When kei's Apple session expires the agent alerts every `notify.repeat_every`; r
 archive drive, so a missing drive is logged too), rotated at `logs.max_size_mb` into
 `homecloud-agent-<UTC time>.log` backups (newest `logs.max_backups` kept). Beside them,
 `agent-startup.log` holds failures from before the log is open and
-`homecloud-agent-crash-<UTC time>.log` a crash, which the next start reports. Linux: the journal
+`homecloud-agent-crash-<UTC time>.log` a crash, which the next start reports, and `iphone-push.log`
+what the scheduled iPhone push did (on a computer that pushes). Linux: the journal
 (`journalctl --user -u homecloud-agent`; add `-p warning` for problems only). Agent lines are
 JSON: each run logs `run started` and `run finished` (`ok`, `duration_ms`, `err`), and the
 lines between carry its `run` id; `kei sync finished` sums up kei's sync (downloads, failed

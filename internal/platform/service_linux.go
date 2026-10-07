@@ -19,6 +19,10 @@ import (
 // Task.Every. Headless hosts additionally need `loginctl enable-linger` (an
 // operator decision).
 
+// TaskOutputKept reports whether what a task's program writes to its standard
+// output is kept: systemd sends a unit's output to the journal.
+const TaskOutputKept = true
+
 // InstallTask writes the user units, reloads systemd and enables + starts the
 // service (the agent) or its timer (a job).
 func InstallTask(ctx context.Context, t Task) error {
