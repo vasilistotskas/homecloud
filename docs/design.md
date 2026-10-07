@@ -59,6 +59,7 @@ Packages:
 | `internal/logfile` | Size-rotated log files (Windows agent and kei logs): backups `<name>-<UTC time>.log`, never renamed again, oldest beyond `logs.max_backups` deleted; every file operation goes through an `os.Root` on the logs folder; a rotation that fails (a viewer holding the file) is reported in the agent log and retried at the next write |
 | `internal/notify` | ntfy client |
 | `internal/export` | `manifest.csv` and `README.txt` at the archive root, rewritten atomically after every cycle |
+| `internal/logging` | The run a log line belongs to: `WithRun` puts it in the context, `Handler` adds `run` and `run_kind` to every record logged with that context (§8l) |
 | `internal/thumbs` | Thumbnail and preview rendering and cache (§8c) |
 | `internal/media` | Signed, expiring `/media` URLs and their handler (§8c) |
 | `internal/api` | `homecloud.agent.v3.AgentService` implementation (Connect) |
@@ -126,7 +127,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
   | Free space | `GetDiskFreeSpaceEx` | `statfs` `Bavail × Frsize` |
   | Single instance | `Local\` named mutex | `flock(LOCK_EX\|LOCK_NB)` on `$XDG_RUNTIME_DIR/homecloud/agent.lock` |
   | Start at logon | Task Scheduler logon task (`schtasks /XML`) | systemd `--user` unit, `Type=notify`, `Restart=on-failure` (linger for headless hosts) |
-  | Agent logs | size-rotated files under `storage.root\logs` (`internal/logfile`) | stderr → journald (or the container runtime) |
+  | Agent logs | size-rotated files in `%LOCALAPPDATA%\homecloud\logs` (`internal/logfile`), crash reports beside them (§8l) | stderr → journald with syslog priorities (or the container runtime) |
   | Windowless build | `-ldflags=-H=windowsgui` | n/a |
 
   kei's Linux binaries require glibc ≥ 2.39 (Ubuntu 24.04 / Debian 13+).
@@ -234,6 +235,19 @@ The archive is the only copy (no second copy, by decision), so after every cycle
 - **Paths from outside:** kei's `local_path` must be absolute and inside kei's download folder (`kei.DownloadDir`) or the manifest is refused, since homecloud reads, renders and serves that file; Drive paths are confined as in §8g; `iphone_backup.incoming` must be apart from the archive, `backup.dir` and Apple's folders (the agent removes what it takes in from there and writes receipts beside it).
 - **Pushed iPhone backups:** signed with a push key and checked against their own plists before they are kept (§8e). A new copy counts as verified when the copy it shares files with was, not when it was made.
 - **Errors and alerts:** errors never carry a request URL (net/http's `*url.Error` prints it with its query, and Apple's URLs carry tokens: `icloud.withoutURL`); downloads are named by host. ntfy messages count, never name: no file, device, drive model, serial number or path.
+
+## 8l. Logging (2026-10-07 review)
+
+Reviewed against two days of the live logs: 97% of `kei.log` was kei's info line for every asset already on disk, with colour codes; 42 agent starts had no matching stop, so a crash looked like a restart; four DNG files that ffmpeg cannot decode were logged with ffmpeg's full output on every pass; a partial kei sync did not say which assets failed; iCloud Drive item failures and run durations were not logged at all.
+
+- **One shape:** every agent line is JSON (`log/slog`) with a constant lowercase message saying what happened and what happens next, snake_case keys, and the context it was logged in; `sloglint` (golangci-lint) enforces it. Nothing secret is logged: no token, cookie, code, ntfy topic or Apple ID; Apple's signed URLs are cut to their host (`icloud.withoutURL`, `kei.withoutURLs`); a principal is logged as its kind and id or handle (`auth.Principal.LogValue`), never a credential.
+- **Runs:** `recordRun` records every run (cycle and maintenance jobs) and logs `run started` and `run finished` (`ok`, `duration_ms`, `err`; error level on an error, warning when not ok). Lines logged during a run carry its `run` id and `run_kind` (`internal/logging`), matching the ledger's `runs` row the app shows.
+- **kei:** runs with `--log-level warn` and `NO_COLOR=1` (tracing-subscriber 0.3.23, which kei 0.24.1 uses, writes colour codes unless `NO_COLOR` is set), so `kei.log` holds kei's warnings and errors only. What the sync did comes from kei's JSON report (`kei.ReadReport`: schema 3, only a report written after the sync started, never its options, which name the account) as one `kei sync finished` line: outcome, counts, duration, listing problems and the failed assets with kei's error (signed URLs cut to their host); warning level when anything needs a look.
+- **Failures once:** a rendering that fails is logged once until it succeeds (`thumbs.Renderer`), however often the preview pass or the library asks for it; an iCloud Drive item that is not archived is logged each sync with its path, and the sync's summary is a warning then.
+- **Owner actions and faults:** sign-ins, refused codes, pairings, revocations, sign-outs, issued codes, sync requests, test alerts and quarantine releases (with the reason) are logged with who made them; every alert sent or not sent is logged with its title. API answers that are the agent's own fault (internal, unknown, data loss, unavailable) are logged by a Connect interceptor (`web.faults`); a caller's refusals are not.
+- **Process:** the start line has the version, process id and config path; the end is one line, `homecloud-agent not started` or `homecloud-agent stopped`, with the error. Windows ends the agent without notice (logoff, shutdown, `schtasks /End`), which writes no line: the next start logs the runs it left unfinished. A crash (an unhandled panic or fatal error) goes to `homecloud-agent-crash.log` (`debug.SetCrashOutput`; a windowsgui process has no stderr); the next start logs its first line as the cause and keeps it as `homecloud-agent-crash-<UTC time>.log` (newest `logs.max_backups` kept). On Linux the crash goes to stderr.
+- **Where:** Windows logs live in `%LOCALAPPDATA%\homecloud\logs`, off the archive drive, so a missing drive is logged too (they were under `storage.root\logs`). Under systemd each line starts with its syslog priority (`<3>`, `<4>`, `<6>`; sd-daemon(3)) when `$JOURNAL_STREAM` names stderr's device and inode (systemd.exec(5)), so `journalctl -p warning` finds the problems; kei's lines are warnings, or errors when kei says so.
+- **Desktop app:** tauri-plugin-log writes to the app's log directory (`%LOCALAPPDATA%\<identifier>\logs`, `~/.local/share/<identifier>/logs`): the app's own lines and the page's at info, libraries at warning (their debug output was asset lookups and credential store calls), 1 MiB files with 5 kept (the plugin's default kept one 40 KB file). Its commands log their failures, pairing and switching back to this PC's agent are logged, and the page's crashes and unhandled errors are written there (React's root `onCaughtError`/`onUncaughtError`, window `error`/`unhandledrejection`) while an error boundary shows a reload screen instead of a blank window. The page may call only the plugin's `log` command (`log:allow-log`).
 
 ## 9. Dependencies (verified 2026-10-07)
 

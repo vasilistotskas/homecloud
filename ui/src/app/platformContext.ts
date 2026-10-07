@@ -8,7 +8,10 @@ export type DesktopConnection =
   | { kind: "remote"; url: string; deviceId: string };
 
 /** Where the app runs, and what that environment lets it do. */
-export type Platform =
+export type Platform = {
+  /** Records an error the page cannot recover from: in the desktop app's log file, or the browser's console. */
+  logError: (message: string) => void;
+} & (
   | {
       /** Served by the agent to a browser; authenticated with a session cookie. */
       kind: "browser";
@@ -35,7 +38,8 @@ export type Platform =
       disconnect: () => Promise<void>;
       /** Uses this PC's agent again without reaching the other homecloud, then reloads. */
       forget: () => Promise<void>;
-    };
+    }
+);
 
 export const PlatformContext = createContext<Platform | undefined>(undefined);
 

@@ -119,7 +119,8 @@ func Handler(o Options) (http.Handler, error) {
 	// No request compression: no client sends any, and a small compressed
 	// body could make the agent inflate a large one before anyone signed in.
 	apiPath, apiHandler := agentv3connect.NewAgentServiceHandler(o.Service,
-		connect.WithReadMaxBytes(maxRequestBytes), connect.WithCompression("gzip", nil, nil))
+		connect.WithReadMaxBytes(maxRequestBytes), connect.WithCompression("gzip", nil, nil),
+		connect.WithInterceptors(faults{log: o.Log}))
 	mux := http.NewServeMux()
 	mux.Handle(apiPath, http.MaxBytesHandler(authenticate(o.Auth, csrf, signIn, browser, o.Log, apiHandler), maxRequestBytes))
 	app := serveApp(o.App)
@@ -177,9 +178,9 @@ func (f *refusals) refuse(r *http.Request, why string) {
 		return
 	}
 	if more > 0 {
-		f.log.Warn("more requests were refused", "count", more, "window", refusalWindow.String())
+		f.log.WarnContext(r.Context(), "more requests were refused", "count", more, "window", refusalWindow.String())
 	}
-	f.log.Warn("request refused", "reason", why, "host", r.Host, "origin", r.Header.Get("Origin"),
+	f.log.WarnContext(r.Context(), "request refused", "reason", why, "host", r.Host, "origin", r.Header.Get("Origin"),
 		"method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
 }
 
@@ -255,7 +256,7 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, signI
 		}
 		p, err := a.Authenticate(r)
 		if err != nil {
-			log.Error("credentials could not be checked", "procedure", procedure, "err", err)
+			log.ErrorContext(r.Context(), "credentials could not be checked", "procedure", procedure, "err", err)
 			deny(w, r, connect.CodeUnavailable, "credentials cannot be checked right now")
 			return
 		}

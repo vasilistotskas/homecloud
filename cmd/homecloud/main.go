@@ -174,12 +174,12 @@ func runVerify(ctx context.Context, c *call) (err error) {
 	if err != nil {
 		return err
 	}
-	log.Info("ingested", "assets", ingested.Assets, "renditions", ingested.Renditions,
+	log.InfoContext(ctx, "ingested", "assets", ingested.Assets, "renditions", ingested.Renditions,
 		"new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
 
 	started := time.Now()
 	verified, err := app.Verify(ctx, cfg, db, log, time.Now, func() {})
-	log.Info("verified", "checked", verified.Checked, "passed", verified.Passed,
+	log.InfoContext(ctx, "verified", "checked", verified.Checked, "passed", verified.Passed,
 		"mismatched", verified.Mismatched, "errored", verified.Errored, "elapsed", time.Since(started).Round(time.Second))
 	if err != nil {
 		return err

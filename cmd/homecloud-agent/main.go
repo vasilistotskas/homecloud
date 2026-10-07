@@ -39,10 +39,15 @@ var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
-		reportStartupFailure(err)
+		if !errors.Is(err, errLogged) {
+			reportStartupFailure(err)
+		}
 		os.Exit(1)
 	}
 }
+
+// errLogged marks an error the agent's log already holds.
+var errLogged = errors.New("in the agent log")
 
 func run() (err error) {
 	lock, err := platform.AcquireInstance(app.LedgerWriterLock)
@@ -65,23 +70,39 @@ func run() (err error) {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	logs, err := openLogs(cfg.Storage.Root, cfg.Logs)
+	logs, err := openLogs(cfg.Logs)
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, logs.Close()) }()
 	log := logs.log
-	log.Info("homecloud-agent starting", "version", version, "config", cfgPath)
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	log.InfoContext(ctx, "homecloud-agent starting", "version", version, "pid", os.Getpid(), "config", cfgPath)
+	// How the process ends, in one line. On Windows the agent is usually
+	// ended without notice (logoff, shutdown, schtasks /End), which writes no
+	// line: the next start reports the runs it left unfinished.
+	started := false
+	defer func() {
+		end := context.WithoutCancel(ctx)
+		switch {
+		case err != nil && !started:
+			log.ErrorContext(end, "homecloud-agent not started", "err", err)
+		case err != nil:
+			log.ErrorContext(end, "homecloud-agent stopped", "err", err)
+		default:
+			log.InfoContext(end, "homecloud-agent stopped")
+		}
+		if err != nil {
+			err = errors.Join(errLogged, err)
+		}
+	}()
 
 	// homecloud owns kei's configuration: write it before anything checks or runs kei.
 	if changed, keiErr := kei.WriteConfig(cfg); keiErr != nil {
-		log.Error("writing kei configuration failed; not starting", "err", keiErr)
-		return keiErr
+		return fmt.Errorf("write kei configuration: %w", keiErr)
 	} else if changed {
-		log.Info("kei configuration written", "path", cfg.Kei.Config)
+		log.InfoContext(ctx, "kei configuration written", "path", cfg.Kei.Config)
 	}
 
 	// The archive holds the only copy of the library and the ledger backups all
@@ -95,16 +116,14 @@ func run() (err error) {
 	}
 	for _, dir := range private {
 		if changed, privErr := platform.MakePrivate(dir); privErr != nil {
-			log.Error("making a folder private failed; not starting", "path", dir, "err", privErr)
-			return privErr
+			return fmt.Errorf("make %s private: %w", dir, privErr)
 		} else if changed {
-			log.Info("folder made private to this account", "path", dir)
+			log.InfoContext(ctx, "folder made private to this account", "path", dir)
 		}
 	}
 
 	if doctorErr := doctor.Err(doctor.Run(ctx, cfg)); doctorErr != nil {
-		log.Error("environment checks failed; not starting", "err", doctorErr)
-		return fmt.Errorf("doctor: %w", doctorErr)
+		return fmt.Errorf("environment checks (homecloud doctor): %w", doctorErr)
 	}
 
 	db, err := ledger.Open(ctx, app.LedgerPath(cfg))
@@ -114,12 +133,12 @@ func run() (err error) {
 	defer func() { err = errors.Join(err, db.Close()) }()
 
 	notifier := notify.New(cfg.Notify)
-	renderer := thumbs.New(cfg.FFmpeg, app.ThumbnailDir(cfg))
+	renderer := thumbs.New(cfg.FFmpeg, app.ThumbnailDir(cfg), log)
 	// The cache is derived data: a failed prune costs disk space, not correctness.
 	if removed, pruneErr := renderer.Prune(); pruneErr != nil {
-		log.Error("prune thumbnail cache", "err", pruneErr)
+		log.ErrorContext(ctx, "thumbnail cache not pruned", "err", pruneErr)
 	} else if removed > 0 {
-		log.Info("thumbnail cache pruned", "superseded", removed)
+		log.InfoContext(ctx, "thumbnail cache pruned", "superseded", removed)
 	}
 	agent := app.NewAgent(cfg, db, log, notifier, logs.kei, renderer, time.Now)
 
@@ -128,20 +147,20 @@ func run() (err error) {
 	go func() {
 		defer close(webDone)
 		if serveErr := serveAPI(ctx, cfg, cfgPath, db, agent, notifier, renderer, log); serveErr != nil {
-			log.Error("local API stopped", "err", serveErr)
+			log.ErrorContext(ctx, "local API stopped; archiving goes on", "err", serveErr)
 		}
 	}()
 	defer func() { stop(); <-webDone }()
 
 	if readyErr := platform.NotifyReady(); readyErr != nil {
-		log.Error("service manager readiness notification failed", "err", readyErr)
+		log.ErrorContext(ctx, "service manager not told the agent is ready", "err", readyErr)
 	}
+	started = true
 	runErr := agent.Run(ctx)
 	if stopErr := platform.NotifyStopping(); stopErr != nil {
-		log.Error("service manager stopping notification failed", "err", stopErr)
+		log.ErrorContext(ctx, "service manager not told the agent is stopping", "err", stopErr)
 	}
 	if errors.Is(runErr, context.Canceled) {
-		log.Info("homecloud-agent stopped")
 		return nil
 	}
 	return runErr
@@ -203,6 +222,6 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 			err = errors.Join(err, fmt.Errorf("remove endpoint file: %w", rmErr))
 		}
 	}()
-	log.Info("local API listening", "addr", cfg.Web.Listen, "endpoint", endpoint)
+	log.InfoContext(ctx, "local API listening", "addr", cfg.Web.Listen, "endpoint", endpoint)
 	return web.Serve(ctx, ln, h, log)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +25,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/logging"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
@@ -30,7 +33,8 @@ import (
 
 // The test binary doubles as a fake kei when HOMECLOUD_FAKE_KEI=1:
 //
-//	sync     → exits with HOMECLOUD_FAKE_KEI_SYNC_EXIT
+//	sync     → writes HOMECLOUD_FAKE_KEI_REPORT (if set) as its report next to
+//	           --config, then exits with HOMECLOUD_FAKE_KEI_SYNC_EXIT
 //	manifest → prints the file named by HOMECLOUD_FAKE_KEI_MANIFEST
 func TestMain(m *testing.M) {
 	if os.Getenv("HOMECLOUD_FAKE_KEI") == "1" {
@@ -45,6 +49,15 @@ func fakeKei(args []string) int {
 	}
 	switch args[0] {
 	case "sync":
+		if report := os.Getenv("HOMECLOUD_FAKE_KEI_REPORT"); report != "" {
+			i := slices.Index(args, "--config")
+			if i < 0 || i+1 >= len(args) {
+				return 1
+			}
+			if err := os.WriteFile(kei.ReportPath(config.Kei{Config: args[i+1]}), []byte(report), 0o600); err != nil { //nolint:gosec // the test passes --config, a path in its own temporary folder
+				return 1
+			}
+		}
 		var code int
 		if _, err := fmt.Sscan(os.Getenv("HOMECLOUD_FAKE_KEI_SYNC_EXIT"), &code); err != nil {
 			return 1
@@ -145,7 +158,7 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 		Storage: config.Storage{Root: filepath.Dir(manifest)},
 		ICloud:  config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden, RequestTimeout: config.Duration(time.Minute)},
 		Verify:  config.Verify{Workers: 2},
-		Kei:     config.Kei{Binary: exe, Config: "unused.toml"},
+		Kei:     config.Kei{Binary: exe, Config: filepath.Join(t.TempDir(), "kei.toml")},
 		Schedule: config.Schedule{
 			SyncInterval:  config.Duration(time.Hour),
 			ScrubInterval: config.Duration(168 * time.Hour),
@@ -160,9 +173,10 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 			ReadInterval: config.Duration(7 * 24 * time.Hour), StalledAfter: config.Duration(6 * time.Hour),
 		},
 	}
+	log := slog.New(slog.DiscardHandler)
 	// No ffmpeg in tests: previews fail and are logged, as they would without one.
-	renderer := thumbs.New(config.FFmpeg{FFmpeg: filepath.Join(t.TempDir(), "no-ffmpeg"), FFprobe: filepath.Join(t.TempDir(), "no-ffprobe"), Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, ThumbnailDir(cfg))
-	agent := NewAgent(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), n, io.Discard, renderer,
+	renderer := thumbs.New(config.FFmpeg{FFmpeg: filepath.Join(t.TempDir(), "no-ffmpeg"), FFprobe: filepath.Join(t.TempDir(), "no-ffprobe"), Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, ThumbnailDir(cfg), log)
+	agent := NewAgent(cfg, db, log, n, io.Discard, renderer,
 		func() time.Time { return *clock })
 	// Tests have no configured volume; the archive counts as present.
 	agent.checkArchive = func() error { return nil }
@@ -370,5 +384,99 @@ func TestCycleKeepsHiddenFolderHidden(t *testing.T) {
 	}
 	if err := agent.Cycle(context.Background()); err != nil {
 		t.Fatalf("cycle with a hidden folder: %v", err)
+	}
+}
+
+// logLines captures what an agent logs, as decoded JSON lines.
+type logLines struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (l *logLines) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p) //nolint:wrapcheck // strings.Builder never fails
+}
+
+// with returns the lines whose message is msg.
+func (l *logLines) with(t *testing.T, msg string) []map[string]any {
+	t.Helper()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var found []map[string]any
+	for line := range strings.Lines(l.buf.String()) {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("log line %q: %v", line, err)
+		}
+		if m["msg"] == msg {
+			found = append(found, m)
+		}
+	}
+	return found
+}
+
+// captureLogs sends the agent's log to the returned lines, through the
+// handler the agent uses.
+func captureLogs(agent *Agent) *logLines {
+	lines := &logLines{}
+	agent.log = slog.New(logging.Handler(slog.NewJSONHandler(lines, nil)))
+	return lines
+}
+
+// TestCycleLogsWhatKeiDid: one line says what kei's sync did, from its
+// report, with the failed assets and no signed URL; every line of the run
+// names it.
+func TestCycleLogsWhatKeiDid(t *testing.T) {
+	clock := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	agent, _ := newTestAgent(t, fixture(t, false), "2", &clock)
+	t.Setenv("HOMECLOUD_FAKE_KEI_REPORT", `{"version":"3","kei_version":"0.24.1","timestamp":"2026-10-07T12:00:30+00:00",
+		"status":"partial_failure","options":{"username":"someone@example.com"},
+		"stats":{"assets_seen":12,"downloaded":3,"failed":1,"bytes_downloaded":4096,"elapsed_secs":2.5},
+		"failed_assets":[{"id":"A1","version_size":"original","error_message":"HTTP 403 for https://cvws.icloud-content.com/B/x?sig=SECRET&e=1"}]}`)
+	lines := captureLogs(agent)
+	if err := agent.Cycle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	got := lines.with(t, "kei sync finished")
+	if len(got) != 1 {
+		t.Fatalf("kei lines = %v", got)
+	}
+	k := got[0]
+	if k["level"] != "WARN" || k["outcome"] != "partial" || k["downloaded"] != float64(3) || k["failed"] != float64(1) ||
+		k["bytes"] != float64(4096) || k["duration_ms"] != float64(2500) || k[logging.KeyRunKind] != CycleRunKind {
+		t.Fatalf("kei line = %v", k)
+	}
+	failed, _ := json.Marshal(k["failed_assets"])
+	if !strings.Contains(string(failed), "https://cvws.icloud-content.com/…") || strings.Contains(string(failed), "SECRET") ||
+		strings.Contains(fmt.Sprint(k), "someone@example.com") {
+		t.Fatalf("failed assets = %s; want the host only, and never the account", failed)
+	}
+
+	started, finished := lines.with(t, "run started"), lines.with(t, "run finished")
+	if len(started) != 1 || len(finished) != 1 || started[0][logging.KeyRun] != k[logging.KeyRun] ||
+		finished[0]["ok"] != true || finished[0]["duration_ms"] == nil {
+		t.Fatalf("run lines = %v %v", started, finished)
+	}
+}
+
+// TestCycleWithoutKeiReport: a sync kei ended before writing its report says
+// so instead of repeating the previous sync's counts.
+func TestCycleWithoutKeiReport(t *testing.T) {
+	clock := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
+	agent, _ := newTestAgent(t, fixture(t, false), "3", &clock)
+	stale := `{"version":"3","timestamp":"2026-10-07T11:00:00+00:00","status":"success","stats":{"downloaded":99}}`
+	if err := os.WriteFile(kei.ReportPath(agent.cfg.Kei), []byte(stale), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lines := captureLogs(agent)
+	if err := agent.Cycle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := lines.with(t, "kei sync finished")
+	if len(got) != 1 || got[0]["report"] != "none" || got[0]["downloaded"] != nil || got[0]["outcome"] != "auth_required" {
+		t.Fatalf("kei line = %v", got)
 	}
 }

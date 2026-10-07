@@ -15,6 +15,7 @@ linters:
     - revive
     - sqlclosecheck
     - rowserrcheck
+    - sloglint
     - unconvert
     - unparam
     - wrapcheck
@@ -27,6 +28,21 @@ linters:
           pkg: ^os/exec$
           msg: start programs with platform.Command, which runs them without a console window on Windows
       analyze-types: true
+    sloglint:
+      # One shape for every log line: a constant lowercase message with
+      # snake_case keys, and the context wherever there is one, so a line
+      # logged during a run names it (package logging).
+      no-global: all
+      context: scope
+      static-msg: true
+      msg-style: lowercased
+      kv-only: true
+      key-naming-case: snake
+      forbidden-keys:
+        - time
+        - level
+        - msg
+        - source
     wrapcheck:
       # Errors from this module's own packages already carry context at their source.
       ignore-package-globs:

@@ -21,6 +21,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/logging"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
@@ -155,7 +156,8 @@ func (a *Agent) closeInterrupted(ctx context.Context) error {
 		if err := a.db.FinishRun(ctx, r.ID, false, detail, a.now()); err != nil {
 			return err
 		}
-		a.log.Warn("closed interrupted run", "run", r.ID, "kind", r.Kind, "started", r.StartedAt)
+		a.log.WarnContext(ctx, "closed a run the previous agent process left unfinished",
+			logging.KeyRun, r.ID, logging.KeyRunKind, r.Kind, "started", r.StartedAt)
 	}
 	return nil
 }
@@ -169,17 +171,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	interval := a.cfg.Schedule.SyncInterval.Std()
 	for {
-		if err := a.Cycle(ctx); err != nil {
-			if ctx.Err() != nil {
-				return fmt.Errorf("agent stopped: %w", ctx.Err())
-			}
-			a.log.Error("cycle failed", "err", err)
-		}
-		if err := a.maintain(ctx); err != nil {
-			if ctx.Err() != nil {
-				return fmt.Errorf("agent stopped: %w", ctx.Err())
-			}
-			a.log.Error("maintenance failed", "err", err)
+		// Runs log their own failures (recordRun); the next cycle tries again.
+		_ = a.Cycle(ctx)
+		_ = a.maintain(ctx)
+		if ctx.Err() != nil {
+			return fmt.Errorf("agent stopped: %w", ctx.Err())
 		}
 		next := a.now().Add(interval)
 		a.hub.update(func(s *Status) { s.NextCycleAt = next })
@@ -224,20 +220,46 @@ const interruptedError = "interrupted: the agent stopped before this run finishe
 // the run in the ledger.
 func (a *Agent) Cycle(ctx context.Context) error {
 	defer a.setPhase(PhaseIdle)
-	runID, err := a.db.StartRun(ctx, CycleRunKind, a.now())
+	return a.recordRun(ctx, CycleRunKind, func(ctx context.Context) (any, bool, error) {
+		rep, err := a.cycle(ctx)
+		if err != nil {
+			rep.Error = err.Error()
+		}
+		// Files that could not be checked (rep.Verified.Errored) are retried
+		// next cycle, but this cycle did not verify everything it should have.
+		return rep, err == nil && rep.Verified.Mismatched == 0 && rep.Verified.Errored == 0, err
+	})
+}
+
+// recordRun records a run of kind in the ledger around do, and logs when it
+// started and how it ended, with its error. do gets a context that names the
+// run in every line logged with it (package logging).
+func (a *Agent) recordRun(ctx context.Context, kind string, do func(context.Context) (report any, ok bool, err error)) error {
+	started := a.now()
+	id, err := a.db.StartRun(ctx, kind, started)
 	if err != nil {
+		a.log.ErrorContext(ctx, "run not started: the ledger did not record it", logging.KeyRunKind, kind, "err", err)
 		return err
 	}
-	rep, cycleErr := a.cycle(ctx)
-	if cycleErr != nil {
-		rep.Error = cycleErr.Error()
+	ctx = logging.WithRun(ctx, id, kind)
+	a.log.InfoContext(ctx, "run started")
+	rep, ok, err := do(ctx)
+	stopping := ctx.Err() != nil
+	// Record the outcome even when ctx was cancelled mid-run.
+	ctx = context.WithoutCancel(ctx)
+	err = errors.Join(err, a.db.FinishRun(ctx, id, ok, rep, a.now()))
+	attrs := []any{"ok", ok, "duration_ms", a.now().Sub(started).Milliseconds()}
+	switch {
+	case stopping:
+		a.log.WarnContext(ctx, "run finished: the agent is stopping", append(attrs, "err", err)...)
+	case err != nil:
+		a.log.ErrorContext(ctx, "run finished", append(attrs, "err", err)...)
+	case !ok:
+		a.log.WarnContext(ctx, "run finished", attrs...)
+	default:
+		a.log.InfoContext(ctx, "run finished", attrs...)
 	}
-	// Files that could not be checked (rep.Verified.Errored) are retried next
-	// cycle, but this cycle did not verify everything it should have.
-	ok := cycleErr == nil && rep.Verified.Mismatched == 0 && rep.Verified.Errored == 0
-	// Record the outcome even when ctx was cancelled mid-cycle.
-	finishErr := a.db.FinishRun(context.WithoutCancel(ctx), runID, ok, rep, a.now())
-	return errors.Join(cycleErr, finishErr)
+	return err
 }
 
 func (a *Agent) setPhase(p Phase) {
@@ -279,7 +301,7 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 			Priority: notify.PriorityHigh,
 			Tags:     []string{"warning"},
 		})
-		a.log.Warn("download skipped", "err", err)
+		a.log.WarnContext(ctx, "photos not downloaded: the archive drive is below its free-space minimum", "err", err)
 	case err != nil:
 		errs = append(errs, fmt.Errorf("kei sync: %w", err))
 		a.alert(ctx, notify.Msg{Title: "homecloud: download failed", Body: "kei sync exited unexpectedly; see logs.", Priority: notify.PriorityHigh, Tags: []string{"warning"}})
@@ -287,9 +309,8 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 		a.alertAuth(ctx)
 	case outcome == kei.OutcomeAuthTerminal:
 		a.alert(ctx, notify.Msg{Title: "homecloud: Apple account needs attention", Body: "Apple reported an account state that needs you (kei exit 4). Run kei login and check appleid.apple.com.", Priority: notify.PriorityUrgent, Tags: []string{"rotating_light"}})
-	case outcome == kei.OutcomePartial:
-		a.log.Warn("kei sync partially failed; failed assets retry next cycle")
-	case outcome == kei.OutcomeOK:
+	case outcome == kei.OutcomePartial, outcome == kei.OutcomeOK:
+		// Failed assets are retried next cycle; download logged which.
 	}
 	switch {
 	case err == nil:
@@ -299,7 +320,6 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	default:
 		rep.KeiOutcome = KeiOutcomeError
 	}
-	a.log.Info("kei sync finished", "outcome", rep.KeiOutcome)
 
 	a.setPhase(PhaseIngesting)
 	ingested, err := Ingest(ctx, a.cfg, a.db, a.now())
@@ -307,7 +327,7 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	if err != nil {
 		return rep, errors.Join(append(errs, err)...)
 	}
-	a.log.Info("ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
+	a.log.InfoContext(ctx, "ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
 
 	a.setPhase(PhaseVerifying)
 	verified, err := Verify(ctx, a.cfg, a.db, a.log, a.now, a.hub.Changed)
@@ -315,7 +335,7 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	if err != nil {
 		errs = append(errs, err)
 	}
-	a.log.Info("verified", "checked", verified.Checked, "passed", verified.Passed, "mismatched", verified.Mismatched, "errored", verified.Errored)
+	a.log.InfoContext(ctx, "verified", "checked", verified.Checked, "passed", verified.Passed, "mismatched", verified.Mismatched, "errored", verified.Errored)
 	if verified.Mismatched > 0 {
 		a.alert(ctx, notify.Msg{
 			Title:    "homecloud: files failed verification",
@@ -333,14 +353,14 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	if files, err := export.Write(ctx, a.db, a.cfg.Storage.Root); err != nil {
 		errs = append(errs, err)
 	} else {
-		a.log.Info("manifest exported", "files", files)
+		a.log.InfoContext(ctx, "manifest exported", "files", files)
 	}
 	a.preparePreviews(ctx)
 	return rep, errors.Join(errs...)
 }
 
 func (a *Agent) alertAuth(ctx context.Context) {
-	a.log.Warn("kei needs Apple sign-in (2FA)")
+	a.log.WarnContext(ctx, "kei needs Apple sign-in (2FA)")
 	a.alertRepeated(ctx, alertSignIn, notify.Msg{
 		Title:    "homecloud: Apple sign-in needed",
 		Body:     "New photos are not being downloaded. Run: kei login --config <kei config> and approve the code on your iPhone.",
@@ -356,7 +376,7 @@ func (a *Agent) alertAuth(ctx context.Context) {
 func (a *Agent) alertRepeated(ctx context.Context, key string, m notify.Msg) {
 	due, err := a.db.AlertDue(ctx, key, a.cfg.Notify.RepeatEvery.Std(), a.now())
 	if err != nil {
-		a.log.Error("alert throttle unavailable; sending", "key", key, "err", err)
+		a.log.ErrorContext(ctx, "alert throttle unavailable; sending", "key", key, "err", err)
 		due = true
 	}
 	if due {
@@ -370,13 +390,59 @@ func (a *Agent) download(ctx context.Context) (kei.Outcome, error) {
 	if _, err := a.checkSpace(); err != nil {
 		return 0, err
 	}
-	return kei.Sync(ctx, a.cfg.Kei, a.keiLog)
+	started := a.now()
+	outcome, err := kei.Sync(ctx, a.cfg.Kei, a.keiLog)
+	if ctx.Err() == nil { // a sync cut short by a stop is the run's to report
+		a.logKeiSync(ctx, outcome, err, started)
+	}
+	return outcome, err
 }
 
+// logKeiSync logs what a kei sync that started at started did, from the
+// report kei wrote for it: one line, at warning level or above when
+// something needs a look.
+func (a *Agent) logKeiSync(ctx context.Context, outcome kei.Outcome, syncErr error, started time.Time) {
+	level, attrs := slog.LevelInfo, []any{"outcome", outcome.String()}
+	switch {
+	case syncErr != nil:
+		level, attrs = slog.LevelError, []any{"outcome", KeiOutcomeError, "err", syncErr}
+	case outcome != kei.OutcomeOK:
+		level = slog.LevelWarn
+	}
+	rep, err := kei.ReadReport(kei.ReportPath(a.cfg.Kei), started)
+	switch {
+	case errors.Is(err, kei.ErrNoReport):
+		attrs = append(attrs, "report", "none")
+	case err != nil:
+		level, attrs = max(level, slog.LevelWarn), append(attrs, "report_err", err)
+	default:
+		s := rep.Stats
+		attrs = append(attrs, "status", rep.Status, "seen", s.Seen, "downloaded", s.Downloaded, "failed", s.Failed,
+			"bytes", s.BytesDownloaded, "duration_ms", int64(s.ElapsedSeconds*1000),
+			"enumeration_errors", s.EnumerationErrors, "enumeration_incomplete", s.EnumerationIncomplete,
+			"inventory_drop_assets", s.InventoryDropAssets, "rate_limited", s.RateLimited,
+			"state_write_failures", s.StateWriteFailures)
+		if len(rep.Failed) > 0 {
+			attrs = append(attrs, "failed_assets", rep.Failed)
+		}
+		if rep.FailedOmitted > 0 {
+			attrs = append(attrs, "failed_assets_omitted", rep.FailedOmitted)
+		}
+		if rep.Troubled() {
+			level = max(level, slog.LevelWarn)
+		}
+	}
+	a.log.Log(ctx, level, "kei sync finished", attrs...)
+}
+
+// alert sends m and logs that it did (alert titles and bodies name no file
+// or device).
 func (a *Agent) alert(ctx context.Context, m notify.Msg) {
 	if err := a.notify.Send(ctx, m); err != nil {
-		a.log.Error("notification failed", "title", m.Title, "err", err)
+		a.log.ErrorContext(ctx, "alert not sent", "title", m.Title, "err", err)
+		return
 	}
+	a.log.InfoContext(ctx, "alert sent", "title", m.Title)
 }
 
 // ParseCycleReport decodes the detail recorded for a finished cycle run.
@@ -498,7 +564,7 @@ func (a *Agent) preparePreviews(ctx context.Context) {
 		for {
 			page, err := a.db.LibraryPage(ctx, ledger.LibraryQuery{HiddenDir: hiddenDir, Hidden: hidden, After: after, Limit: previewPage})
 			if err != nil {
-				a.log.Error("prepare previews: read library", "err", err)
+				a.log.ErrorContext(ctx, "previews not prepared: the library could not be read", "err", err)
 				return
 			}
 			for _, asset := range page {
@@ -509,12 +575,12 @@ func (a *Agent) preparePreviews(ctx context.Context) {
 				if _, statErr := os.Stat(cached); statErr == nil {
 					continue
 				}
+				// The renderer logs a failure, once until the file renders.
 				if _, err := a.renderer.Ensure(ctx, thumbs.Source{Path: asset.Display.LocalPath, SHA256: asset.Display.SHA256}, thumbs.Thumb); err != nil {
 					if ctx.Err() != nil {
 						return
 					}
 					failed++
-					a.log.Warn("prepare previews: render", "asset", asset.AssetID, "err", err)
 					continue
 				}
 				rendered++
@@ -526,9 +592,11 @@ func (a *Agent) preparePreviews(ctx context.Context) {
 		}
 	}
 	if err := platform.MarkHidden(filepath.Dir(ThumbnailDir(a.cfg))); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		a.log.Warn("prepare previews: hide cache folder", "err", err)
+		a.log.WarnContext(ctx, "preview cache folder not hidden", "err", err)
 	}
-	if rendered > 0 || failed > 0 {
-		a.log.Info("previews prepared", "rendered", rendered, "failed", failed)
+	// Files that keep failing are retried every pass: worth a line only when
+	// something new was rendered.
+	if rendered > 0 {
+		a.log.InfoContext(ctx, "previews prepared", "rendered", rendered, "failed", failed)
 	}
 }

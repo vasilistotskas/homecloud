@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { OverviewProvider } from "../api/overview";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 import { PlatformContext, type Platform } from "./platformContext";
 import { AppRoutes } from "./AppRoutes";
 import { ThemeStateProvider } from "./theme";
@@ -43,13 +44,15 @@ export function App({ transport, platform }: { transport: Transport; platform: P
         // need the theme, or each would cover the window with the page background.
         <FluentProvider theme={theme} className={styles.root} applyStylesToPortals={false}>
           <PlatformContext value={platform}>
-            <TransportProvider transport={transport}>
-              <QueryClientProvider client={queryClient}>
-                <OverviewProvider>
-                  <AppRoutes />
-                </OverviewProvider>
-              </QueryClientProvider>
-            </TransportProvider>
+            <ErrorBoundary>
+              <TransportProvider transport={transport}>
+                <QueryClientProvider client={queryClient}>
+                  <OverviewProvider>
+                    <AppRoutes />
+                  </OverviewProvider>
+                </QueryClientProvider>
+              </TransportProvider>
+            </ErrorBoundary>
           </PlatformContext>
         </FluentProvider>
       )}

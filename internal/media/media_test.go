@@ -2,7 +2,6 @@ package media
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -51,7 +50,7 @@ func setup(t *testing.T, clock *time.Time) (*Signer, *auth.Authenticator, http.H
 		t.Fatal(err)
 	}
 	a := auth.New("agent-token", time.Hour, false, noDevices{}, now)
-	r := thumbs.New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, t.TempDir())
+	r := thumbs.New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, t.TempDir(), slog.New(slog.DiscardHandler))
 	// A cached rendering lets the test run without ffmpeg.
 	cached := r.CachePath(sha, thumbs.Thumb)
 	if err := os.MkdirAll(filepath.Dir(cached), 0o700); err != nil {
@@ -60,7 +59,7 @@ func setup(t *testing.T, clock *time.Time) (*Signer, *auth.Authenticator, http.H
 	if err := os.WriteFile(cached, []byte("RIFF....WEBP"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return s, a, Handler(s, a, fakeLedger{}, r, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return s, a, Handler(s, a, fakeLedger{}, r, slog.New(slog.DiscardHandler))
 }
 
 func get(h http.Handler, target string) *httptest.ResponseRecorder {

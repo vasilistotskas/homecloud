@@ -14,6 +14,7 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/drive"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/logging"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/parallel"
 	"github.com/vasilistotskas/homecloud/internal/platform"
@@ -106,19 +107,17 @@ func (a *Agent) runIfDue(ctx context.Context, kind string, every time.Duration, 
 	switch {
 	case errors.Is(err, ledger.ErrNotFound):
 	case err != nil:
+		a.log.ErrorContext(ctx, "run not started: its last run could not be read", logging.KeyRunKind, kind, "err", err)
 		return err
 	case a.now().Before(dueAt(*last.FinishedAt, every)): // completed runs are finished
 		return nil
 	}
 	a.setPhase(p)
 	defer a.setPhase(PhaseIdle)
-	id, err := a.db.StartRun(ctx, kind, a.now())
-	if err != nil {
-		return err
-	}
-	rep, ok := do(ctx)
-	// Record the outcome even when ctx was cancelled mid-run.
-	return a.db.FinishRun(context.WithoutCancel(ctx), id, ok, rep, a.now())
+	return a.recordRun(ctx, kind, func(ctx context.Context) (any, bool, error) {
+		rep, ok := do(ctx)
+		return rep, ok, nil
+	})
 }
 
 // scrub re-hashes the share schedule.scrub_fraction of verified files whose
@@ -127,7 +126,7 @@ func (a *Agent) runIfDue(ctx context.Context, kind string, every time.Duration, 
 func (a *Agent) scrub(ctx context.Context) (any, bool) {
 	var rep ScrubReport
 	fail := func(err error) (any, bool) {
-		a.log.Error("scrub failed", "err", err)
+		a.log.ErrorContext(ctx, "scrub failed", "err", err)
 		rep.Error = err.Error()
 		return rep, false
 	}
@@ -153,10 +152,10 @@ func (a *Agent) scrub(ctx context.Context) (any, bool) {
 			rep.Passed++
 		case errors.Is(outcome, verify.ErrMismatch):
 			rep.Mismatched++
-			a.log.Warn("scrub mismatch; asset quarantined", "asset", t.AssetID, "version", t.Version, "err", outcome)
+			a.log.WarnContext(ctx, "scrub mismatch; asset quarantined", "asset", t.AssetID, "version", t.Version, "err", outcome)
 		default:
 			rep.Errored++
-			a.log.Error("scrub error; checked again next scrub", "asset", t.AssetID, "version", t.Version, "err", outcome)
+			a.log.ErrorContext(ctx, "file not scrubbed; checked again next scrub", "asset", t.AssetID, "version", t.Version, "err", outcome)
 		}
 	})
 	if err := ctx.Err(); err != nil {
@@ -165,7 +164,7 @@ func (a *Agent) scrub(ctx context.Context) (any, bool) {
 	if err := a.scrubDrive(ctx, &rep.Drive); err != nil {
 		return fail(err)
 	}
-	a.log.Info("scrubbed", "eligible", rep.Eligible, "checked", rep.Checked, "passed", rep.Passed,
+	a.log.InfoContext(ctx, "scrubbed", "eligible", rep.Eligible, "checked", rep.Checked, "passed", rep.Passed,
 		"mismatched", rep.Mismatched, "errored", rep.Errored)
 	if rep.Mismatched > 0 {
 		a.alert(ctx, notify.Msg{
@@ -219,10 +218,10 @@ func (a *Agent) scrubDrive(ctx context.Context, rep *DriveScrub) error {
 			rep.Passed++
 		case errors.Is(outcome, verify.ErrMismatch):
 			rep.Damaged++
-			a.log.Warn("scrub: iCloud Drive copy damaged; downloaded again next sync", "file", f.DriveWSID, "err", outcome)
+			a.log.WarnContext(ctx, "scrub: iCloud Drive copy damaged; downloaded again next sync", "file", f.DriveWSID, "err", outcome)
 		default:
 			rep.Errored++
-			a.log.Error("scrub error on an iCloud Drive file; checked again next scrub", "file", f.DriveWSID, "err", outcome)
+			a.log.ErrorContext(ctx, "iCloud Drive file not scrubbed; checked again next scrub", "file", f.DriveWSID, "err", outcome)
 		}
 	})
 	if err := ctx.Err(); err != nil {
@@ -263,7 +262,7 @@ func (a *Agent) scrubOne(ctx context.Context, t ledger.ScrubTarget) error {
 func (a *Agent) backupLedger(ctx context.Context) (any, bool) {
 	var rep LedgerBackupReport
 	if err := a.writeLedgerBackup(ctx, &rep); err != nil {
-		a.log.Error("ledger backup failed", "err", err)
+		a.log.ErrorContext(ctx, "ledger backup failed", "err", err)
 		rep.Error = err.Error()
 		a.alertRepeated(ctx, alertBackup, notify.Msg{
 			Title:    "homecloud: ledger backup failed",
@@ -273,7 +272,7 @@ func (a *Agent) backupLedger(ctx context.Context) (any, bool) {
 		})
 		return rep, false
 	}
-	a.log.Info("ledger backed up", "file", rep.File, "bytes", rep.SizeBytes, "pruned", rep.Pruned)
+	a.log.InfoContext(ctx, "ledger backed up", "file", rep.File, "bytes", rep.SizeBytes, "pruned", rep.Pruned)
 	return rep, true
 }
 

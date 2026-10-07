@@ -25,6 +25,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -105,6 +106,15 @@ var principalKinds = map[Kind]string{KindBearer: "a", KindSession: "s", KindDevi
 // String encodes p for a URL (media links carry who they were made for); it
 // holds nothing secret.
 func (p Principal) String() string { return principalKinds[p.Kind] + ":" + p.ID }
+
+// LogValue is how logs name p: its String, or "none" for a request no
+// credential came with.
+func (p Principal) LogValue() slog.Value {
+	if p.Kind == KindNone {
+		return slog.StringValue("none")
+	}
+	return slog.StringValue(p.String())
+}
 
 // ParsePrincipal decodes what String encoded.
 func ParsePrincipal(s string) (Principal, error) {

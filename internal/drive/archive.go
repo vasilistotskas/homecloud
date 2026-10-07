@@ -83,12 +83,15 @@ type Report struct {
 	UnlistedApps int `json:"unlisted_apps"`
 }
 
-func (r *Report) fail(mu *sync.Mutex, format string, args ...any) {
+// fail counts an item (a file, or an app folder) that could not be archived
+// this time, keeps the first maxFailures for the run report, and logs each.
+func (a *Archive) fail(ctx context.Context, rep *Report, mu *sync.Mutex, item string, err error) {
+	a.Log.WarnContext(ctx, "iCloud Drive item not archived; tried again next sync", "item", item, "err", err)
 	mu.Lock()
 	defer mu.Unlock()
-	r.Failed++
-	if len(r.Failures) < maxFailures {
-		r.Failures = append(r.Failures, fmt.Sprintf(format, args...))
+	rep.Failed++
+	if len(rep.Failures) < maxFailures {
+		rep.Failures = append(rep.Failures, fmt.Sprintf("%s: %v", item, err))
 	}
 }
 
@@ -140,7 +143,7 @@ func (a *Archive) Sync(ctx context.Context) (rep Report, err error) {
 		if !ok {
 			local, err := paths.assign(f)
 			if err != nil {
-				rep.fail(&mu, "%s: %v", strings.Join(f.Path, "/"), err)
+				a.fail(ctx, &rep, &mu, strings.Join(f.Path, "/"), err)
 				continue
 			}
 			jobs = append(jobs, job{file: f, local: local})
@@ -149,7 +152,7 @@ func (a *Archive) Sync(ctx context.Context) (rep Report, err error) {
 		j, err := a.reconcile(ctx, k, f, paths, &rep)
 		switch {
 		case err != nil:
-			rep.fail(&mu, "%s: %v", strings.Join(f.Path, "/"), err)
+			a.fail(ctx, &rep, &mu, strings.Join(f.Path, "/"), err)
 		case j != nil:
 			jobs = append(jobs, *j)
 		}
@@ -170,7 +173,7 @@ func (a *Archive) Sync(ctx context.Context) (rep Report, err error) {
 	blocked := false
 	for scope, why := range listing.Unlisted {
 		if archivedIn[scope] {
-			rep.fail(&mu, "%s could not be listed: %s", scope, why)
+			a.fail(ctx, &rep, &mu, scope, fmt.Errorf("could not be listed: %s", why))
 			blocked = true
 		} else {
 			rep.UnlistedApps++
@@ -272,7 +275,7 @@ func (a *Archive) download(ctx context.Context, jobs []job, rep *Report, mu *syn
 		case errors.Is(err, icloud.ErrSignInRequired):
 			cancel(err)
 		case err != nil && ctx.Err() == nil:
-			rep.fail(mu, "%s: %v", strings.Join(j.file.Path, "/"), err)
+			a.fail(ctx, rep, mu, strings.Join(j.file.Path, "/"), err)
 		}
 	})
 	if err := context.Cause(ctx); err != nil {

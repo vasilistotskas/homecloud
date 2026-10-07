@@ -98,7 +98,7 @@ func RenderConfig(cfg *config.Config) ([]byte, error) {
 	k.Photos.FileMatchPolicy = "name-id7"
 	k.Photos.KeepUnicodeInFilenames = true
 	k.Metadata.XMPSidecar = true
-	k.Report.JSON = filepath.Join(filepath.Dir(cfg.Kei.Config), reportFile)
+	k.Report.JSON = ReportPath(cfg.Kei)
 	k.Server.Bind = "127.0.0.1"
 
 	body, err := toml.Marshal(k)

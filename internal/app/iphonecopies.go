@@ -126,7 +126,7 @@ func (c *copies) reconcile(ctx context.Context, devices []string) error {
 			if known[udid+"/"+r.Stamp] {
 				continue
 			}
-			c.a.log.Warn("an iPhone backup copy is no longer in the archive", "udid", udid, "stamp", r.Stamp)
+			c.a.log.WarnContext(ctx, "an iPhone backup copy is no longer in the archive", "udid", udid, "stamp", r.Stamp)
 			if err := c.a.db.RemoveIPhoneBackupCopy(ctx, r, ledger.CopyRemovedMissing, now); err != nil {
 				return err
 			}
@@ -178,7 +178,7 @@ func (c *copies) added(ctx context.Context, s iphonecopy.Snapshot, st iphonecopy
 	if err := c.a.db.AddIPhoneBackupCopy(ctx, r); err != nil {
 		return err
 	}
-	c.a.log.Info("iPhone backup copied", "udid", s.UDID, "stamp", s.Stamp, "files", st.Files,
+	c.a.log.InfoContext(ctx, "iPhone backup copied", "udid", s.UDID, "stamp", s.Stamp, "files", st.Files,
 		"copied", st.Copied, "linked", st.Linked, "copied_bytes", st.CopiedBytes)
 	c.rows[s.UDID] = append([]ledger.IPhoneBackupCopy{r}, c.rows[s.UDID]...)
 	return nil
@@ -235,7 +235,7 @@ func (c *copies) verify(ctx context.Context) error {
 			}
 			if n > 0 {
 				bad++
-				c.a.log.Error("iPhone backup copy damaged", "udid", udid, "stamp", r.Stamp, "files", damaged[r.Stamp])
+				c.a.log.ErrorContext(ctx, "iPhone backup copy damaged", "udid", udid, "stamp", r.Stamp, "files", damaged[r.Stamp])
 			}
 		}
 		if bad > 0 {

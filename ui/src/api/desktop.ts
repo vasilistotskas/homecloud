@@ -11,6 +11,7 @@ import {
 } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { invoke } from "@tauri-apps/api/core";
+import { error } from "@tauri-apps/plugin-log";
 
 import type { DesktopConnection, Platform } from "../app/platformContext";
 import { AgentService } from "../gen/homecloud/agent/v3/agent_pb";
@@ -120,6 +121,13 @@ async function pair(url: string, code: string, name: string): Promise<void> {
 export function desktopPlatform(transport: DesktopTransport): Platform {
   return {
     kind: "desktop",
+    // The desktop shell's log (tauri-plugin-log). A failure to log goes to the
+    // console only: logging it the same way would loop.
+    logError: (message) => {
+      error(message).catch((err: unknown) => {
+        console.error("homecloud: could not write to the app's log", err, message);
+      });
+    },
     connection: transport.connection,
     // Media URLs are paths on the agent, which is not the webview's origin.
     mediaUrl: (path) => transport.baseUrl + path,

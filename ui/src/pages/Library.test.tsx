@@ -16,7 +16,11 @@ import {
   OverviewSchema,
 } from "../gen/homecloud/agent/v3/agent_pb";
 
-const desktopLike: Platform = { kind: "browser", mediaUrl: (path) => "http://agent" + path };
+const desktopLike: Platform = {
+  kind: "browser",
+  mediaUrl: (path) => "http://agent" + path,
+  logError: (m) => expect.unreachable(m),
+};
 
 function item(id: string, taken: Date, kind: AssetKind) {
   return create(LibraryItemSchema, {

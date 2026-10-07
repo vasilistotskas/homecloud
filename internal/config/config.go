@@ -168,8 +168,9 @@ type Smartctl struct {
 	Timeout Duration `toml:"timeout"`
 }
 
-// Logs configures the agent's rotating log files under <storage.root>/logs on
-// Windows. On Linux the agent logs to journald, which rotates by itself.
+// Logs configures the agent's rotating log files in %LOCALAPPDATA%\homecloud\logs
+// on Windows, and how many crash reports are kept there. On Linux the agent
+// logs to journald, which rotates by itself.
 type Logs struct {
 	// MaxSizeMB is the size at which a log file is rotated, in MiB.
 	MaxSizeMB int `toml:"max_size_mb"`

@@ -102,10 +102,10 @@ func Verify(ctx context.Context, cfg *config.Config, db *ledger.DB, log *slog.Lo
 				s.Passed++
 			case errors.Is(outcome, verify.ErrMismatch):
 				s.Mismatched++
-				log.Warn("verification mismatch; asset quarantined", "library", p.Library, "asset", p.AssetID, "version", p.Version, "err", outcome)
+				log.WarnContext(ctx, "verification mismatch; asset quarantined", "library", p.Library, "asset", p.AssetID, "version", p.Version, "err", outcome)
 			default:
 				s.Errored++
-				log.Error("verification error; will retry", "library", p.Library, "asset", p.AssetID, "version", p.Version, "err", outcome)
+				log.ErrorContext(ctx, "file not verified; checked again next cycle", "library", p.Library, "asset", p.AssetID, "version", p.Version, "err", outcome)
 			}
 		})
 		progress()

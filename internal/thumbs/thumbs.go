@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -86,9 +87,13 @@ type Renderer struct {
 	cfg config.FFmpeg
 	dir string
 	sem chan struct{}
+	log *slog.Logger
 
 	mu       sync.Mutex
 	inflight map[string]*call
+	// failed holds the renderings that failed since their last success, so a
+	// file ffmpeg cannot read is logged once, not at every attempt.
+	failed map[string]bool
 }
 
 type call struct {
@@ -97,9 +102,13 @@ type call struct {
 }
 
 // New returns a Renderer caching into dir, which it owns: Prune deletes
-// anything in dir that is not a current rendering.
-func New(cfg config.FFmpeg, dir string) *Renderer {
-	return &Renderer{cfg: cfg, dir: dir, sem: make(chan struct{}, cfg.Renderers), inflight: map[string]*call{}}
+// anything in dir that is not a current rendering. A rendering that fails is
+// logged to log once until it succeeds.
+func New(cfg config.FFmpeg, dir string, log *slog.Logger) *Renderer {
+	return &Renderer{
+		cfg: cfg, dir: dir, sem: make(chan struct{}, cfg.Renderers), log: log,
+		inflight: map[string]*call{}, failed: map[string]bool{},
+	}
 }
 
 // specDir names the cache directory of size after the ffmpeg arguments that
@@ -178,8 +187,20 @@ func (r *Renderer) Ensure(ctx context.Context, src Source, size Size) (string, e
 	cancel()
 	r.mu.Lock()
 	delete(r.inflight, path)
+	report := c.err != nil && !r.failed[path]
+	if c.err != nil {
+		r.failed[path] = true
+	} else {
+		delete(r.failed, path)
+	}
 	r.mu.Unlock()
 	close(c.done)
+	if report {
+		// The error names the source file. A failed rendering is tried again
+		// at the next request or preview pass, without logging it again.
+		r.log.WarnContext(ctx, "rendering failed; tried again later, logged again only after a success",
+			"size", size, "sha256", src.SHA256, "err", c.err)
+	}
 	return path, c.err
 }
 

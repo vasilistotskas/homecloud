@@ -121,7 +121,7 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 		t.Fatal(err)
 	}
 	includeHidden := true
-	renderer := thumbs.New(config.FFmpeg{}, filepath.Join(t.TempDir(), "thumbs"))
+	renderer := thumbs.New(config.FFmpeg{}, filepath.Join(t.TempDir(), "thumbs"), slog.New(slog.DiscardHandler))
 	cfg := &config.Config{
 		Storage:  config.Storage{Root: t.TempDir(), MinFreePercent: 15},
 		ICloud:   config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},

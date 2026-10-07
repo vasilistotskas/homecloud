@@ -85,7 +85,7 @@ func (a *Agent) checkIPhoneBackups(ctx context.Context) (any, bool) {
 		}
 		defer func() {
 			if err := cp.close(); err != nil {
-				a.log.Error("close the iPhone backup copies", "err", err)
+				a.log.ErrorContext(ctx, "iPhone backup copies not closed", "err", err)
 			}
 		}()
 		// Verify first: a copy found damaged is never the base new copies
@@ -114,7 +114,7 @@ func (a *Agent) checkIPhoneBackups(ctx context.Context) (any, bool) {
 			return rep, false
 		}
 		if err != nil {
-			a.log.Error("iphone backup directory could not be checked", "dir", dir, "err", err)
+			a.log.ErrorContext(ctx, "iPhone backup folder not checked; checked again next time", "dir", dir, "err", err)
 			rep.DirErrors = append(rep.DirErrors, err.Error())
 			healthy = false
 			continue
@@ -135,7 +135,7 @@ func (a *Agent) checkIPhoneBackups(ctx context.Context) (any, bool) {
 						rep.Error = ctx.Err().Error()
 						return rep, false
 					}
-					a.log.Error("iPhone backup could not be copied", "dir", b.Dir, "err", err)
+					a.log.ErrorContext(ctx, "iPhone backup not copied; tried again next check", "dir", b.Dir, "err", err)
 					d.CopyError = err.Error()
 					a.alertRepeated(ctx, alertIPhoneCopy+b.UDID, notify.Msg{
 						Title:    "homecloud: an iPhone backup could not be copied",
@@ -198,7 +198,7 @@ func (a *Agent) checkIPhoneBackups(ctx context.Context) (any, bool) {
 			Tags:     []string{"iphone"},
 		})
 	}
-	a.log.Info("iphone backups checked", "devices", len(rep.Devices), "archived", rep.Archived,
+	a.log.InfoContext(ctx, "iPhone backups checked", "devices", len(rep.Devices), "archived", rep.Archived,
 		"dir_errors", len(rep.DirErrors), "push_errors", len(rep.PushErrors), "healthy", healthy)
 	return rep, healthy
 }
@@ -221,19 +221,19 @@ func (a *Agent) ingestPushes(ctx context.Context, cp *copies, incoming string, r
 	}()
 	key, err := a.loadPushKey()
 	if err != nil {
-		a.log.Error("pushed iPhone backups wait for a push key", "err", err)
+		a.log.ErrorContext(ctx, "pushed iPhone backups wait for a push key", "err", err)
 		rep.PushErrors = append(rep.PushErrors, err.Error())
 		return nil
 	}
 	if _, err := a.checkSpace(); err != nil {
-		a.log.Warn("pushed iPhone backups wait for free space", "err", err)
+		a.log.WarnContext(ctx, "pushed iPhone backups wait for free space", "err", err)
 		rep.PushErrors = append(rep.PushErrors, err.Error())
 		return nil
 	}
 	ingested, ingestErr := cp.archive.Ingest(ctx, incoming, key, a.now(), cp.base)
 	for _, in := range ingested {
 		if in.Err != nil {
-			a.log.Error("pushed iPhone backup refused", "udid", in.UDID, "stamp", in.Stamp, "err", in.Err)
+			a.log.ErrorContext(ctx, "pushed iPhone backup refused", "udid", in.UDID, "stamp", in.Stamp, "err", in.Err)
 			rep.PushErrors = append(rep.PushErrors, fmt.Sprintf("backup of %s: %v", in.Stamp, in.Err))
 			if err := a.db.RecordIPhoneBackupPushRefused(ctx, in.UDID, in.Stamp, in.Err.Error(), a.now()); err != nil {
 				return err
@@ -248,7 +248,7 @@ func (a *Agent) ingestPushes(ctx context.Context, cp *copies, incoming string, r
 		if ctx.Err() != nil {
 			return ctx.Err() //nolint:wrapcheck // cancellation
 		}
-		a.log.Error("pushed iPhone backups could not be taken in", "incoming", incoming, "err", ingestErr)
+		a.log.ErrorContext(ctx, "pushed iPhone backups could not be taken in", "incoming", incoming, "err", ingestErr)
 		rep.PushErrors = append(rep.PushErrors, ingestErr.Error())
 	}
 	return nil
@@ -291,7 +291,7 @@ func (a *Agent) copyIPhoneBackup(ctx context.Context, cp *copies, b iphonebackup
 	}
 	snap, st, err := cp.archive.CopyLocal(ctx, b, base)
 	if errors.Is(err, iphonecopy.ErrChanged) {
-		a.log.Info("iPhone backup changed while it was copied; copied at the next check", "dir", b.Dir)
+		a.log.InfoContext(ctx, "iPhone backup changed while it was copied; copied at the next check", "dir", b.Dir)
 		return nil
 	}
 	if err != nil {

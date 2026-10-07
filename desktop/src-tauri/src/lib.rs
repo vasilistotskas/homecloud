@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use keyring_core::{CredentialStore, Entry};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
+use tauri_plugin_log::{RotationStrategy, WEBVIEW_TARGET, log};
 use tauri_plugin_opener::OpenerExt;
 
 /// The agent's discovery file inside its state directory (internal/auth).
@@ -35,6 +36,21 @@ const REMOTE_DOMAIN: &str = ".ts.net";
 /// Name of the agent's logon task (Windows) or systemd user unit (Linux), as
 /// registered by `homecloud install`.
 const AGENT_NAME: &str = "homecloud-agent";
+
+/// The app's log, in the app's log directory (%LOCALAPPDATA%<identifier>logs,
+/// ~/.local/share/<identifier>/logs): rotated at this size, keeping this many
+/// files. It records what this side did and what the page reported, never a
+/// token.
+const LOG_FILE_BYTES: u128 = 1 << 20;
+const LOG_FILES: usize = 5;
+
+/// Logs a command's failure (the page shows it too, but only the log keeps it).
+fn logged<T>(command: &str, result: Result<T, String>) -> Result<T, String> {
+    if let Err(e) = &result {
+        log::warn!("{command} failed: {e}");
+    }
+    result
+}
 
 /// The agent's discovery record (internal/auth.Endpoint); other fields are
 /// ignored.
@@ -199,11 +215,15 @@ fn read_settings(app: &tauri::AppHandle) -> Result<ConnectionSettings, String> {
 /// agent is the default.
 #[tauri::command]
 async fn connection_settings(app: tauri::AppHandle) -> Result<ConnectionSettings, String> {
-    blocking(move || read_settings(&app)).await
+    logged(
+        "connection_settings",
+        blocking(move || read_settings(&app)).await,
+    )
 }
 
 /// The address and token to call the agent with. For this PC's agent they
-/// come from its discovery file, which exists only while it runs; for a paired
+/// come from its discovery file, which exists only while it runs (the page
+/// asks again until it does, so that failure is not logged); for a paired
 /// device, from the credential store.
 #[tauri::command]
 async fn connection_credentials(app: tauri::AppHandle) -> Result<Credentials, String> {
@@ -220,11 +240,14 @@ async fn connection_credentials(app: tauri::AppHandle) -> Result<Credentials, St
             })
         }
         ConnectionSettings::Remote { url, .. } => {
-            let token = app
-                .state::<Keychain>()
-                .entry(&url)?
-                .get_password()
-                .map_err(|e| format!("read this device's credential for {url}: {e}"))?;
+            let token = logged(
+                "connection_credentials",
+                app.state::<Keychain>().entry(&url).and_then(|entry| {
+                    entry
+                        .get_password()
+                        .map_err(|e| format!("read this device's credential for {url}: {e}"))
+                }),
+            )?;
             Ok(Credentials { url, token })
         }
     })
@@ -240,7 +263,8 @@ async fn connect_remote(
     token: String,
 ) -> Result<(), String> {
     validate_remote_url(&url)?;
-    blocking(move || {
+    let paired = format!("{url} as device {device_id}");
+    let done = blocking(move || {
         app.state::<Keychain>()
             .entry(&url)?
             .set_password(&token)
@@ -256,13 +280,18 @@ async fn connect_remote(
         std::fs::write(&tmp, data).map_err(|e| format!("write {}: {e}", tmp.display()))?;
         std::fs::rename(&tmp, &path).map_err(|e| format!("write {}: {e}", path.display()))
     })
-    .await
+    .await;
+    if done.is_ok() {
+        log::info!("paired: using {paired}");
+    }
+    logged("connect_remote", done)
 }
 
 /// Uses this PC's agent again and forgets the paired device's credential.
 #[tauri::command]
 async fn use_this_pc(app: tauri::AppHandle) -> Result<(), String> {
-    blocking(move || {
+    let done = blocking(move || {
+        log::info!("using this computer's agent again");
         if let ConnectionSettings::Remote { url, .. } = read_settings(&app)? {
             match app.state::<Keychain>().entry(&url)?.delete_credential() {
                 Ok(()) | Err(keyring_core::Error::NoEntry) => {}
@@ -276,7 +305,8 @@ async fn use_this_pc(app: tauri::AppHandle) -> Result<(), String> {
             Err(e) => Err(format!("remove {}: {e}", path.display())),
         }
     })
-    .await
+    .await;
+    logged("use_this_pc", done)
 }
 
 /// This computer's name, offered as the paired device's name.
@@ -298,7 +328,8 @@ async fn device_name() -> Result<String, String> {
 /// Starts the agent through the registration `homecloud install` created.
 #[tauri::command]
 async fn start_agent() -> Result<(), String> {
-    blocking(|| {
+    let done = blocking(|| {
+        log::info!("starting the agent ({AGENT_NAME})");
         #[cfg(windows)]
         let mut cmd = {
             use std::os::windows::process::CommandExt;
@@ -326,14 +357,15 @@ async fn start_agent() -> Result<(), String> {
             ))
         }
     })
-    .await
+    .await;
+    logged("start_agent", done)
 }
 
 /// Shows an archived file in the system file manager. Only revealing is
 /// offered: nothing is opened or executed.
 #[tauri::command]
 async fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    blocking(move || {
+    let done = blocking(move || {
         let p = Path::new(&path);
         if !p.is_absolute() || !p.is_file() {
             return Err(format!("not an existing file: {path}"));
@@ -342,7 +374,8 @@ async fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), Str
             .reveal_item_in_dir(p)
             .map_err(|e| e.to_string())
     })
-    .await
+    .await;
+    logged("reveal_in_folder", done)
 }
 
 /// Builds and runs the desktop app.
@@ -357,7 +390,21 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                // This app and the page at info; the libraries' own chatter
+                // (asset lookups, credential store calls) only when it matters.
+                .level(log::LevelFilter::Warn)
+                .level_for("homecloud_desktop_lib", log::LevelFilter::Info)
+                .level_for(WEBVIEW_TARGET, log::LevelFilter::Info)
+                .max_file_size(LOG_FILE_BYTES)
+                .rotation_strategy(RotationStrategy::KeepSome(LOG_FILES))
+                .build(),
+        )
+        .setup(|app| {
+            log::info!("homecloud desktop {} starting", app.package_info().version);
+            Ok(())
+        })
         .manage(Keychain::default())
         .invoke_handler(tauri::generate_handler![
             connection_settings,

@@ -19,7 +19,7 @@ import {
 import { App } from "./App";
 import type { Platform } from "./platformContext";
 
-const browser: Platform = { kind: "browser", mediaUrl: (path) => path };
+const browser: Platform = { kind: "browser", mediaUrl: (path) => path, logError: (m) => expect.unreachable(m) };
 
 function never(): Promise<never> {
   return new Promise<never>(() => undefined);

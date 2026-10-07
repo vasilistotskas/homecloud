@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,7 @@ func TestRendersRealSamples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := New(config.FFmpeg{FFmpeg: ffmpeg, FFprobe: ffprobe, Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, t.TempDir())
+	r := New(config.FFmpeg{FFmpeg: ffmpeg, FFprobe: ffprobe, Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, t.TempDir(), quiet)
 	for i, e := range entries {
 		t.Run(e.Name(), func(t *testing.T) {
 			src := Source{Path: filepath.Join(dir, e.Name()), SHA256: fmt.Sprintf("%064x", i)}
@@ -106,7 +107,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	if out, runErr := makeSource.CombinedOutput(); runErr != nil {
 		t.Fatalf("make source: %v %s", runErr, out)
 	}
-	r := New(config.FFmpeg{FFmpeg: ffmpeg, FFprobe: ffprobe, Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, filepath.Join(dir, "cache"))
+	r := New(config.FFmpeg{FFmpeg: ffmpeg, FFprobe: ffprobe, Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, filepath.Join(dir, "cache"), quiet)
 	sha := strings.Repeat("ab", 32)
 	path, err := r.Ensure(t.Context(), Source{Path: src, SHA256: sha}, Thumb)
 	if err != nil {
@@ -159,7 +160,7 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 
 func TestPruneKeepsOnlyCurrentSpecs(t *testing.T) {
 	dir := t.TempDir()
-	r := New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, dir)
+	r := New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, dir, quiet)
 	sum := strings.Repeat("ef", 32)
 	current := r.CachePath(sum, Thumb)
 	stale := filepath.Join(dir, "preview-00000000", sum[:2], sum+".webp")
@@ -189,7 +190,7 @@ func TestPruneKeepsOnlyCurrentSpecs(t *testing.T) {
 		}
 	}
 
-	if removed, err := New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, filepath.Join(dir, "missing")).Prune(); err != nil || removed != 0 {
+	if removed, err := New(config.FFmpeg{Renderers: 2, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)}, filepath.Join(dir, "missing"), quiet).Prune(); err != nil || removed != 0 {
 		t.Fatalf("Prune of a missing cache = %d, %v", removed, err)
 	}
 }
@@ -200,5 +201,39 @@ func TestSpecDirChangesWithRendering(t *testing.T) {
 	}
 	if specName(Preview, sizeFilters[Preview]+",hflip") == specDir(Preview) {
 		t.Fatal("changing a size's filter must change its cache directory")
+	}
+}
+
+// quiet discards the renderer's log.
+var quiet = slog.New(slog.DiscardHandler)
+
+// counter counts the records logged through it.
+type counter struct {
+	slog.Handler
+	n *int
+}
+
+func (counter) Enabled(context.Context, slog.Level) bool { return true }
+
+func (c counter) Handle(context.Context, slog.Record) error { *c.n++; return nil }
+
+// TestFailureLoggedOnce: a file ffmpeg cannot render is tried at every
+// request, but logged only the first time.
+func TestFailureLoggedOnce(t *testing.T) {
+	logged := 0
+	missing := filepath.Join(t.TempDir(), "no-such-tool")
+	r := New(config.FFmpeg{FFmpeg: missing, FFprobe: missing, Renderers: 1, RenderTimeout: config.Duration(time.Minute), ProbeTimeout: config.Duration(time.Minute)},
+		t.TempDir(), slog.New(counter{slog.DiscardHandler, &logged}))
+	src := Source{Path: filepath.Join(t.TempDir(), "photo.jpg"), SHA256: strings.Repeat("a", 64)}
+	if err := os.WriteFile(src.Path, []byte("not an image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err := r.Ensure(context.Background(), src, Thumb); err == nil {
+			t.Fatal("rendered with no ffmpeg")
+		}
+	}
+	if logged != 1 {
+		t.Fatalf("logged %d times, want once", logged)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"time"
 
@@ -75,7 +76,12 @@ func (a *Agent) syncDrive(ctx context.Context) (any, bool) {
 	rep := DriveSyncReport{Outcome: DriveOutcomeError}
 	fail := func(outcome string, err error) (any, bool) {
 		rep.Outcome, rep.Error = outcome, err.Error()
-		a.log.Error("iCloud Drive sync failed", "outcome", outcome, "err", err)
+		// A skip, or a sign-in only the owner can give, is expected; an error is not.
+		level := slog.LevelWarn
+		if outcome == DriveOutcomeError {
+			level = slog.LevelError
+		}
+		a.log.Log(ctx, level, "iCloud Drive not synced; tried again next sync", "outcome", outcome, "err", err)
 		return rep, false
 	}
 	if err := a.checkArchive(); err != nil {
@@ -110,7 +116,7 @@ func (a *Agent) syncDrive(ctx context.Context) (any, bool) {
 	if saved, saveErr := file.Save(client.Session()); saveErr != nil {
 		err = errors.Join(err, saveErr)
 	} else if !saved {
-		a.log.Info("iCloud session changed during the sync; keeping the newer sign-in")
+		a.log.InfoContext(ctx, "iCloud session changed during the sync; keeping the newer sign-in")
 	}
 	// The manifest follows the ledger even when the sync stopped part way:
 	// whatever was archived is listed.
@@ -135,7 +141,12 @@ func (a *Agent) syncDrive(ctx context.Context) (any, bool) {
 	if rep.Failed > 0 {
 		rep.Outcome = DriveOutcomePartial
 	}
-	a.log.Info("iCloud Drive synced", "listed", rep.Listed, "archived", rep.Archived, "changed", rep.Changed,
-		"moved", rep.Moved, "deleted", rep.Deleted, "failed", rep.Failed, "bytes", rep.Bytes)
+	level := slog.LevelInfo
+	if rep.Failed > 0 { // each failure was logged as it happened
+		level = slog.LevelWarn
+	}
+	a.log.Log(ctx, level, "iCloud Drive synced", "listed", rep.Listed, "archived", rep.Archived, "changed", rep.Changed,
+		"repaired", rep.Repaired, "moved", rep.Moved, "deleted", rep.Deleted, "restored", rep.Restored,
+		"failed", rep.Failed, "bytes", rep.Bytes, "manifest_rows", rep.ManifestRows)
 	return rep, rep.Failed == 0
 }

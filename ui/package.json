@@ -23,6 +23,7 @@
     "@fluentui/react-icons": "2.0.343",
     "@tanstack/react-query": "5.104.1",
     "@tauri-apps/api": "2.12.1",
+    "@tauri-apps/plugin-log": "2.10.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

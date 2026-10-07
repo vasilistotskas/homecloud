@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window: core window APIs and the app's own commands only.",
+  "description": "The main window: core window APIs, the app's own commands, and writing to the app's log (tauri-plugin-log's log command only).",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -11,6 +11,7 @@
     "allow-use-this-pc",
     "allow-device-name",
     "allow-start-agent",
-    "allow-reveal-in-folder"
+    "allow-reveal-in-folder",
+    "log:allow-log"
   ]
 }

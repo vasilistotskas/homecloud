@@ -275,7 +275,7 @@ Tools: `kei.binary = '/opt/kei/kei'`, `ffmpeg.ffmpeg = '/opt/ffmpeg/bin/ffmpeg'`
 `ffmpeg.ffprobe = '/opt/ffmpeg/bin/ffprobe'`. Run it as the user that owns the folders
 (`--user UID:GID`): the agent makes `/archive` that user's alone (mode 0700) when it starts,
 and `/backups` and kei's folder when it writes to them, so browse the archive as that user.
-Logs go to stdout (`docker logs`).
+Logs go to the container's output (`docker logs`).
 
 **Drive health in the container:** set `drive_health.source = "smartctl"` and
 `[smartctl] binary = '/usr/sbin/smartctl'`, `version = "7.5"`. The agent follows the archive's
@@ -349,7 +349,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[backup]` | `dir` (must be on another drive than `storage.root`), `interval`, `keep` |
 | `[drive]` | `sync_interval` (≥ 15m), `workers` (parallel downloads, 1–16), `stall_timeout` (a download receiving nothing this long is retried next sync, 30s–10m) |
 | `[iphone_backup]` | `dirs` (absolute paths, written out: Apple Devices uses `C:\Users\<you>\Apple\MobileSync\Backup`, desktop iTunes `C:\Users\<you>\AppData\Roaming\Apple Computer\MobileSync\Backup`; may be empty with `incoming`), `incoming` (a folder another computer pushes finished backups to, apart from `storage.root`, `backup.dir` and every `dirs` entry; `""` for none), `keep` (copies of each device's backups kept under `<storage.root>/iPhone backups`, newest first, 0–100; 0 keeps none; ≥ 1 with `incoming`), `max_age`, `check_interval` (≤ `max_age`), `read_interval` (how often every backup file is read in full, ≥ `check_interval`), `stalled_after` (a backup still running this long counts as unfinished), `max_shrink_percent` |
-| `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files under `<storage.root>\logs` on Windows (Linux logs to journald) |
+| `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files in `%LOCALAPPDATA%\homecloud\logs` on Windows, and how many crash reports are kept (Linux logs to journald) |
 | `[drive_health]` | Linux only: `source`, where the SMART data of the drives under the archive comes from: `"udisks"` (a desktop's udisks2, no rights needed) or `"smartctl"` (a server or the container). Windows reads NVMe health itself and has no such section |
 | `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m) |
 
@@ -384,10 +384,17 @@ When kei's Apple session expires the agent alerts every `notify.repeat_every`; r
 `homecloud.db-shm` next to `<storage.root>\homecloud.db` if they exist, copy the newest
 `homecloud-*.db` from `backup.dir` over `homecloud.db`, and start the agent again.
 
-**Logs:** Windows: `<storage.root>\logs\homecloud-agent.log` and `kei.log`, rotated at
-`logs.max_size_mb` into `homecloud-agent-<UTC time>.log` backups (newest `logs.max_backups` kept); failures
-before the config is loaded go to `%LOCALAPPDATA%\homecloud\agent-startup.log`. Linux: the
-journal (`journalctl --user -u homecloud-agent`).
+**Logs:** Windows: `%LOCALAPPDATA%\homecloud\logs\homecloud-agent.log` and `kei.log` (off the
+archive drive, so a missing drive is logged too), rotated at `logs.max_size_mb` into
+`homecloud-agent-<UTC time>.log` backups (newest `logs.max_backups` kept). Beside them,
+`agent-startup.log` holds failures from before the log is open and
+`homecloud-agent-crash-<UTC time>.log` a crash, which the next start reports. Linux: the journal
+(`journalctl --user -u homecloud-agent`; add `-p warning` for problems only). Agent lines are
+JSON: each run logs `run started` and `run finished` (`ok`, `duration_ms`, `err`), and the
+lines between carry its `run` id; `kei sync finished` sums up kei's sync (downloads, failed
+assets), while kei itself logs only warnings and errors. The desktop app logs to
+`%LOCALAPPDATA%\io.github.vasilistotskas.homecloud\logs`
+(`~/.local/share/io.github.vasilistotskas.homecloud/logs` on Linux). Details: design §8l.
 
 ## Development
 

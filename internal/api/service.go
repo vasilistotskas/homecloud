@@ -442,7 +442,8 @@ func (s *Service) GetAsset(ctx context.Context, req *connect.Request[agentv3.Get
 // ReleaseQuarantine implements AgentService.
 func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[agentv3.ReleaseQuarantineRequest]) (*connect.Response[agentv3.ReleaseQuarantineResponse], error) {
 	m := req.Msg
-	err := s.db.ReleaseQuarantine(ctx, m.GetLibrary(), m.GetAssetId(), strings.TrimSpace(m.GetReason()), s.now())
+	reason := strings.TrimSpace(m.GetReason())
+	err := s.db.ReleaseQuarantine(ctx, m.GetLibrary(), m.GetAssetId(), reason, s.now())
 	switch {
 	case errors.Is(err, ledger.ErrReasonRequired):
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -451,13 +452,18 @@ func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[ag
 	case err != nil:
 		return nil, internal(err)
 	}
+	// Released assets become eligible for deletion from iCloud again.
+	s.log.InfoContext(ctx, "asset released from quarantine", "library", m.GetLibrary(), "asset", m.GetAssetId(),
+		"reason", reason, "principal", principal(ctx))
 	s.agent.Hub().Changed()
 	return connect.NewResponse(&agentv3.ReleaseQuarantineResponse{}), nil
 }
 
 // StartSync implements AgentService.
-func (s *Service) StartSync(context.Context, *connect.Request[agentv3.StartSyncRequest]) (*connect.Response[agentv3.StartSyncResponse], error) {
-	return connect.NewResponse(&agentv3.StartSyncResponse{Started: s.agent.RequestCycle()}), nil
+func (s *Service) StartSync(ctx context.Context, _ *connect.Request[agentv3.StartSyncRequest]) (*connect.Response[agentv3.StartSyncResponse], error) {
+	started := s.agent.RequestCycle()
+	s.log.InfoContext(ctx, "sync requested", "started", started, "principal", principal(ctx))
+	return connect.NewResponse(&agentv3.StartSyncResponse{Started: started}), nil
 }
 
 // SendTestNotification implements AgentService.
@@ -465,6 +471,7 @@ func (s *Service) SendTestNotification(ctx context.Context, _ *connect.Request[a
 	if err := s.notify.Send(ctx, notify.TestMsg()); err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("send test notification: %w", err))
 	}
+	s.log.InfoContext(ctx, "alert sent", "title", notify.TestMsg().Title, "principal", principal(ctx))
 	return connect.NewResponse(&agentv3.SendTestNotificationResponse{}), nil
 }
 
@@ -512,7 +519,7 @@ var loginCodePurposes = map[agentv3.LoginCodePurpose]auth.Purpose{
 
 // CreateLoginCode implements AgentService. Package web only lets bearer-token
 // callers reach it.
-func (s *Service) CreateLoginCode(_ context.Context, req *connect.Request[agentv3.CreateLoginCodeRequest]) (*connect.Response[agentv3.CreateLoginCodeResponse], error) {
+func (s *Service) CreateLoginCode(ctx context.Context, req *connect.Request[agentv3.CreateLoginCodeRequest]) (*connect.Response[agentv3.CreateLoginCodeResponse], error) {
 	purpose, ok := loginCodePurposes[req.Msg.GetPurpose()]
 	if !ok {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a login code needs a purpose: sign-in or pairing"))
@@ -521,6 +528,7 @@ func (s *Service) CreateLoginCode(_ context.Context, req *connect.Request[agentv
 	if err != nil {
 		return nil, internal(err)
 	}
+	s.log.InfoContext(ctx, "login code issued", "purpose", req.Msg.GetPurpose().String(), "expires", exp)
 	return connect.NewResponse(&agentv3.CreateLoginCodeResponse{Code: code, ExpiresAt: timestamppb.New(exp)}), nil
 }
 
@@ -570,7 +578,9 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[agentv3.P
 		Priority: notify.PriorityHigh,
 		Tags:     []string{"key"},
 	}); notifyErr != nil {
-		s.log.ErrorContext(ctx, "notification failed", "title", "a device was paired", "err", notifyErr)
+		s.log.ErrorContext(ctx, "alert not sent", "title", "homecloud: a device was paired", "err", notifyErr)
+	} else {
+		s.log.InfoContext(ctx, "alert sent", "title", "homecloud: a device was paired")
 	}
 	return connect.NewResponse(&agentv3.PairDeviceResponse{DeviceId: id, Token: token}), nil
 }
@@ -600,7 +610,7 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[agentv3
 	if err != nil {
 		return nil, internal(err)
 	}
-	s.log.InfoContext(ctx, "device revoked", "device", req.Msg.GetDeviceId())
+	s.log.InfoContext(ctx, "device revoked", "device", req.Msg.GetDeviceId(), "principal", principal(ctx))
 	return connect.NewResponse(&agentv3.RevokeDeviceResponse{}), nil
 }
 
@@ -611,7 +621,7 @@ func (s *Service) SignOut(ctx context.Context, _ *connect.Request[agentv3.SignOu
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("only a browser session signs out; revoke a paired device instead"))
 	}
 	s.auth.SignOut(p.ID)
-	s.log.InfoContext(ctx, "browser signed out")
+	s.log.InfoContext(ctx, "browser signed out", "principal", p)
 	res := connect.NewResponse(&agentv3.SignOutResponse{})
 	res.Header().Set("Set-Cookie", s.auth.ClearedCookie().String())
 	return res, nil
@@ -621,12 +631,18 @@ func (s *Service) SignOut(ctx context.Context, _ *connect.Request[agentv3.SignOu
 // the caller's too when it is one.
 func (s *Service) SignOutBrowsers(ctx context.Context, _ *connect.Request[agentv3.SignOutBrowsersRequest]) (*connect.Response[agentv3.SignOutBrowsersResponse], error) {
 	n := s.auth.SignOutAll()
-	s.log.InfoContext(ctx, "all browsers signed out", "sessions", n)
+	s.log.InfoContext(ctx, "all browsers signed out", "sessions", n, "principal", principal(ctx))
 	res := connect.NewResponse(&agentv3.SignOutBrowsersResponse{Ended: int32(n)}) //nolint:gosec // sessions number a few
 	if p, _ := auth.PrincipalFrom(ctx); p.Kind == auth.KindSession {
 		res.Header().Set("Set-Cookie", s.auth.ClearedCookie().String())
 	}
 	return res, nil
+}
+
+// principal is who made the request in ctx, as logs name it.
+func principal(ctx context.Context) auth.Principal {
+	p, _ := auth.PrincipalFrom(ctx)
+	return p
 }
 
 func internal(err error) error {

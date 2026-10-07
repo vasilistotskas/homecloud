@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
@@ -42,11 +43,16 @@ func (o Outcome) String() string {
 	}
 }
 
-// Sync runs one non-interactive `kei sync`, streaming kei's output to log.
-// Exit codes 0, 2, 3 and 4 map to an Outcome; anything else is an error.
+// Sync runs one non-interactive `kei sync`, streaming kei's warnings and
+// errors to log; what the sync did is in its report (ReadReport). At info
+// level kei logs a line for every asset already on disk. Exit codes 0, 2, 3
+// and 4 map to an Outcome; anything else is an error.
 func Sync(ctx context.Context, cfg config.Kei, log io.Writer) (Outcome, error) {
 	cmd := platform.Command(ctx, cfg.Binary,
-		"sync", "--config", cfg.Config, "--no-friendly", "--no-progress-bar")
+		"sync", "--config", cfg.Config, "--no-friendly", "--no-progress-bar", "--log-level", "warn")
+	// kei's log formatter (tracing-subscriber 0.3.23) writes colour codes
+	// unless NO_COLOR is set, even into a file.
+	cmd.Env = append(os.Environ(), "NO_COLOR=1")
 	cmd.Stdout, cmd.Stderr = log, log
 	err := cmd.Run()
 	if err == nil {

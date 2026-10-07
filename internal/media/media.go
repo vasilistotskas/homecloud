@@ -107,7 +107,7 @@ func Handler(s *Signer, a *auth.Authenticator, db Ledger, renderer *thumbs.Rende
 		}
 		switch ok, validErr := a.Valid(r.Context(), p); {
 		case validErr != nil:
-			log.Error("media: check access", "err", validErr)
+			log.ErrorContext(r.Context(), "media link refused: its access could not be checked", "err", validErr)
 			http.Error(w, "access cannot be checked right now", http.StatusServiceUnavailable)
 			return
 		case !ok:
@@ -125,13 +125,12 @@ func Handler(s *Signer, a *auth.Authenticator, db Ledger, renderer *thumbs.Rende
 			return
 		}
 		if err != nil {
-			log.Error("media: look up rendition", "err", err)
+			log.ErrorContext(r.Context(), "media link refused: the file could not be looked up", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		path, err := renderer.Ensure(r.Context(), thumbs.Source{Path: f.LocalPath, SHA256: f.SHA256}, size)
-		if err != nil {
-			log.Error("media: render", "err", err)
+		if err != nil { // the renderer logs it
 			http.Error(w, "could not render this file", http.StatusUnprocessableEntity)
 			return
 		}
