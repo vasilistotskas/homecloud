@@ -205,9 +205,32 @@ func (a *Agent) checkIPhoneBackups(ctx context.Context) (any, bool) {
 
 // ingestPushes takes the backups pushed to iphone_backup.incoming into the
 // archive. A refused push is recorded and alerted; the next push from the
-// other computer sends it again. The returned error is the ledger's.
+// other computer sends it again. Without this computer's push key, or below
+// storage.min_free_percent, pushes wait where they are. The returned error is
+// the ledger's.
 func (a *Agent) ingestPushes(ctx context.Context, cp *copies, incoming string, rep *IPhoneBackupReport) error {
-	ingested, ingestErr := cp.archive.Ingest(ctx, incoming, cp.base)
+	defer func() {
+		if len(rep.PushErrors) > 0 {
+			a.alertRepeated(ctx, alertIPhonePush, notify.Msg{
+				Title:    "homecloud: a pushed iPhone backup was not taken in",
+				Body:     "A backup pushed from another computer could not be taken into the archive. The app shows why; refused backups are sent again by the next push.",
+				Priority: notify.PriorityHigh,
+				Tags:     []string{"iphone"},
+			})
+		}
+	}()
+	key, err := a.loadPushKey()
+	if err != nil {
+		a.log.Error("pushed iPhone backups wait for a push key", "err", err)
+		rep.PushErrors = append(rep.PushErrors, err.Error())
+		return nil
+	}
+	if _, err := a.checkSpace(); err != nil {
+		a.log.Warn("pushed iPhone backups wait for free space", "err", err)
+		rep.PushErrors = append(rep.PushErrors, err.Error())
+		return nil
+	}
+	ingested, ingestErr := cp.archive.Ingest(ctx, incoming, key, a.now(), cp.base)
 	for _, in := range ingested {
 		if in.Err != nil {
 			a.log.Error("pushed iPhone backup refused", "udid", in.UDID, "stamp", in.Stamp, "err", in.Err)
@@ -228,15 +251,20 @@ func (a *Agent) ingestPushes(ctx context.Context, cp *copies, incoming string, r
 		a.log.Error("pushed iPhone backups could not be taken in", "incoming", incoming, "err", ingestErr)
 		rep.PushErrors = append(rep.PushErrors, ingestErr.Error())
 	}
-	if len(rep.PushErrors) > 0 {
-		a.alertRepeated(ctx, alertIPhonePush, notify.Msg{
-			Title:    "homecloud: a pushed iPhone backup was not taken in",
-			Body:     "A backup pushed from another computer could not be taken into the archive. The app shows why; refused backups are sent again by the next push.",
-			Priority: notify.PriorityHigh,
-			Tags:     []string{"iphone"},
-		})
-	}
 	return nil
+}
+
+// loadPushKey reads the key pushes must be signed with.
+func (a *Agent) loadPushKey() (iphonecopy.PushKey, error) {
+	path, err := a.pushKey()
+	if err != nil {
+		return iphonecopy.PushKey{}, err
+	}
+	key, err := iphonecopy.LoadPushKey(path)
+	if errors.Is(err, iphonecopy.ErrNoPushKey) {
+		return iphonecopy.PushKey{}, fmt.Errorf("%w: run \"homecloud iphone push-key\" here and give the key it prints to the computer that pushes", err)
+	}
+	return key, err
 }
 
 // copyIPhoneBackup copies a healthy backup on this computer into the archive

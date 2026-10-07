@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"golang.org/x/term"
 
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
 	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
@@ -72,6 +75,19 @@ func iphoneCommands() []*command {
 				},
 			},
 			leaf("uninstall-push", "stop pushing iPhone backups on a schedule", runUninstallPush),
+			{
+				name:  "push-key",
+				usage: "show this computer's key for pushed backups (creating it); --set saves the key of the archive on the computer that pushes",
+				define: func(f *flags) action {
+					set := f.Bool("set", false, "read a key (as push-key prints it on the archive's computer) and save it here")
+					return func(_ context.Context, c *call) error {
+						if *set {
+							return runSetPushKey(c)
+						}
+						return runShowPushKey(c)
+					}
+				},
+			},
 		},
 	}}
 }
@@ -80,6 +96,10 @@ func iphoneCommands() []*command {
 // in progress, or one that changes while it is sent, is left for the next
 // push; that is not an error.
 func runIPhonePush(ctx context.Context, c *call, from []string, to string) error {
+	key, err := pushKey()
+	if err != nil {
+		return err
+	}
 	var errs []error
 	for _, dir := range from {
 		backups, _, err := iphonebackup.Scan(ctx, dir)
@@ -94,7 +114,7 @@ func runIPhonePush(ctx context.Context, c *call, from []string, to string) error
 			continue
 		}
 		for _, b := range backups {
-			line, err := pushOne(ctx, b, to)
+			line, err := pushOne(ctx, b, to, key)
 			if err != nil {
 				errs = append(errs, err)
 				continue
@@ -107,7 +127,7 @@ func runIPhonePush(ctx context.Context, c *call, from []string, to string) error
 	return errors.Join(errs...)
 }
 
-func pushOne(ctx context.Context, b iphonebackup.Backup, to string) (string, error) {
+func pushOne(ctx context.Context, b iphonebackup.Backup, to string, key iphonecopy.PushKey) (string, error) {
 	name := b.DeviceName
 	if name == "" {
 		name = filepath.Base(b.Dir)
@@ -118,7 +138,7 @@ func pushOne(ctx context.Context, b iphonebackup.Backup, to string) (string, err
 	case b.Err != nil:
 		return "", fmt.Errorf("%s: %w", name, b.Err)
 	}
-	res, err := iphonecopy.Push(ctx, b, to)
+	res, err := iphonecopy.Push(ctx, b, to, key)
 	switch {
 	case errors.Is(err, iphonecopy.ErrChanged):
 		return name + ": the backup changed while it was sent; it is pushed again next time", nil
@@ -136,7 +156,81 @@ func pushOne(ctx context.Context, b iphonebackup.Backup, to string) (string, err
 	}
 }
 
+// pushKey reads the key this computer signs pushes with.
+func pushKey() (iphonecopy.PushKey, error) {
+	path, err := iphonecopy.PushKeyPath()
+	if err != nil {
+		return iphonecopy.PushKey{}, err
+	}
+	key, err := iphonecopy.LoadPushKey(path)
+	if errors.Is(err, iphonecopy.ErrNoPushKey) {
+		return iphonecopy.PushKey{}, fmt.Errorf("%w: run \"homecloud iphone push-key\" where the archive is, then \"homecloud iphone push-key --set\" here", err)
+	}
+	return key, err
+}
+
+// runShowPushKey prints this computer's push key, creating it the first time.
+func runShowPushKey(c *call) error {
+	path, err := iphonecopy.PushKeyPath()
+	if err != nil {
+		return err
+	}
+	key, err := iphonecopy.LoadPushKey(path)
+	if errors.Is(err, iphonecopy.ErrNoPushKey) {
+		if key, err = iphonecopy.NewPushKey(); err != nil {
+			return err
+		}
+		err = iphonecopy.SavePushKey(path, key)
+	}
+	if err != nil {
+		return err
+	}
+	return printf(c, "iPhone push key (a secret: anything holding it can push backups here):\n%s\n\n"+
+		"On the computer that pushes, run \"homecloud iphone push-key --set\" and paste it.\n", key)
+}
+
+// runSetPushKey saves the key of the archive this computer pushes to, read
+// without echo from a terminal or as a line of standard input.
+func runSetPushKey(c *call) error {
+	var line string
+	if term.IsTerminal(stdinFD()) {
+		if err := printf(c, "Push key (not shown): "); err != nil {
+			return err
+		}
+		b, err := term.ReadPassword(stdinFD())
+		if err != nil {
+			return fmt.Errorf("read push key: %w", err)
+		}
+		line = string(b)
+		if err := printf(c, "\n"); err != nil {
+			return err
+		}
+	} else {
+		sc := bufio.NewScanner(c.stdin)
+		if !sc.Scan() {
+			return errors.Join(errors.New("no push key on standard input"), sc.Err())
+		}
+		line = sc.Text()
+	}
+	key, err := iphonecopy.ParsePushKey(line)
+	if err != nil {
+		return err
+	}
+	path, err := iphonecopy.PushKeyPath()
+	if err != nil {
+		return err
+	}
+	if err := iphonecopy.SavePushKey(path, key); err != nil {
+		return err
+	}
+	return printf(c, "saved the push key in %s\n", path)
+}
+
 func runInstallPush(ctx context.Context, c *call, from []string, to string, every time.Duration) error {
+	// A scheduled push without a key would only ever fail.
+	if _, err := pushKey(); err != nil {
+		return err
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate executable: %w", err)

@@ -9,9 +9,15 @@ import (
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup/iphonebackuptest"
+	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
+	"github.com/vasilistotskas/homecloud/internal/platform/platformtest"
 )
 
 func TestIPhonePush(t *testing.T) {
+	platformtest.StateDir(t)
+	if out, err := cli(t, iphonecopy.PushKey{5}.String()+"\n", "iphone", "push-key", "--set"); err != nil {
+		t.Fatalf("push-key --set: %v\n%s", err, out)
+	}
 	backups, incoming := t.TempDir(), t.TempDir()
 	iphonebackuptest.WriteBackup(t, backups, iphonebackuptest.Backup{
 		UDID: "00008110-001A2B3C4D5E801E", DeviceName: "Test iPhone",
@@ -45,5 +51,39 @@ func TestIPhonePushNeedsAbsoluteFolders(t *testing.T) {
 		[]string{"iphone", "push", "--from", "relative", "--to", t.TempDir()})
 	if exitStatus(err) != 2 {
 		t.Fatalf("relative --from: err = %v (status %d)", err, exitStatus(err))
+	}
+}
+
+// cli runs the command line with stdin and returns what it printed.
+func cli(t *testing.T, stdin string, args ...string) (string, error) {
+	t.Helper()
+	var out bytes.Buffer
+	err := newApp().execute(t.Context(), &call{stdin: strings.NewReader(stdin), stdout: &out, stderr: &out}, args)
+	return out.String(), err
+}
+
+func TestIPhonePushKey(t *testing.T) {
+	state := platformtest.StateDir(t)
+	out, err := cli(t, "", "iphone", "push-key")
+	if err != nil {
+		t.Fatalf("push-key: %v\n%s", err, out)
+	}
+	saved, err := iphonecopy.LoadPushKey(filepath.Join(state, iphonecopy.PushKeyFile))
+	if err != nil || !strings.Contains(out, saved.String()) {
+		t.Fatalf("push-key printed %q; saved %v, %v", out, saved, err)
+	}
+	if again, err := cli(t, "", "iphone", "push-key"); err != nil || again != out {
+		t.Fatalf("a second push-key printed %q, %v; want the same key", again, err)
+	}
+	if out, err := cli(t, "not a key\n", "iphone", "push-key", "--set"); err == nil {
+		t.Fatalf("a malformed key was saved: %s", out)
+	}
+}
+
+func TestIPhonePushNeedsAKey(t *testing.T) {
+	platformtest.StateDir(t)
+	out, err := cli(t, "", "iphone", "push", "--from", t.TempDir(), "--to", t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "push-key --set") {
+		t.Fatalf("push without a key: %v\n%s", err, out)
 	}
 }

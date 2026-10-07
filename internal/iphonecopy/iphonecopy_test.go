@@ -20,6 +20,12 @@ const udid = "00008110-001A2B3C4D5E801E"
 
 var t1 = time.Date(2026, 10, 7, 3, 0, 0, 0, time.UTC)
 
+// testNow is when the tests' pushes are taken in, after every backup they make.
+var testNow = t1.Add(72 * time.Hour)
+
+// testKey signs the tests' pushes.
+var testKey = PushKey{1, 2, 3}
+
 // files are a backup's hashed files; the plists come from WriteBackup.
 func files(changed string) map[string]string {
 	return map[string]string{
@@ -264,27 +270,27 @@ func TestPushAndIngest(t *testing.T) {
 	incoming := t.TempDir()
 
 	b1 := backup(t, t.TempDir(), t1, "v1")
-	res, err := Push(ctx, b1, incoming)
+	res, err := Push(ctx, b1, incoming, testKey)
 	if err != nil || res.Outcome != PushSent || res.Sent != 7 {
 		t.Fatalf("first push = %+v, %v", res, err)
 	}
-	if res, err = Push(ctx, b1, incoming); err != nil || res.Outcome != PushPending {
+	if res, err = Push(ctx, b1, incoming, testKey); err != nil || res.Outcome != PushPending {
 		t.Fatalf("push before ingest = %+v, %v", res, err)
 	}
-	got, err := a.Ingest(ctx, incoming, newest(a))
+	got, err := a.Ingest(ctx, incoming, testKey, testNow, newest(a))
 	if err != nil || len(got) != 1 || got[0].Err != nil || got[0].Stats.Copied != 7 {
 		t.Fatalf("ingest = %+v, %v", got, err)
 	}
-	if res, err = Push(ctx, b1, incoming); err != nil || res.Outcome != PushArchived {
+	if res, err = Push(ctx, b1, incoming, testKey); err != nil || res.Outcome != PushArchived {
 		t.Fatalf("push after ingest = %+v, %v", res, err)
 	}
 
 	// The next backup sends only what changed; the archive links the rest.
 	b2 := backup(t, t.TempDir(), t1.Add(24*time.Hour), "v2")
-	if res, err = Push(ctx, b2, incoming); err != nil || res.Sent != 3 {
+	if res, err = Push(ctx, b2, incoming, testKey); err != nil || res.Sent != 3 {
 		t.Fatalf("second push = %+v, %v", res, err)
 	}
-	got, err = a.Ingest(ctx, incoming, newest(a))
+	got, err = a.Ingest(ctx, incoming, testKey, testNow, newest(a))
 	if err != nil || len(got) != 1 || got[0].Err != nil || got[0].Stats.Copied != 3 || got[0].Stats.Linked != 4 {
 		t.Fatalf("second ingest = %+v, %v", got, err)
 	}
@@ -302,14 +308,14 @@ func TestIngestRefusesADamagedPush(t *testing.T) {
 	a := openArchive(t)
 	incoming := t.TempDir()
 	b := backup(t, t.TempDir(), t1, "v1")
-	if _, err := Push(ctx, b, incoming); err != nil {
+	if _, err := Push(ctx, b, incoming, testKey); err != nil {
 		t.Fatal(err)
 	}
 	pushed := filepath.Join(incoming, udid, Stamp(t1), "ff", "ffeeddcc")
 	if err := os.WriteFile(pushed, []byte("flipped bits"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := a.Ingest(ctx, incoming, newest(a))
+	got, err := a.Ingest(ctx, incoming, testKey, testNow, newest(a))
 	if err != nil || len(got) != 1 || !errors.Is(got[0].Err, ErrMismatch) {
 		t.Fatalf("ingest = %+v, %v", got, err)
 	}
@@ -317,7 +323,7 @@ func TestIngestRefusesADamagedPush(t *testing.T) {
 		t.Fatalf("a damaged push was archived: %+v", snaps)
 	}
 	// The refused push is gone, so the next push sends it again.
-	if res, err := Push(ctx, b, incoming); err != nil || res.Outcome != PushSent || res.Sent != 7 {
+	if res, err := Push(ctx, b, incoming, testKey); err != nil || res.Outcome != PushSent || res.Sent != 7 {
 		t.Fatalf("push again = %+v, %v", res, err)
 	}
 }
@@ -330,11 +336,16 @@ func TestIngestRefusesAHostileManifest(t *testing.T) {
 		t.Fatal(err)
 	}
 	hash := Digest(sha256.Sum256([]byte("x"))).String()
-	if err := os.WriteFile(filepath.Join(dir, Stamp(t1)+manifestExt), []byte(hash+" *../../outside\n"), 0o600); err != nil {
+	manifest := []byte(hash + " *../../outside\n")
+	if err := os.WriteFile(filepath.Join(dir, Stamp(t1)+manifestExt), manifest, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := a.Ingest(t.Context(), incoming, newest(a))
-	if err != nil || len(got) != 1 || got[0].Err == nil {
+	// Signed, so that the manifest itself is what is refused.
+	if err := os.WriteFile(filepath.Join(dir, Stamp(t1)+signatureExt), testKey.signature(udid, Stamp(t1), manifest), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.Ingest(t.Context(), incoming, testKey, testNow, newest(a))
+	if err != nil || len(got) != 1 || got[0].Err == nil || !strings.Contains(got[0].Err.Error(), "unexpected path") {
 		t.Fatalf("ingest = %+v, %v", got, err)
 	}
 }
@@ -354,7 +365,7 @@ func TestPushResumes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	res, err := Push(ctx, b, incoming)
+	res, err := Push(ctx, b, incoming, testKey)
 	if err != nil || res.Outcome != PushSent || res.Sent != 6 {
 		t.Fatalf("resumed push = %+v, %v", res, err)
 	}

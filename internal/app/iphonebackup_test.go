@@ -239,11 +239,21 @@ func TestIPhoneBackupsPushedFromAnotherComputer(t *testing.T) {
 	agent.cfg.IPhoneBackup.Keep = 3
 	ctx := t.Context()
 
+	// Both computers hold the push key.
+	key := iphonecopy.PushKey{7}
+	keyPath, err := agent.pushKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := iphonecopy.SavePushKey(keyPath, key); err != nil {
+		t.Fatal(err)
+	}
+
 	// The computer with the backups pushes one.
 	pc := t.TempDir()
 	writeIPhoneBackup(t, pc, true, clock.Add(-time.Hour))
 	b := iphonebackup.Inspect(ctx, filepath.Join(pc, testUDID), testUDID)
-	if res, err := iphonecopy.Push(ctx, b, agent.cfg.IPhoneBackup.Incoming); err != nil || res.Outcome != iphonecopy.PushSent {
+	if res, err := iphonecopy.Push(ctx, b, agent.cfg.IPhoneBackup.Incoming, key); err != nil || res.Outcome != iphonecopy.PushSent {
 		t.Fatalf("push = %+v, %v", res, err)
 	}
 	if err := agent.maintain(ctx); err != nil {
@@ -264,5 +274,34 @@ func TestIPhoneBackupsPushedFromAnotherComputer(t *testing.T) {
 	}
 	if countTitle(n, "homecloud: iPhone backup needs attention") != 1 {
 		t.Fatalf("alerts = %v", n.titles())
+	}
+}
+
+// TestPushesWaitForAPushKey: without this computer's push key no push can be
+// checked, so pushes stay in incoming and the owner is told how to fix it.
+func TestPushesWaitForAPushKey(t *testing.T) {
+	clock := time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
+	agent, n := newTestAgent(t, fixture(t, false), "0", &clock)
+	agent.cfg.IPhoneBackup.Dirs = nil
+	agent.cfg.IPhoneBackup.Incoming = t.TempDir()
+	agent.cfg.IPhoneBackup.Keep = 3
+	ctx := t.Context()
+
+	pc := t.TempDir()
+	writeIPhoneBackup(t, pc, true, clock.Add(-time.Hour))
+	b := iphonebackup.Inspect(ctx, filepath.Join(pc, testUDID), testUDID)
+	if _, err := iphonecopy.Push(ctx, b, agent.cfg.IPhoneBackup.Incoming, iphonecopy.PushKey{7}); err != nil {
+		t.Fatal(err)
+	}
+	rep, ok := agent.checkIPhoneBackups(ctx)
+	report, isReport := rep.(IPhoneBackupReport)
+	if ok || !isReport || len(report.PushErrors) != 1 || !strings.Contains(report.PushErrors[0], "push-key") {
+		t.Fatalf("check without a key: ok=%v report=%+v", ok, rep)
+	}
+	if countTitle(n, "homecloud: a pushed iPhone backup was not taken in") != 1 {
+		t.Fatalf("alerts = %v", n.titles())
+	}
+	if _, err := os.Stat(filepath.Join(agent.cfg.IPhoneBackup.Incoming, testUDID, iphonecopy.Stamp(b.CompletedAt)+".sha256")); err != nil {
+		t.Fatalf("the push did not wait in incoming: %v", err)
 	}
 }

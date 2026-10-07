@@ -10,7 +10,9 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/platform/platformtest"
 )
 
 func TestErr(t *testing.T) {
@@ -125,5 +127,27 @@ func TestCheckPrivate(t *testing.T) {
 	}
 	if r := checkPrivate("archive access", dir); !r.OK() {
 		t.Fatalf("a private folder: %+v", r)
+	}
+}
+
+func TestCheckPushKey(t *testing.T) {
+	state := platformtest.StateDir(t)
+	if r := checkPushKey(); !r.OK() || !strings.Contains(r.Detail, "not created yet") {
+		t.Fatalf("no key yet: %+v", r)
+	}
+	if err := os.MkdirAll(state, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := iphonecopy.SavePushKey(filepath.Join(state, iphonecopy.PushKeyFile), iphonecopy.PushKey{1}); err != nil {
+		t.Fatal(err)
+	}
+	if r := checkPushKey(); !r.OK() {
+		t.Fatalf("a saved key: %+v", r)
+	}
+	if err := os.WriteFile(filepath.Join(state, iphonecopy.PushKeyFile), []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if r := checkPushKey(); r.OK() {
+		t.Fatalf("a malformed key passed: %+v", r)
 	}
 }

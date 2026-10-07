@@ -158,14 +158,22 @@ func (c *copies) base(udid string) (*iphonecopy.Snapshot, error) {
 	return nil, nil //nolint:nilnil // no copy to build on
 }
 
-// added records a new copy. It was checked against its manifest as it was
-// written, which counts as its first verification.
+// added records a new copy. The files it wrote were checked against its
+// manifest as they were written; the files it shares with the copy it was
+// built on were last read when that copy was verified, so the new copy counts
+// as verified then, not now.
 func (c *copies) added(ctx context.Context, s iphonecopy.Snapshot, st iphonecopy.Stats) error {
 	now := c.a.now()
+	verified := now
+	for _, r := range c.rows[s.UDID] {
+		if r.Stamp == st.LinkedFrom && r.VerifiedAt != nil && r.VerifiedAt.Before(verified) {
+			verified = *r.VerifiedAt
+		}
+	}
 	b := iphonebackup.Inspect(ctx, c.archive.Path(s.Dir()), s.UDID)
 	r := ledger.IPhoneBackupCopy{
 		UDID: s.UDID, Stamp: s.Stamp, DeviceName: b.DeviceName, Files: int64(st.Files), Bytes: st.Bytes,
-		CopiedBytes: st.CopiedBytes, CreatedAt: now, VerifiedAt: &now,
+		CopiedBytes: st.CopiedBytes, CreatedAt: now, VerifiedAt: &verified,
 	}
 	if err := c.a.db.AddIPhoneBackupCopy(ctx, r); err != nil {
 		return err

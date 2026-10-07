@@ -14,6 +14,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/health"
+	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/smartctl"
@@ -193,9 +194,27 @@ func checkIPhoneBackupDirs(cfg *config.Config) []Result {
 		}
 	}
 	if in := cfg.IPhoneBackup.Incoming; in != "" {
-		out = append(out, checkIncoming(in))
+		out = append(out, checkIncoming(in), checkPushKey())
 	}
 	return out
+}
+
+// checkPushKey reports this computer's push key, without which pushed
+// backups wait in incoming. A key not created yet is a setup step, not a
+// failure: in a container it is created with the agent running.
+func checkPushKey() Result {
+	const name = "iphone push key"
+	path, err := iphonecopy.PushKeyPath()
+	if err != nil {
+		return Result{Name: name, Err: err}
+	}
+	switch _, err := iphonecopy.LoadPushKey(path); {
+	case errors.Is(err, iphonecopy.ErrNoPushKey):
+		return Result{Name: name, Detail: "not created yet: run \"homecloud iphone push-key\" here, then \"homecloud iphone push-key --set\" on the computer that pushes"}
+	case err != nil:
+		return Result{Name: name, Err: err}
+	}
+	return Result{Name: name, Detail: path}
 }
 
 // checkIncoming checks the folder backups are pushed to: it must exist (the

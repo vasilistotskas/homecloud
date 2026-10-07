@@ -35,6 +35,13 @@ var pathPart = regexp.MustCompile(`^[A-Za-z0-9_-]([A-Za-z0-9._-]*[A-Za-z0-9_-])?
 // maxDepth bounds the folders a path may go through.
 const maxDepth = 4
 
+// Bounds on a manifest, which may come from another computer: an iPhone
+// backup holds up to a few hundred thousand files, each line about 110 bytes.
+const (
+	maxManifestFiles = 1 << 21
+	maxManifestBytes = 1 << 28
+)
+
 // validPath reports whether rel is a path homecloud accepts inside a backup.
 func validPath(rel string) error {
 	parts := strings.Split(rel, "/")
@@ -72,6 +79,9 @@ func ParseManifest(r io.Reader) (Manifest, error) {
 		}
 		if _, dup := m[rel]; dup {
 			return nil, fmt.Errorf("manifest line %d: %s is listed twice", n, rel)
+		}
+		if len(m) == maxManifestFiles {
+			return nil, fmt.Errorf("the manifest lists more than %d files", maxManifestFiles)
 		}
 		m[rel] = d
 	}

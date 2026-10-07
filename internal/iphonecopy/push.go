@@ -1,18 +1,22 @@
 package iphonecopy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"maps"
+	"math"
 	"os"
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // A backup reaches an archive on another device (a NAS) through an incoming
@@ -23,10 +27,13 @@ import (
 //	.push-<stamp>/, .push-<stamp>.sha256   a push being written
 //	<stamp>/, <stamp>.sha256  a pushed backup: the files the archive does
 //	                          not hold yet, and the whole backup's manifest
+//	<stamp>.sig               the push's signature (PushKey)
 //
 // The computer with the backups (Push) sends only files whose SHA-256 differs
-// from the published manifest; the archive (Ingest) links the rest from that
-// snapshot and checks every file it receives against the manifest.
+// from the published manifest; the archive (Ingest) takes in only pushes
+// signed with its push key, links the rest from that snapshot, checks every
+// file it receives against the manifest, and checks the copy's own plists
+// before keeping it.
 const (
 	archivedPrefix = "archived-"
 	pushPrefix     = ".push-"
@@ -60,8 +67,9 @@ type PushResult struct {
 // this computer) to the incoming folder of an archive on another device. An
 // interrupted push is resumed: files already there with the right SHA-256
 // are not sent again. The push is committed only if b's folder still holds
-// the same finished backup afterwards (ErrChanged otherwise).
-func Push(ctx context.Context, b iphonebackup.Backup, incoming string) (PushResult, error) {
+// the same finished backup afterwards (ErrChanged otherwise), and is signed
+// with key.
+func Push(ctx context.Context, b iphonebackup.Backup, incoming string, key PushKey) (PushResult, error) {
 	if b.InProgress || b.Err != nil || b.CompletedAt.IsZero() {
 		return PushResult{}, fmt.Errorf("%s holds no finished backup to push", b.Dir)
 	}
@@ -96,6 +104,13 @@ func Push(ctx context.Context, b iphonebackup.Backup, incoming string) (PushResu
 			if rmErr := removePush(in, b.UDID, pushPrefix+other); rmErr != nil {
 				return PushResult{}, rmErr
 			}
+		}
+	}
+	// A push interrupted between its commit's two renames left its folder
+	// without the manifest: it was never committed, and is sent again.
+	for _, other := range dev.uncommitted {
+		if rmErr := removePush(in, b.UDID, other); rmErr != nil {
+			return PushResult{}, rmErr
 		}
 	}
 	var base Manifest
@@ -152,6 +167,10 @@ func Push(ctx context.Context, b iphonebackup.Backup, incoming string) (PushResu
 	if err := writeFile(in, pending, m.Bytes()); err != nil {
 		return PushResult{}, err
 	}
+	// The manifest commits the push, so its signature is in place first.
+	if err := writeFile(in, b.UDID+"/"+stamp+signatureExt, key.signature(b.UDID, stamp, m.Bytes())); err != nil {
+		return PushResult{}, err
+	}
 	if err := in.Rename(partial, b.UDID+"/"+stamp); err != nil {
 		return PushResult{}, fmt.Errorf("commit push %s: %w", stamp, err)
 	}
@@ -174,9 +193,10 @@ func sendFile(src, in *os.Root, rel, dst string, want Digest) (int64, error) {
 
 // incomingDevice is what a device's incoming folder holds.
 type incomingDevice struct {
-	archived string   // stamp of the published manifest, "" if none
-	pushed   []string // committed pushes, oldest first
-	partial  []string // pushes being written
+	archived    string   // stamp of the published manifest, "" if none
+	pushed      []string // committed pushes, oldest first
+	partial     []string // pushes being written
+	uncommitted []string // pushes renamed into place without their manifest
 }
 
 func readIncoming(in *os.Root, udid string) (incomingDevice, error) {
@@ -200,6 +220,8 @@ func readIncoming(in *os.Root, udid string) (incomingDevice, error) {
 			if stamp := strings.TrimSuffix(name, manifestExt); names[stamp] {
 				dev.pushed = append(dev.pushed, stamp)
 			}
+		case e.IsDir() && stampPattern.MatchString(name) && !names[name+manifestExt]:
+			dev.uncommitted = append(dev.uncommitted, name)
 		}
 	}
 	slices.Sort(dev.pushed)
@@ -207,16 +229,32 @@ func readIncoming(in *os.Root, udid string) (incomingDevice, error) {
 }
 
 func readManifestFile(root *os.Root, name string) (Manifest, error) {
+	raw, err := readSmall(root, name, maxManifestBytes)
+	if err != nil {
+		return nil, err
+	}
+	m, err := ParseManifest(bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	return m, nil
+}
+
+// readSmall reads a file of at most limit bytes from root.
+func readSmall(root *os.Root, name string, limit int64) ([]byte, error) {
 	f, err := root.Open(name)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", name, err)
 	}
 	defer f.Close() //nolint:errcheck // read-only
-	m, err := ParseManifest(f)
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
+		return nil, fmt.Errorf("read %s: %w", name, err)
 	}
-	return m, nil
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%s is larger than %d bytes", name, limit)
+	}
+	return data, nil
 }
 
 // removePush removes a push (its folder and manifest) from a device's
@@ -225,8 +263,10 @@ func removePush(in *os.Root, udid, name string) error {
 	if err := in.RemoveAll(udid + "/" + name); err != nil {
 		return fmt.Errorf("remove %s/%s: %w", udid, name, err)
 	}
-	if err := in.Remove(udid + "/" + name + manifestExt); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove %s/%s%s: %w", udid, name, manifestExt, err)
+	for _, ext := range []string{manifestExt, signatureExt} {
+		if err := in.Remove(udid + "/" + name + ext); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove %s/%s%s: %w", udid, name, ext, err)
+		}
 	}
 	return nil
 }
@@ -245,8 +285,12 @@ type Ingested struct {
 // Ingest takes every pushed backup in the incoming folder into the archive,
 // oldest first, each based on the snapshot base returns for its device (nil:
 // copy everything), then publishes the base of the next push. Pushes taken
-// in, refused or already in the archive are removed from incoming.
-func (a *Archive) Ingest(ctx context.Context, incoming string, base func(udid string) (*Snapshot, error)) ([]Ingested, error) {
+// in, refused or already in the archive are removed from incoming; a push
+// the archive volume has no room for is kept, to be taken in later. Only
+// pushes signed with key are taken in; now dates the check of their plists.
+func (a *Archive) Ingest(ctx context.Context, incoming string, key PushKey, now time.Time,
+	base func(udid string) (*Snapshot, error),
+) ([]Ingested, error) {
 	in, err := os.OpenRoot(incoming)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", incoming, err)
@@ -267,7 +311,7 @@ func (a *Archive) Ingest(ctx context.Context, incoming string, base func(udid st
 			return out, err
 		}
 		for _, stamp := range dev.pushed {
-			r, ingestErr := a.ingestOne(ctx, in, udid, stamp, base)
+			r, ingestErr := a.ingestOne(ctx, in, pushed{udid: udid, stamp: stamp, key: key, now: now}, base)
 			if refused, ok := errors.AsType[refusedPush](ingestErr); ok {
 				r = Ingested{UDID: udid, Stamp: stamp, Err: refused.err}
 			} else if ingestErr != nil {
@@ -297,12 +341,21 @@ type refusedPush struct{ err error }
 
 func (r refusedPush) Error() string { return r.err.Error() }
 
+// pushed is one committed push and what checking it needs.
+type pushed struct {
+	udid, stamp string
+	key         PushKey
+	now         time.Time
+}
+
+// maxSignatureBytes bounds a signature file (64 hex digits and a newline).
+const maxSignatureBytes = 1 << 10
+
 // ingestOne takes one push in. A push that cannot be taken in fails with a
-// refusedPush; other errors are problems with the archive itself. A push the
-// archive holds already returns a zero Ingested.
-func (a *Archive) ingestOne(ctx context.Context, in *os.Root, udid, stamp string,
-	base func(string) (*Snapshot, error),
-) (Ingested, error) {
+// refusedPush; other errors are problems with the archive itself, and keep
+// the push. A push the archive holds already returns a zero Ingested.
+func (a *Archive) ingestOne(ctx context.Context, in *os.Root, p pushed, base func(string) (*Snapshot, error)) (Ingested, error) {
+	udid, stamp := p.udid, p.stamp
 	t, err := ParseStamp(stamp)
 	if err != nil {
 		return Ingested{}, refusedPush{err}
@@ -311,7 +364,18 @@ func (a *Archive) ingestOne(ctx context.Context, in *os.Root, udid, stamp string
 	if err != nil || has {
 		return Ingested{}, err
 	}
-	m, err := readManifestFile(in, udid+"/"+stamp+manifestExt)
+	raw, err := readSmall(in, udid+"/"+stamp+manifestExt, maxManifestBytes)
+	if err != nil {
+		return Ingested{}, refusedPush{err}
+	}
+	sig, err := readSmall(in, udid+"/"+stamp+signatureExt, maxSignatureBytes)
+	if err != nil {
+		return Ingested{}, refusedPush{fmt.Errorf("the push is not signed: %w", err)}
+	}
+	if !p.key.verify(udid, stamp, raw, sig) {
+		return Ingested{}, refusedPush{errors.New("the push is not signed with this archive's push key (homecloud iphone push-key)")}
+	}
+	m, err := ParseManifest(bytes.NewReader(raw))
 	if err != nil {
 		return Ingested{}, refusedPush{err}
 	}
@@ -319,11 +383,25 @@ func (a *Archive) ingestOne(ctx context.Context, in *os.Root, udid, stamp string
 	if err != nil {
 		return Ingested{}, err
 	}
-	open := func(rel string) (io.ReadCloser, error) { return in.Open(udid + "/" + stamp + "/" + rel) }
-	snap, st, err := a.add(ctx, udid, t, m, b, open, func() error { return nil })
+	open := func(rel string) (io.ReadCloser, error) {
+		f, openErr := in.Open(udid + "/" + stamp + "/" + rel)
+		if openErr != nil {
+			return nil, openErr //nolint:wrapcheck // wrapped by the copy
+		}
+		if info, statErr := f.Stat(); statErr != nil || !info.Mode().IsRegular() {
+			return nil, errors.Join(fmt.Errorf("%s is not a regular file", rel), statErr, f.Close())
+		}
+		return f, nil
+	}
+	check := func() error { return checkPushed(ctx, a.Path(udid+"/"+partialPrefix+stamp), udid, t, p.now) }
+	snap, st, err := a.add(ctx, udid, t, m, b, open, check)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return Ingested{}, fmt.Errorf("ingest cancelled: %w", ctxErr)
+		}
+		if platform.IsDiskFull(err) {
+			return Ingested{}, errors.Join(fmt.Errorf("the archive volume is full; the push of %s is kept", stamp), err,
+				a.root.RemoveAll(udid+"/"+partialPrefix+stamp))
 		}
 		// Clear what the refused push left in the archive.
 		if rmErr := a.root.RemoveAll(udid + "/" + partialPrefix + stamp); rmErr != nil {
@@ -332,6 +410,26 @@ func (a *Archive) ingestOne(ctx context.Context, in *os.Root, udid, stamp string
 		return Ingested{}, refusedPush{err}
 	}
 	return Ingested{UDID: udid, Stamp: stamp, Snapshot: snap, Stats: st}, nil
+}
+
+// checkPushed checks a pushed copy before it is kept: it must be what this
+// computer's own backups must be to be copied (iphonebackup.Judge, its age
+// aside: an old backup is still worth a copy), of the device it is filed
+// under, and finished at the time it is filed under. The computer that
+// pushes could otherwise file any backup anywhere.
+func checkPushed(ctx context.Context, dir, udid string, t, now time.Time) error {
+	b := iphonebackup.Inspect(ctx, dir, udid)
+	if b.Err == nil && b.UDID != udid {
+		return fmt.Errorf("the pushed backup is of device %s, not %s", b.UDID, udid)
+	}
+	v, _ := iphonebackup.Judge(b, 0, iphonebackup.Record{}, iphonebackup.Policy{MaxAge: math.MaxInt64}, now)
+	if v.State != iphonebackup.StateOK {
+		return fmt.Errorf("the pushed backup is not a healthy backup: %s", strings.Join(v.Reasons, "; "))
+	}
+	if got := b.CompletedAt.UTC().Truncate(time.Second); !got.Equal(t) {
+		return fmt.Errorf("the pushed backup finished at %s, not at %s as it was filed", Stamp(got), Stamp(t))
+	}
+	return nil
 }
 
 // publish writes the manifest of b (the snapshot the next push is based on)

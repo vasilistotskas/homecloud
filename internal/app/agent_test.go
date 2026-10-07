@@ -20,6 +20,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/icloud"
+	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
@@ -176,6 +177,9 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 	}))
 	t.Cleanup(apple.Close)
 	agent.icloudEndpoints = icloud.Endpoints{Auth: apple.URL, Setup: apple.URL, Home: apple.URL}
+	// Nor this computer's push key: tests that push save their own.
+	pushKey := filepath.Join(t.TempDir(), iphonecopy.PushKeyFile)
+	agent.pushKey = func() (string, error) { return pushKey, nil }
 	// Tests judge one healthy drive unless they say otherwise.
 	agent.readStorage = func() (platform.Storage, error) {
 		return platform.Storage{Drives: []platform.Drive{{Name: "nvme0n1", Device: "/dev/nvme0n1"}}}, nil

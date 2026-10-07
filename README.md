@@ -77,8 +77,8 @@ flowchart TB
     devices --> iphone
     maint -- "read only" --> iphone
     maint -- "verified, deduplicated copies" --> iphonecopies
-    push["homecloud iphone push<br/>(the computer that backs up)"] -- "changed files + manifest" --> incoming
-    incoming -- "checked, taken in" --> maint
+    push["homecloud iphone push<br/>(the computer that backs up)"] -- "signed: changed files + manifest" --> incoming
+    incoming -- "signature, files and plists checked, taken in" --> maint
     cli -- "one ledger writer at a time" --> ledger
     cli -- "icloud login · drive ls<br/>(read only)" --> drivesvc
     cli --> session[("icloud-session.json<br/>state dir, owner only")]
@@ -299,11 +299,14 @@ MagicDNS and HTTPS certificates for the tailnet, copy `deploy/homecloud.env.exam
 each finished backup to the NAS. Create a shared folder in UGOS (say `homecloud-iphone`, the
 NAS folder `HOMECLOUD_IPHONE_INCOMING` names) that the NAS user owning the homecloud folders can
 write; on the PC, save that user's credentials once (`cmdkey /add:<nas> /user:<user> /pass`,
-typed by you) and run
+typed by you). Give the PC the NAS's push key: run `docker compose exec homecloud homecloud
+iphone push-key` on the NAS, then `homecloud iphone push-key --set` on the PC and paste it (it
+is a secret: anything holding it can push backups to the NAS). Then run
 `homecloud iphone install-push --from C:\Users\<you>\Apple\MobileSync\Backup --to \\<nas>\homecloud-iphone --every 1h`.
-Each push sends only the files that differ from the newest copy on the NAS, with the backup's
-SHA-256 manifest; the NAS checks every file against it before keeping the copy. Nothing breaks
-while the PC is off.
+Each push is signed with that key and sends only the files that differ from the newest copy on
+the NAS, with the backup's SHA-256 manifest; the NAS takes in only signed pushes, checks every
+file against the manifest and the copy's own plists (the right iPhone, encrypted, finished, not
+dated in the future) before keeping it. Nothing breaks while the PC is off.
 
 ### Desktop app
 
@@ -367,6 +370,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud drive ls [--folder ID]` | List an iCloud Drive folder (read only) |
 | `homecloud iphone push --from DIR --to DIR` | Send each device's finished backup in `DIR` (repeatable) to another device's `iphone_backup.incoming`: only files that differ from its newest copy, with the backup's manifest; a backup in progress or changing meanwhile waits for the next push |
 | `homecloud iphone install-push --from … --to … --every 1h` / `uninstall-push` | Push on a schedule while you are logged on (a Task Scheduler task, or a systemd user timer) |
+| `homecloud iphone push-key` / `push-key --set` | Show this computer's key for pushed backups, creating it (run where the archive is); `--set` saves that key on the computer that pushes (pasted, or on standard input) |
 
 `verify` and `quarantine release` write the ledger, which the running agent owns: while it runs
 they refuse, and the same actions are in the app (Sync now, Quarantine → Release).

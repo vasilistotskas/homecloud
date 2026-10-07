@@ -230,10 +230,11 @@ type Stats struct {
 	Files int
 	Bytes int64
 	// Copied and CopiedBytes count the files written; Linked those shared
-	// with the previous snapshot.
+	// with the previous snapshot, LinkedFrom (its stamp).
 	Copied      int
 	CopiedBytes int64
 	Linked      int
+	LinkedFrom  string
 }
 
 // source opens a backup's files by their path inside the backup.
@@ -288,6 +289,7 @@ func (a *Archive) add(ctx context.Context, udid string, t time.Time, m Manifest,
 				return Snapshot{}, Stats{}, fmt.Errorf("stat %s: %w", dst, err)
 			}
 			st.Linked++
+			st.LinkedFrom = base.Stamp
 			st.Bytes += info.Size()
 			continue
 		}

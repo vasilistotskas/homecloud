@@ -15,6 +15,7 @@
 //	WriteSecretFile(path, data) error    atomic write readable only by the current user
 //	CheckPrivate(dir) error              whether a folder is the current user's alone
 //	MakePrivate(dir) (bool, error)       make it so, for everything inside it too
+//	IsDiskFull(err) bool                 whether an error means the volume is full
 //
 // Shared by both: WriteFile (atomic write of a file others may read) and
 // WriteFileIfChanged.

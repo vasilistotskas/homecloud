@@ -18,6 +18,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/icloud"
+	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
@@ -77,6 +78,8 @@ type Agent struct {
 	// icloudEndpoints are Apple's services it talks to.
 	icloudSession   func() (string, error)
 	icloudEndpoints icloud.Endpoints
+	// pushKey locates the key pushed iPhone backups must be signed with.
+	pushKey func() (string, error)
 
 	hub     *Hub
 	trigger chan struct{}
@@ -96,6 +99,7 @@ func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, k
 		},
 		icloudSession:   icloud.SessionPath,
 		icloudEndpoints: icloud.AppleEndpoints,
+		pushKey:         iphonecopy.PushKeyPath,
 		hub:             NewHub(),
 		trigger:         make(chan struct{}, 1),
 	}
