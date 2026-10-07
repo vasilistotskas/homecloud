@@ -108,7 +108,7 @@ export class DesktopTransport implements Transport {
 
 /**
  * Pairs this computer with the homecloud at url using a one-time code from
- * `homecloud open --print` there, and uses it from now on.
+ * `homecloud pair` there, and uses it from now on.
  */
 async function pair(url: string, code: string, name: string): Promise<void> {
   const client = createClient(AgentService, createConnectTransport({ baseUrl: url }));

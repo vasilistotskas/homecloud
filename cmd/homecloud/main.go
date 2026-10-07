@@ -25,6 +25,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/web"
 )
 
 // version is set at build time with -ldflags "-X main.version=...".
@@ -98,6 +99,7 @@ func newApp() *program {
 					return func(ctx context.Context, c *call) error { return runOpen(ctx, c, *printLink) }
 				},
 			},
+			leaf("pair", "print a one-time code that pairs the desktop app on another computer with this agent (needs web.public_origin)", runPair),
 			leaf("notify-test", "send a test push notification through ntfy", runNotifyTest),
 			leaf("install", "start homecloud-agent (next to this binary) at logon and now (Task Scheduler / systemd user unit)", runInstall),
 			leaf("uninstall", "stop starting homecloud-agent at logon", runUninstall),
@@ -363,29 +365,44 @@ func runDoctor(ctx context.Context, c *call) error {
 	return nil
 }
 
-// runOpen asks the running agent for a one-time login code and opens the web
-// app with it, so the browser gets its own session without seeing the token.
+// loginCode asks the running agent for a one-time code for purpose.
+func loginCode(ctx context.Context, purpose agentv3.LoginCodePurpose) (*agentv3.CreateLoginCodeResponse, error) {
+	ep, err := auth.ReadEndpoint()
+	if err != nil {
+		return nil, err
+	}
+	client := agentv3connect.NewAgentServiceClient(http.DefaultClient, ep.URL, connect.WithInterceptors(auth.Bearer(ep.Token)))
+	res, err := client.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{Purpose: purpose}))
+	if err != nil {
+		return nil, fmt.Errorf("request login code: %w", err)
+	}
+	return res.Msg, nil
+}
+
+// runOpen asks the running agent for a one-time sign-in code and opens the
+// web app with it, so the browser gets its own session without seeing the
+// token.
 func runOpen(ctx context.Context, c *call, printLink bool) error {
 	cfg, err := loadConfig(c)
 	if err != nil {
 		return err
 	}
-	ep, err := auth.ReadEndpoint()
+	msg, err := loginCode(ctx, agentv3.LoginCodePurpose_LOGIN_CODE_PURPOSE_SIGN_IN)
 	if err != nil {
 		return err
 	}
-	client := agentv3connect.NewAgentServiceClient(http.DefaultClient, ep.URL, connect.WithInterceptors(auth.Bearer(ep.Token)))
-	res, err := client.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{}))
-	if err != nil {
-		return fmt.Errorf("request login code: %w", err)
+	// Behind a proxy the app is used at its public origin; on this computer
+	// at its own name (web.BrowserHost), where its cookie reaches no other
+	// loopback service.
+	base := *cfg.Web.PublicOrigin
+	if base == "" {
+		addr, addrErr := web.BrowserAddr(cfg.Web.Listen)
+		if addrErr != nil {
+			return addrErr
+		}
+		base = "http://" + addr
 	}
-	// Behind a proxy the app is used at its public origin; the listen
-	// address is reachable from this host only.
-	base := ep.URL
-	if *cfg.Web.PublicOrigin != "" {
-		base = *cfg.Web.PublicOrigin
-	}
-	code, until := res.Msg.GetCode(), res.Msg.GetExpiresAt().AsTime().Local().Format(time.TimeOnly)
+	code, until := msg.GetCode(), msg.GetExpiresAt().AsTime().Local().Format(time.TimeOnly)
 	link := base + "/#/connect?code=" + url.QueryEscape(code)
 	if printLink {
 		return printf(c, "Sign in at %s\n(or enter code %s at %s; valid until %s, works once)\n", link, code, base, until)
@@ -395,4 +412,25 @@ func runOpen(ctx context.Context, c *call, printLink bool) error {
 		return err
 	}
 	return platform.OpenURL(link)
+}
+
+// runPair prints a one-time pairing code for the desktop app on another
+// computer. A paired device keeps its access until it is revoked, so its
+// code is never a sign-in code, which is shown in links and on screens.
+func runPair(ctx context.Context, c *call) error {
+	cfg, err := loadConfig(c)
+	if err != nil {
+		return err
+	}
+	origin := *cfg.Web.PublicOrigin
+	if origin == "" {
+		return errors.New("pairing needs web.public_origin: another computer reaches this agent only there")
+	}
+	msg, err := loginCode(ctx, agentv3.LoginCodePurpose_LOGIN_CODE_PURPOSE_PAIR)
+	if err != nil {
+		return err
+	}
+	return printf(c, "Pairing code %s (valid until %s, works once).\n"+
+		"In the desktop app on the other computer: Settings → Connection → Connect to another device,\n"+
+		"address %s, then this code.\n", msg.GetCode(), msg.GetExpiresAt().AsTime().Local().Format(time.TimeOnly), origin)
 }

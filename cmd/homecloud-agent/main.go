@@ -178,9 +178,9 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 			Config: cfg, ConfigPath: cfgPath, AgentVersion: version,
 			// The CLI is installed next to the agent.
 			CLI:    filepath.Join(filepath.Dir(self), "homecloud"+platform.ExeSuffix),
-			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Media: signer, Now: time.Now,
+			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Media: signer, Log: log, Now: time.Now,
 		}),
-		Media: media.Handler(signer, db, renderer, log),
+		Media: media.Handler(signer, authn, db, renderer, log),
 		Auth:  authn,
 		Log:   log,
 	})

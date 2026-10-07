@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -82,6 +83,7 @@ type Service struct {
 	notify       app.Notifier
 	auth         *auth.Authenticator
 	media        *media.Signer
+	log          *slog.Logger
 	hiddenDir    string
 	now          func() time.Time
 }
@@ -100,14 +102,16 @@ type Deps struct {
 	Notifier     app.Notifier
 	Auth         *auth.Authenticator
 	Media        *media.Signer
-	Now          func() time.Time
+	// Log receives security events (sign-ins, pairings, revocations).
+	Log *slog.Logger
+	Now func() time.Time
 }
 
 // New returns a Service.
 func New(d Deps) *Service {
 	return &Service{
 		cfg: d.Config, configPath: d.ConfigPath, cli: d.CLI, agentVersion: d.AgentVersion,
-		db: d.Ledger, agent: d.Agent, notify: d.Notifier, auth: d.Auth, media: d.Media, now: d.Now,
+		db: d.Ledger, agent: d.Agent, notify: d.Notifier, auth: d.Auth, media: d.Media, log: d.Log, now: d.Now,
 		hiddenDir: kei.HiddenPath(d.Config.Storage.Root) + string(filepath.Separator),
 	}
 }
@@ -136,9 +140,33 @@ func (s *Service) GetOverview(ctx context.Context, _ *connect.Request[agentv3.Ge
 // the ledger, so changes within the interval fold into the next update.
 const overviewInterval = time.Second
 
-// WatchOverview implements AgentService.
+// accessRecheck is how soon an open overview stream notices that its
+// caller's access ended (a revoked device, an ended session) while nothing
+// changes.
+const accessRecheck = 30 * time.Second
+
+// stillAllowed ends a stream whose caller's access ended.
+func (s *Service) stillAllowed(ctx context.Context, p auth.Principal) error {
+	ok, err := s.auth.Valid(ctx, p)
+	switch {
+	case err != nil:
+		return internal(err)
+	case !ok:
+		return connect.NewError(connect.CodeUnauthenticated, errors.New("access ended"))
+	}
+	return nil
+}
+
+// WatchOverview implements AgentService. The stream lasts as long as the
+// caller's access does.
 func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv3.WatchOverviewRequest], stream *connect.ServerStream[agentv3.WatchOverviewResponse]) error {
+	p, _ := auth.PrincipalFrom(ctx)
+	recheck := time.NewTicker(accessRecheck)
+	defer recheck.Stop()
 	for {
+		if err := s.stillAllowed(ctx, p); err != nil {
+			return err
+		}
 		st, changed := s.agent.Hub().Snapshot()
 		ov, err := s.overview(ctx, st)
 		if err != nil {
@@ -148,10 +176,17 @@ func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv3.
 			return fmt.Errorf("send overview: %w", err)
 		}
 		sent := time.Now()
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-changed:
+		for waiting := true; waiting; {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-changed:
+				waiting = false
+			case <-recheck.C:
+				if err := s.stillAllowed(ctx, p); err != nil {
+					return err
+				}
+			}
 		}
 		if wait := overviewInterval - time.Since(sent); wait > 0 {
 			timer := time.NewTimer(wait)
@@ -469,25 +504,45 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv3.GetSetti
 	}}), nil
 }
 
+// loginCodePurposes maps the API's code purposes to package auth's.
+var loginCodePurposes = map[agentv3.LoginCodePurpose]auth.Purpose{
+	agentv3.LoginCodePurpose_LOGIN_CODE_PURPOSE_SIGN_IN: auth.PurposeSignIn,
+	agentv3.LoginCodePurpose_LOGIN_CODE_PURPOSE_PAIR:    auth.PurposePair,
+}
+
 // CreateLoginCode implements AgentService. Package web only lets bearer-token
 // callers reach it.
-func (s *Service) CreateLoginCode(context.Context, *connect.Request[agentv3.CreateLoginCodeRequest]) (*connect.Response[agentv3.CreateLoginCodeResponse], error) {
-	code, exp, err := s.auth.NewLoginCode()
+func (s *Service) CreateLoginCode(_ context.Context, req *connect.Request[agentv3.CreateLoginCodeRequest]) (*connect.Response[agentv3.CreateLoginCodeResponse], error) {
+	purpose, ok := loginCodePurposes[req.Msg.GetPurpose()]
+	if !ok {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a login code needs a purpose: sign-in or pairing"))
+	}
+	code, exp, err := s.auth.NewLoginCode(purpose)
 	if err != nil {
 		return nil, internal(err)
 	}
 	return connect.NewResponse(&agentv3.CreateLoginCodeResponse{Code: code, ExpiresAt: timestamppb.New(exp)}), nil
 }
 
+// codeError is a refused login code as the API reports it.
+func codeError(err error) error {
+	switch {
+	case errors.Is(err, auth.ErrTooManyAttempts):
+		return connect.NewError(connect.CodeResourceExhausted, err)
+	case errors.Is(err, auth.ErrInvalidCode):
+		return connect.NewError(connect.CodePermissionDenied, err)
+	}
+	return internal(err)
+}
+
 // ExchangeLoginCode implements AgentService.
-func (s *Service) ExchangeLoginCode(_ context.Context, req *connect.Request[agentv3.ExchangeLoginCodeRequest]) (*connect.Response[agentv3.ExchangeLoginCodeResponse], error) {
+func (s *Service) ExchangeLoginCode(ctx context.Context, req *connect.Request[agentv3.ExchangeLoginCodeRequest]) (*connect.Response[agentv3.ExchangeLoginCodeResponse], error) {
 	cookie, err := s.auth.Exchange(req.Msg.GetCode())
-	if errors.Is(err, auth.ErrInvalidCode) {
-		return nil, connect.NewError(connect.CodePermissionDenied, err)
-	}
 	if err != nil {
-		return nil, internal(err)
+		s.log.WarnContext(ctx, "sign-in refused", "err", err, "remote", req.Peer().Addr)
+		return nil, codeError(err)
 	}
+	s.log.InfoContext(ctx, "browser signed in", "remote", req.Peer().Addr)
 	res := connect.NewResponse(&agentv3.ExchangeLoginCodeResponse{})
 	res.Header().Set("Set-Cookie", cookie.String())
 	return res, nil
@@ -496,18 +551,26 @@ func (s *Service) ExchangeLoginCode(_ context.Context, req *connect.Request[agen
 // maxDeviceName bounds a paired device's name, in characters.
 const maxDeviceName = 64
 
-// PairDevice implements AgentService.
+// PairDevice implements AgentService. A new pairing is alerted: a device keeps
+// its access until it is revoked, so the owner hears of every one.
 func (s *Service) PairDevice(ctx context.Context, req *connect.Request[agentv3.PairDeviceRequest]) (*connect.Response[agentv3.PairDeviceResponse], error) {
 	name := strings.TrimSpace(req.Msg.GetName())
 	if n := utf8.RuneCountInString(name); n == 0 || n > maxDeviceName || !utf8.ValidString(name) {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("name must be 1-%d characters", maxDeviceName))
 	}
 	id, token, err := s.auth.Pair(ctx, req.Msg.GetCode(), name)
-	if errors.Is(err, auth.ErrInvalidCode) {
-		return nil, connect.NewError(connect.CodePermissionDenied, err)
-	}
 	if err != nil {
-		return nil, internal(err)
+		s.log.WarnContext(ctx, "pairing refused", "err", err, "remote", req.Peer().Addr)
+		return nil, codeError(err)
+	}
+	s.log.InfoContext(ctx, "device paired", "device", id, "name", name, "remote", req.Peer().Addr)
+	if notifyErr := s.notify.Send(ctx, notify.Msg{
+		Title:    "homecloud: a device was paired",
+		Body:     "A device can now use homecloud until it is revoked. If it was not you, revoke it in Settings → Paired devices.",
+		Priority: notify.PriorityHigh,
+		Tags:     []string{"key"},
+	}); notifyErr != nil {
+		s.log.ErrorContext(ctx, "notification failed", "title", "a device was paired", "err", notifyErr)
 	}
 	return connect.NewResponse(&agentv3.PairDeviceResponse{DeviceId: id, Token: token}), nil
 }
@@ -518,7 +581,7 @@ func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[agentv3.Li
 	if err != nil {
 		return nil, internal(err)
 	}
-	res := &agentv3.ListDevicesResponse{}
+	res := &agentv3.ListDevicesResponse{BrowserSessions: int32(s.auth.Sessions())} //nolint:gosec // sessions number a few
 	for _, d := range devices {
 		res.Devices = append(res.Devices, &agentv3.PairedDevice{
 			Id: d.ID, Name: d.Name, PairedAt: timestamppb.New(d.PairedAt), LastSeenAt: timestamppb.New(d.LastSeenAt),
@@ -527,7 +590,8 @@ func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[agentv3.Li
 	return connect.NewResponse(res), nil
 }
 
-// RevokeDevice implements AgentService.
+// RevokeDevice implements AgentService. The device's open streams and media
+// links stop working too (auth.Valid).
 func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[agentv3.RevokeDeviceRequest]) (*connect.Response[agentv3.RevokeDeviceResponse], error) {
 	err := s.db.RevokePairedDevice(ctx, req.Msg.GetDeviceId(), s.now())
 	if errors.Is(err, ledger.ErrNotFound) {
@@ -536,7 +600,33 @@ func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[agentv3
 	if err != nil {
 		return nil, internal(err)
 	}
+	s.log.InfoContext(ctx, "device revoked", "device", req.Msg.GetDeviceId())
 	return connect.NewResponse(&agentv3.RevokeDeviceResponse{}), nil
+}
+
+// SignOut implements AgentService: it ends the calling browser session.
+func (s *Service) SignOut(ctx context.Context, _ *connect.Request[agentv3.SignOutRequest]) (*connect.Response[agentv3.SignOutResponse], error) {
+	p, _ := auth.PrincipalFrom(ctx)
+	if p.Kind != auth.KindSession {
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("only a browser session signs out; revoke a paired device instead"))
+	}
+	s.auth.SignOut(p.ID)
+	s.log.InfoContext(ctx, "browser signed out")
+	res := connect.NewResponse(&agentv3.SignOutResponse{})
+	res.Header().Set("Set-Cookie", s.auth.ClearedCookie().String())
+	return res, nil
+}
+
+// SignOutBrowsers implements AgentService: it ends every browser session,
+// the caller's too when it is one.
+func (s *Service) SignOutBrowsers(ctx context.Context, _ *connect.Request[agentv3.SignOutBrowsersRequest]) (*connect.Response[agentv3.SignOutBrowsersResponse], error) {
+	n := s.auth.SignOutAll()
+	s.log.InfoContext(ctx, "all browsers signed out", "sessions", n)
+	res := connect.NewResponse(&agentv3.SignOutBrowsersResponse{Ended: int32(n)}) //nolint:gosec // sessions number a few
+	if p, _ := auth.PrincipalFrom(ctx); p.Kind == auth.KindSession {
+		res.Header().Set("Set-Cookie", s.auth.ClearedCookie().String())
+	}
+	return res, nil
 }
 
 func internal(err error) error {
@@ -569,9 +659,11 @@ func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv3.L
 	if err != nil {
 		return nil, internal(err)
 	}
+	// Media links are made for the caller and end with its access.
+	p, _ := auth.PrincipalFrom(ctx)
 	res := &agentv3.ListAssetsResponse{}
 	for _, a := range assets {
-		item, convErr := s.libraryItem(a)
+		item, convErr := s.libraryItem(p, a)
 		if convErr != nil {
 			return nil, internal(convErr)
 		}
@@ -587,7 +679,7 @@ func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv3.L
 	return connect.NewResponse(res), nil
 }
 
-func (s *Service) libraryItem(a ledger.LibraryAsset) (*agentv3.LibraryItem, error) {
+func (s *Service) libraryItem(p auth.Principal, a ledger.LibraryAsset) (*agentv3.LibraryItem, error) {
 	state, err := lookup(assetStates, a.State, "asset state")
 	if err != nil {
 		return nil, err
@@ -604,8 +696,8 @@ func (s *Service) libraryItem(a ledger.LibraryAsset) (*agentv3.LibraryItem, erro
 	}
 	if a.Display != nil {
 		v := a.Display.Version
-		item.ThumbnailUrl = s.media.URL(thumbs.Thumb, a.Library, a.AssetID, v)
-		item.PreviewUrl = s.media.URL(thumbs.Preview, a.Library, a.AssetID, v)
+		item.ThumbnailUrl = s.media.URL(p, thumbs.Thumb, a.Library, a.AssetID, v)
+		item.PreviewUrl = s.media.URL(p, thumbs.Preview, a.Library, a.AssetID, v)
 		item.DisplayVersion = v
 	}
 	return item, nil

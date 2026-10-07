@@ -14,7 +14,9 @@ function pairError(err: unknown): string {
   const ce = ConnectError.from(err);
   switch (ce.code) {
     case Code.PermissionDenied:
-      return "That code didn't work. It may have expired or been used already; run homecloud open --print there for a new one.";
+      return "That code didn't work. It may have expired or been used already; run homecloud pair there for a new one.";
+    case Code.ResourceExhausted:
+      return "Too many wrong codes were tried there; wait a minute, then try again.";
     case Code.InvalidArgument:
       return ce.rawMessage;
     case Code.Unknown:
@@ -27,7 +29,7 @@ function pairError(err: unknown): string {
 
 /**
  * Pairs this computer with a homecloud on another device: its address, a
- * one-time code from `homecloud open --print` there, and how this computer
+ * one-time code from `homecloud pair` there, and how this computer
  * is listed.
  */
 export function PairForm({
@@ -84,7 +86,7 @@ export function PairForm({
           }}
         />
       </Field>
-      <Field label="One-time code" hint="From homecloud open --print on that device. Works once." required>
+      <Field label="Pairing code" hint="From homecloud pair on that device. Works once." required>
         <Input
           className={styles.code}
           value={code}

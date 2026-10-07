@@ -10,7 +10,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -47,11 +49,29 @@ func (f *fakeAgent) CheckArchive() error { return f.archive }
 
 func (f *fakeAgent) ICloudSignedInAt() (time.Time, error) { return f.signedIn, nil }
 
-type nopNotifier struct{}
+// notes records the alerts sent.
+type notes struct {
+	mu   sync.Mutex
+	msgs []notify.Msg
+}
 
-func (nopNotifier) Send(context.Context, notify.Msg) error { return nil }
+func (n *notes) Send(_ context.Context, m notify.Msg) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.msgs = append(n.msgs, m)
+	return nil
+}
+
+func (n *notes) sent() []notify.Msg {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return slices.Clone(n.msgs)
+}
 
 type env struct {
+	// browser is the host:port a browser on this computer uses.
+	browser  string
+	notes    *notes
 	renderer *thumbs.Renderer
 	url      string
 	host     string
@@ -109,22 +129,28 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
 	}
 
+	discard := slog.New(slog.DiscardHandler)
+	sent := &notes{}
 	h, err := web.Handler(web.Options{
 		Listen:       listen,
 		PublicOrigin: publicOrigin,
 		Service: api.New(api.Deps{
 			Config: cfg, ConfigPath: "config.toml", AgentVersion: "test",
-			Ledger: db, Agent: agent, Notifier: nopNotifier{}, Auth: authn, Media: signer,
+			Ledger: db, Agent: agent, Notifier: sent, Auth: authn, Media: signer, Log: discard,
 			Now: func() time.Time { return t0 },
 		}),
 		App: fstest.MapFS{
 			"index.html":        {Data: []byte(`<div id="root"></div>`)},
 			"assets/index-1.js": {Data: []byte("console.log(1)")},
 		},
-		Media: media.Handler(signer, db, renderer, slog.New(slog.NewTextHandler(io.Discard, nil))),
+		Media: media.Handler(signer, authn, db, renderer, discard),
 		Auth:  authn,
-		Log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Log:   discard,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser, err := web.BrowserAddr(listen)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +159,7 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 	srv.Start()
 	t.Cleanup(srv.Close)
 	return &env{
-		url: srv.URL, host: listen, token: token, db: db, agent: agent, renderer: renderer,
+		url: srv.URL, host: listen, browser: browser, notes: sent, token: token, db: db, agent: agent, renderer: renderer,
 		client: agentv3connect.NewAgentServiceClient(srv.Client(), srv.URL, connect.WithInterceptors(auth.Bearer(token))),
 	}
 }
@@ -256,25 +282,12 @@ func TestPublicOrigin(t *testing.T) {
 		}
 	}
 
-	lc, err := e.client.CreateLoginCode(context.Background(), connect.NewRequest(&agentv3.CreateLoginCodeRequest{}))
+	lc, err := e.client.CreateLoginCode(context.Background(), connect.NewRequest(signInCode))
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, e.url+agentv3connect.AgentServiceExchangeLoginCodeProcedure,
-		strings.NewReader(`{"code":"`+lc.Msg.GetCode()+`"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Host = "nas.example.ts.net"
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", public)
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = res.Body.Close()
-	if cookies := res.Cookies(); res.StatusCode != http.StatusOK || len(cookies) != 1 || !cookies[0].Secure {
-		t.Fatalf("exchange over the public origin: status %d cookies %+v; want one Secure cookie", res.StatusCode, cookies)
+	if status, cookies := exchange(t, e, lc.Msg.GetCode(), "nas.example.ts.net", public); status != http.StatusOK || len(cookies) != 1 || !cookies[0].Secure {
+		t.Fatalf("exchange over the public origin: status %d cookies %+v; want one Secure cookie", status, cookies)
 	}
 }
 
@@ -283,8 +296,13 @@ func TestPublicOrigin(t *testing.T) {
 // login codes) until it is revoked.
 func TestPairedDevice(t *testing.T) {
 	e := setup(t)
-	ctx := context.Background()
-	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{}))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	signIn, err := e.client.CreateLoginCode(ctx, connect.NewRequest(signInCode))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(pairCode))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,9 +311,15 @@ func TestPairedDevice(t *testing.T) {
 	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv3.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: " "})); code(err) != connect.CodeInvalidArgument {
 		t.Fatalf("blank name = %v", err)
 	}
+	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv3.PairDeviceRequest{Code: signIn.Msg.GetCode(), Name: "Laptop"})); code(err) != connect.CodePermissionDenied {
+		t.Fatalf("pairing with a sign-in code = %v", err)
+	}
 	paired, err := anon.PairDevice(ctx, connect.NewRequest(&agentv3.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: "Laptop"}))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if sent := e.notes.sent(); len(sent) != 1 || strings.Contains(sent[0].Body, "Laptop") {
+		t.Fatalf("pairing alerts = %+v; want one, naming no device", sent)
 	}
 	if _, err = anon.PairDevice(ctx, connect.NewRequest(&agentv3.PairDeviceRequest{Code: lc.Msg.GetCode(), Name: "Laptop"})); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("reused code = %v", err)
@@ -306,7 +330,7 @@ func TestPairedDevice(t *testing.T) {
 	if _, err = device.GetInfo(ctx, connect.NewRequest(&agentv3.GetInfoRequest{})); err != nil {
 		t.Fatalf("device call: %v", err)
 	}
-	if _, err = device.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{})); code(err) != connect.CodePermissionDenied {
+	if _, err = device.CreateLoginCode(ctx, connect.NewRequest(signInCode)); code(err) != connect.CodePermissionDenied {
 		t.Fatalf("a device minted a login code: %v", err)
 	}
 	list, err := device.ListDevices(ctx, connect.NewRequest(&agentv3.ListDevicesRequest{}))
@@ -315,11 +339,25 @@ func TestPairedDevice(t *testing.T) {
 		t.Fatalf("devices = %v, %v", list, err)
 	}
 
+	// The device watches the overview; revoking it ends that stream too.
+	stream, err := device.WatchOverview(ctx, connect.NewRequest(&agentv3.WatchOverviewRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stream.Close() }()
+	if !stream.Receive() {
+		t.Fatalf("first overview: %v", stream.Err())
+	}
+
 	if _, err = e.client.RevokeDevice(ctx, connect.NewRequest(&agentv3.RevokeDeviceRequest{DeviceId: paired.Msg.GetDeviceId()})); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = device.GetInfo(ctx, connect.NewRequest(&agentv3.GetInfoRequest{})); code(err) != connect.CodeUnauthenticated {
 		t.Fatalf("revoked device call = %v, want Unauthenticated", err)
+	}
+	e.agent.hub.Changed()
+	if stream.Receive() || code(stream.Err()) != connect.CodeUnauthenticated {
+		t.Fatalf("the revoked device's stream went on: %v", stream.Err())
 	}
 	if _, err = e.client.RevokeDevice(ctx, connect.NewRequest(&agentv3.RevokeDeviceRequest{DeviceId: paired.Msg.GetDeviceId()})); code(err) != connect.CodeNotFound {
 		t.Fatalf("revoking twice = %v", err)
@@ -365,49 +403,121 @@ func TestDesktopPreflight(t *testing.T) {
 func TestBrowserLogin(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
-	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{}))
+	lc, err := e.client.CreateLoginCode(ctx, connect.NewRequest(signInCode))
 	if err != nil {
 		t.Fatal(err)
 	}
-	self := "http://" + e.host
+	self := "http://" + e.browser
 
-	bad := rawPost(t, e, agentv3connect.AgentServiceExchangeLoginCodeProcedure, map[string]string{"Origin": self})
+	bad := rawPost(t, e, agentv3connect.AgentServiceExchangeLoginCodeProcedure, map[string]string{"Host": e.browser, "Origin": self})
 	if bad.status == http.StatusOK || len(bad.cookies) != 0 {
 		t.Fatalf("empty code: status %d cookies %v", bad.status, bad.cookies)
 	}
+	// At the listen address a cookie would reach every service on 127.0.0.1.
+	if status, cookies := exchange(t, e, lc.Msg.GetCode(), e.host, "http://"+e.host); status == http.StatusOK || len(cookies) != 0 {
+		t.Fatalf("exchange at the listen address: status %d cookies %v", status, cookies)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.url+agentv3connect.AgentServiceExchangeLoginCodeProcedure,
-		strings.NewReader(`{"code":"`+lc.Msg.GetCode()+`"}`))
+	status, cookies := exchange(t, e, lc.Msg.GetCode(), e.browser, self)
+	if status != http.StatusOK || len(cookies) != 1 || !cookies[0].HttpOnly {
+		t.Fatalf("exchange: status %d cookies %+v", status, cookies)
+	}
+	session := cookies[0].Name + "=" + cookies[0].Value
+
+	sameSite := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure,
+		map[string]string{"Host": e.browser, "Cookie": session, "Origin": self, "Sec-Fetch-Site": "same-origin"})
+	if sameSite.status != http.StatusOK {
+		t.Fatalf("same-origin session call: %d", sameSite.status)
+	}
+	crossSite := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure,
+		map[string]string{"Host": e.browser, "Cookie": session, "Sec-Fetch-Site": "cross-site"})
+	if crossSite.status == http.StatusOK {
+		t.Fatal("cross-site cookie request must be rejected")
+	}
+	mint := rawPost(t, e, agentv3connect.AgentServiceCreateLoginCodeProcedure,
+		map[string]string{"Host": e.browser, "Cookie": session, "Origin": self, "Sec-Fetch-Site": "same-origin"})
+	if mint.status == http.StatusOK {
+		t.Fatal("a session must not mint login codes")
+	}
+}
+
+// The requests for a sign-in code and a pairing code.
+var (
+	signInCode = &agentv3.CreateLoginCodeRequest{Purpose: agentv3.LoginCodePurpose_LOGIN_CODE_PURPOSE_SIGN_IN}
+	pairCode   = &agentv3.CreateLoginCodeRequest{Purpose: agentv3.LoginCodePurpose_LOGIN_CODE_PURPOSE_PAIR}
+)
+
+// exchange trades a sign-in code as a browser at host would.
+func exchange(t *testing.T, e *env, code, host, origin string) (int, []*http.Cookie) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, e.url+agentv3connect.AgentServiceExchangeLoginCodeProcedure,
+		strings.NewReader(`{"code":"`+code+`"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Host = host
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", self)
+	req.Header.Set("Origin", origin)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = res.Body.Close()
-	cookies := res.Cookies()
-	if res.StatusCode != http.StatusOK || len(cookies) != 1 || !cookies[0].HttpOnly {
-		t.Fatalf("exchange: status %d cookies %+v", res.StatusCode, cookies)
-	}
-	session := cookies[0].Name + "=" + cookies[0].Value
+	return res.StatusCode, res.Cookies()
+}
 
-	sameSite := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure,
-		map[string]string{"Cookie": session, "Origin": self, "Sec-Fetch-Site": "same-origin"})
-	if sameSite.status != http.StatusOK {
-		t.Fatalf("same-origin session call: %d", sameSite.status)
+// signIn opens a browser session and returns its Cookie header.
+func signIn(t *testing.T, e *env) string {
+	t.Helper()
+	lc, err := e.client.CreateLoginCode(context.Background(), connect.NewRequest(signInCode))
+	if err != nil {
+		t.Fatal(err)
 	}
-	crossSite := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure,
-		map[string]string{"Cookie": session, "Sec-Fetch-Site": "cross-site"})
-	if crossSite.status == http.StatusOK {
-		t.Fatal("cross-site cookie request must be rejected")
+	status, cookies := exchange(t, e, lc.Msg.GetCode(), e.browser, "http://"+e.browser)
+	if status != http.StatusOK || len(cookies) != 1 {
+		t.Fatalf("sign in: status %d cookies %v", status, cookies)
 	}
-	mint := rawPost(t, e, agentv3connect.AgentServiceCreateLoginCodeProcedure,
-		map[string]string{"Cookie": session, "Origin": self, "Sec-Fetch-Site": "same-origin"})
-	if mint.status == http.StatusOK {
-		t.Fatal("a session must not mint login codes")
+	return cookies[0].Name + "=" + cookies[0].Value
+}
+
+func TestSignOut(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	one, two := signIn(t, e), signIn(t, e)
+	sessions := func() int32 {
+		t.Helper()
+		list, err := e.client.ListDevices(ctx, connect.NewRequest(&agentv3.ListDevicesRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list.Msg.GetBrowserSessions()
+	}
+	if n := sessions(); n != 2 {
+		t.Fatalf("browser sessions = %d, want 2", n)
+	}
+	as := func(cookie string) map[string]string {
+		return map[string]string{"Host": e.browser, "Cookie": cookie, "Origin": "http://" + e.browser, "Sec-Fetch-Site": "same-origin"}
+	}
+	out := rawPost(t, e, agentv3connect.AgentServiceSignOutProcedure, as(one))
+	if out.status != http.StatusOK || len(out.cookies) != 1 || out.cookies[0].MaxAge >= 0 {
+		t.Fatalf("sign out: status %d cookies %+v; want the cookie cleared", out.status, out.cookies)
+	}
+	if res := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure, as(one)); res.status != http.StatusUnauthorized {
+		t.Fatalf("a signed-out browser called the API: %d", res.status)
+	}
+	if _, err := e.client.SignOut(ctx, connect.NewRequest(&agentv3.SignOutRequest{})); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("the agent token signing out = %v", err)
+	}
+
+	ended, err := e.client.SignOutBrowsers(ctx, connect.NewRequest(&agentv3.SignOutBrowsersRequest{}))
+	if err != nil || ended.Msg.GetEnded() != 1 {
+		t.Fatalf("sign out every browser = %v, %v", ended, err)
+	}
+	if res := rawPost(t, e, agentv3connect.AgentServiceGetInfoProcedure, as(two)); res.status != http.StatusUnauthorized {
+		t.Fatalf("a browser signed out with the rest called the API: %d", res.status)
+	}
+	if n := sessions(); n != 0 {
+		t.Fatalf("browser sessions after signing out = %d", n)
 	}
 }
 
@@ -567,7 +677,10 @@ func get(t *testing.T, e *env, path, host string) (int, http.Header, string) {
 	if host != "" {
 		req.Host = host
 	}
-	res, err := http.DefaultClient.Do(req)
+	// Redirects are the response under test, not followed: a test must not
+	// depend on this computer resolving homecloud.localhost.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -580,9 +693,13 @@ func get(t *testing.T, e *env, path, host string) (int, http.Header, string) {
 
 func TestServesApp(t *testing.T) {
 	e := setup(t)
-	status, header, body := get(t, e, "/", "")
+	status, header, body := get(t, e, "/", e.browser)
 	if status != http.StatusOK || !strings.Contains(body, `id="root"`) {
 		t.Fatalf("GET / = %d %q", status, body)
+	}
+	// A browser that opens the listen address is sent to the app's own name.
+	if status, redirect, _ := get(t, e, "/", ""); status != http.StatusTemporaryRedirect || redirect.Get("Location") != "http://"+e.browser+"/" {
+		t.Fatalf("GET / at the listen address = %d %v", status, redirect)
 	}
 	if !strings.Contains(header.Get("Content-Security-Policy"), "default-src 'self'") || header.Get("Cache-Control") != "no-store" {
 		t.Fatalf("index headers = %v", header)

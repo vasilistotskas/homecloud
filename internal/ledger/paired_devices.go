@@ -41,6 +41,19 @@ func (db *DB) PairedDeviceByToken(ctx context.Context, tokenSHA256 [32]byte) (st
 	return id, nil
 }
 
+// PairedDeviceActive reports whether the device id is paired and not revoked.
+func (db *DB) PairedDeviceActive(ctx context.Context, id string) (bool, error) {
+	var one int
+	err := db.r.QueryRowContext(ctx, `SELECT 1 FROM paired_devices WHERE id = ? AND revoked_at IS NULL`, id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("paired device: %w", err)
+	}
+	return true, nil
+}
+
 // TouchPairedDevice records that a device was seen.
 func (db *DB) TouchPairedDevice(ctx context.Context, id string, now time.Time) error {
 	if _, err := db.w.ExecContext(ctx, `UPDATE paired_devices SET last_seen_at = ? WHERE id = ?`, formatTime(now), id); err != nil {

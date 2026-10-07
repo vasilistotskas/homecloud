@@ -23,6 +23,7 @@ import {
 import { CopyRegular } from "@fluentui/react-icons";
 import { useState, type ReactNode } from "react";
 
+import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
 import { useThemePreference, type ThemePreference } from "../app/themeContext";
 import { LoadError } from "../components/LoadError";
@@ -335,9 +336,9 @@ function ConnectionGroup() {
                 <DialogContent>
                   <Text block>
                     For homecloud running on a NAS, reached through Tailscale. On that device run{" "}
-                    <code>homecloud open --print</code> (in Docker:{" "}
-                    <code>docker compose exec homecloud homecloud open --print</code>) for a one-time code. This
-                    computer then keeps its own credential in the system's credential store.
+                    <code>homecloud pair</code> (in Docker: <code>docker compose exec homecloud homecloud pair</code>)
+                    for a pairing code. This computer then keeps its own credential in the system&apos;s credential
+                    store.
                   </Text>
                   <PairForm initialUrl="" deviceName={platform.deviceName} pair={platform.pair} />
                 </DialogContent>
@@ -386,10 +387,12 @@ function ConnectionGroup() {
   );
 }
 
-/** Devices paired with this homecloud, each revocable. */
+/** Devices paired with this homecloud, each revocable, and its browser sessions. */
 function PairedDevicesGroup() {
+  const styles = useStyles();
   const platform = usePlatform();
   const notify = useNotify();
+  const { reconnect } = useOverview();
   const devices = useQuery(AgentService.method.listDevices, {});
   const revoke = useMutation(AgentService.method.revokeDevice, {
     onSuccess: () => {
@@ -399,12 +402,60 @@ function PairedDevicesGroup() {
       notify("error", "Couldn't revoke the device", err.message);
     },
   });
+  // A browser that signs itself out reconnects, which finds it signed out.
+  const signOut = useMutation(AgentService.method.signOut, {
+    onSuccess: reconnect,
+    onError: (err) => {
+      notify("error", "Couldn't sign out", err.message);
+    },
+  });
+  const signOutBrowsers = useMutation(AgentService.method.signOutBrowsers, {
+    onSuccess: (res) => {
+      if (platform.kind === "browser") {
+        reconnect();
+        return;
+      }
+      void devices.refetch();
+      notify("success", `Signed out ${res.ended} browser session${res.ended === 1 ? "" : "s"}`);
+    },
+    onError: (err) => {
+      notify("error", "Couldn't sign the browsers out", err.message);
+    },
+  });
   const self = platform.kind === "desktop" && platform.connection.kind === "remote" ? platform.connection.deviceId : "";
+  const sessions = devices.data?.browserSessions ?? 0;
   return (
     <Group title="Paired devices">
       {devices.isPending && <Spinner size="tiny" label="Loading paired devices…" />}
       {devices.isError && (
         <LoadError what="the paired devices" error={devices.error} onRetry={() => void devices.refetch()} />
+      )}
+      {devices.data !== undefined && (
+        <Row
+          label="Browser sessions"
+          detail={`${sessions === 0 ? "None" : `${sessions} signed in`} with homecloud open; each ends when the agent restarts or after web.session_ttl`}
+        >
+          <div className={styles.buttons}>
+            {platform.kind === "browser" && (
+              <Button
+                disabled={signOut.isPending}
+                onClick={() => {
+                  signOut.mutate({});
+                }}
+              >
+                Sign out this browser
+              </Button>
+            )}
+            <Button
+              disabled={sessions === 0 || signOutBrowsers.isPending}
+              onClick={() => {
+                signOutBrowsers.mutate({});
+              }}
+            >
+              Sign out all browsers
+            </Button>
+          </div>
+        </Row>
       )}
       {devices.data?.devices.length === 0 && (
         <Row label="None" detail="The desktop app on another computer appears here once it is paired." />
@@ -431,7 +482,9 @@ function PairedDevicesGroup() {
                 <DialogBody>
                   <DialogTitle>Revoke {d.name}?</DialogTitle>
                   <DialogContent>
-                    It can no longer use this homecloud. Pairing it again needs a new one-time code.
+                    It can no longer use this homecloud, at once. Pairing it again needs a new code from homecloud pair.
+                    If it may be in someone else&apos;s hands, also change notify.topic: it has seen the topic your
+                    alerts go to.
                   </DialogContent>
                   <DialogActions>
                     <DialogTrigger disableButtonEnhancement>

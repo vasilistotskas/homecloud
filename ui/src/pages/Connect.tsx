@@ -13,7 +13,7 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import { CloudRegular } from "@fluentui/react-icons";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { useOverview } from "../api/overviewContext";
 import { usePlatform } from "../app/platformContext";
@@ -92,7 +92,7 @@ function PairAgain({
         <Title3 as="h1">Pair this computer again</Title3>
         <Text>
           homecloud at {url} no longer accepts this computer: it was revoked there. On that device run{" "}
-          <code>homecloud open --print</code> for a new one-time code.
+          <code>homecloud pair</code> for a new pairing code.
         </Text>
         <PairForm initialUrl={url} deviceName={deviceName} pair={pair} />
         <Button
@@ -108,7 +108,24 @@ function PairAgain({
   );
 }
 
-/** Pairs this browser with the agent using a one-time code from `homecloud open`. */
+/** Why a sign-in code was refused, in words. */
+function signInError(err: unknown): string {
+  const ce = ConnectError.from(err);
+  switch (ce.code) {
+    case Code.PermissionDenied:
+      return "That code didn't work. It may have expired or been used already; run homecloud open again for a new one.";
+    case Code.ResourceExhausted:
+      return "Too many wrong codes were tried; wait a minute, then try again.";
+    default:
+      return `Couldn't reach the agent: ${ce.rawMessage}`;
+  }
+}
+
+/**
+ * Signs this browser in with a one-time code from `homecloud open`. A code in
+ * the link it opens is filled in, never sent unasked: any web page can link
+ * here, and its codes would count against the limit on wrong ones.
+ */
 function ConnectBrowser() {
   const styles = useStyles();
   const { reconnect } = useOverview();
@@ -122,22 +139,7 @@ function ConnectBrowser() {
     },
   });
   const ready = normalize(code).length === codeLength;
-
-  // A code in the link from `homecloud open` is exchanged once, automatically.
-  const autoSubmitted = useRef(false);
-  const { mutate } = exchange;
-  useEffect(() => {
-    if (linkCode !== undefined && normalize(linkCode).length === codeLength && !autoSubmitted.current) {
-      autoSubmitted.current = true;
-      mutate({ code: linkCode });
-    }
-  }, [linkCode, mutate]);
-
-  const failed = exchange.isError
-    ? ConnectError.from(exchange.error).code === Code.PermissionDenied
-      ? "That code didn't work. It may have expired or been used already; run homecloud open again for a new one."
-      : `Couldn't reach the agent: ${exchange.error.message}`
-    : undefined;
+  const failed = exchange.isError ? signInError(exchange.error) : undefined;
 
   return (
     <div className={styles.root}>
@@ -153,7 +155,9 @@ function ConnectBrowser() {
           The agent only answers apps it trusts. On the computer that runs homecloud, open a terminal and run:
         </Text>
         <Text className={styles.command}>homecloud open</Text>
-        <Text size={200}>It opens this page already connected. Or enter the code it prints:</Text>
+        <Text size={200}>
+          It opens this page with its one-time code filled in; check it, then connect. Or type the code it prints:
+        </Text>
         <form
           onSubmit={(e) => {
             e.preventDefault();

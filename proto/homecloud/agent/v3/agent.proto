@@ -53,23 +53,28 @@ service AgentService {
   rpc GetSettings(GetSettingsRequest) returns (GetSettingsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
-  // CreateLoginCode issues a short-lived, single-use code that a browser can
-  // exchange for a session, or a device can pair with. Requires the agent
-  // token.
+  // CreateLoginCode issues a short-lived, single-use code for one purpose: a
+  // browser exchanges a sign-in code for a session, a device pairs with a
+  // pairing code. Requires the agent token.
   rpc CreateLoginCode(CreateLoginCodeRequest) returns (CreateLoginCodeResponse);
-  // ExchangeLoginCode trades a login code for a session cookie. Callable
+  // ExchangeLoginCode trades a sign-in code for a session cookie. Callable
   // without credentials: the code is the credential.
   rpc ExchangeLoginCode(ExchangeLoginCodeRequest) returns (ExchangeLoginCodeResponse);
-  // PairDevice trades a login code for a device token, which the device
+  // PairDevice trades a pairing code for a device token, which the device
   // keeps and sends as its bearer token until it is revoked. Callable without
   // credentials: the code is the credential.
   rpc PairDevice(PairDeviceRequest) returns (PairDeviceResponse);
-  // ListDevices lists the paired devices that are not revoked.
+  // ListDevices lists the paired devices that are not revoked, and counts the
+  // open browser sessions.
   rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
   // RevokeDevice ends a paired device's access at once.
   rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+  // SignOut ends the calling browser session and clears its cookie.
+  rpc SignOut(SignOutRequest) returns (SignOutResponse);
+  // SignOutBrowsers ends every browser session, the caller's too.
+  rpc SignOutBrowsers(SignOutBrowsersRequest) returns (SignOutBrowsersResponse);
 }
 
 message GetInfoRequest {}
@@ -932,7 +937,20 @@ message ToolPin {
   string version = 2;
 }
 
-message CreateLoginCodeRequest {}
+// LoginCodePurpose is what a login code may be traded for; a code is refused
+// for any other.
+enum LoginCodePurpose {
+  LOGIN_CODE_PURPOSE_UNSPECIFIED = 0;
+  // A browser session (homecloud open).
+  LOGIN_CODE_PURPOSE_SIGN_IN = 1;
+  // A paired device's token, which lasts until the device is revoked
+  // (homecloud pair).
+  LOGIN_CODE_PURPOSE_PAIR = 2;
+}
+
+message CreateLoginCodeRequest {
+  LoginCodePurpose purpose = 1;
+}
 
 message CreateLoginCodeResponse {
   // Eight characters from an unambiguous alphabet, shown as XXXX-XXXX.
@@ -962,6 +980,9 @@ message ListDevicesRequest {}
 
 message ListDevicesResponse {
   repeated PairedDevice devices = 1;
+  // Browser sessions open now (homecloud open); they end when the agent
+  // restarts, after web.session_ttl, or with SignOut / SignOutBrowsers.
+  int32 browser_sessions = 2;
 }
 
 message PairedDevice {
@@ -977,3 +998,14 @@ message RevokeDeviceRequest {
 }
 
 message RevokeDeviceResponse {}
+
+message SignOutRequest {}
+
+message SignOutResponse {}
+
+message SignOutBrowsersRequest {}
+
+message SignOutBrowsersResponse {
+  // How many sessions were open.
+  int32 ended = 1;
+}

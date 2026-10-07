@@ -53,29 +53,47 @@ func (d *devices) PairedDeviceByToken(_ context.Context, sum [32]byte) (string, 
 	return id, nil
 }
 
+func (d *devices) PairedDeviceActive(_ context.Context, id string) (bool, error) {
+	if d.broken != nil {
+		return false, d.broken
+	}
+	for _, known := range d.byHash {
+		if known == id {
+			return !d.revoked[id], nil
+		}
+	}
+	return false, nil
+}
+
 func (d *devices) TouchPairedDevice(context.Context, string, time.Time) error {
 	d.touches++
 	return nil
 }
 
 // authenticate is Authenticate for requests whose check must not fail.
-func authenticate(t *testing.T, a *Authenticator, r *http.Request) Kind {
+func authenticate(t *testing.T, a *Authenticator, r *http.Request) Principal {
 	t.Helper()
-	k, err := a.Authenticate(r)
+	p, err := a.Authenticate(r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return k
+	return p
+}
+
+func newCode(t *testing.T, a *Authenticator, purpose Purpose) string {
+	t.Helper()
+	code, _, err := a.NewLoginCode(purpose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return code
 }
 
 func TestPairing(t *testing.T) {
 	clock := t0
 	store := newDevices()
 	a := New("agent-token", sessionTTL, false, store, func() time.Time { return clock })
-	code, _, err := a.NewLoginCode()
-	if err != nil {
-		t.Fatal(err)
-	}
+	code := newCode(t, a, PurposePair)
 	id, token, err := a.Pair(context.Background(), code, "Laptop")
 	if err != nil || id == "" || len(token) < 40 {
 		t.Fatalf("Pair = %q, %q, %v", id, token, err)
@@ -83,12 +101,9 @@ func TestPairing(t *testing.T) {
 	if _, _, err := a.Pair(context.Background(), code, "Again"); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("reused code = %v, want ErrInvalidCode", err)
 	}
-	if _, err := a.Exchange(code); !errors.Is(err, ErrInvalidCode) {
-		t.Fatal("a code used for pairing must not also open a session")
-	}
 
-	if got := authenticate(t, a, request("Bearer "+token, "")); got != KindDevice {
-		t.Fatalf("device token = %v, want KindDevice", got)
+	if got := authenticate(t, a, request("Bearer "+token, "")); got.Kind != KindDevice || got.ID != id {
+		t.Fatalf("device token = %+v, want device %s", got, id)
 	}
 	authenticate(t, a, request("Bearer "+token, ""))
 	if store.touches != 1 {
@@ -101,16 +116,40 @@ func TestPairing(t *testing.T) {
 	}
 
 	store.revoked[id] = true
-	if got := authenticate(t, a, request("Bearer "+token, "")); got != KindNone {
-		t.Fatalf("revoked device = %v, want KindNone", got)
+	if got := authenticate(t, a, request("Bearer "+token, "")); got.Kind != KindNone {
+		t.Fatalf("revoked device = %+v, want KindNone", got)
 	}
 
 	store.broken = errors.New("disk gone")
 	if _, err := a.Authenticate(request("Bearer "+token, "")); err == nil {
 		t.Fatal("an unreadable device store must fail the check, not deny or admit")
 	}
-	if got := authenticate(t, a, request("Bearer agent-token", "")); got != KindBearer {
+	if got := authenticate(t, a, request("Bearer agent-token", "")); got.Kind != KindBearer {
 		t.Fatal("the agent token must not depend on the device store")
+	}
+}
+
+// TestCodesHaveAPurpose: a sign-in code (homecloud open, shown on screens)
+// must not mint a device token that never expires, and the reverse.
+func TestCodesHaveAPurpose(t *testing.T) {
+	clock := t0
+	a, _ := newAuth(t, &clock)
+	signIn, pair := newCode(t, a, PurposeSignIn), newCode(t, a, PurposePair)
+	if _, _, err := a.Pair(context.Background(), signIn, "Laptop"); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("pairing with a sign-in code = %v", err)
+	}
+	if _, err := a.Exchange(pair); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("signing in with a pairing code = %v", err)
+	}
+	// Refused for the wrong purpose, each still works for its own.
+	if _, err := a.Exchange(signIn); err != nil {
+		t.Fatalf("the sign-in code after a pairing attempt: %v", err)
+	}
+	if _, _, err := a.Pair(context.Background(), pair, "Laptop"); err != nil {
+		t.Fatalf("the pairing code after a sign-in attempt: %v", err)
+	}
+	if _, _, err := a.NewLoginCode(Purpose(0)); err == nil {
+		t.Fatal("a code without a purpose was issued")
 	}
 }
 
@@ -118,15 +157,11 @@ func TestSessionCookieIsSecureBehindHTTPS(t *testing.T) {
 	clock := t0
 	for _, secure := range []bool{false, true} {
 		a := New("token", sessionTTL, secure, newDevices(), func() time.Time { return clock })
-		code, _, err := a.NewLoginCode()
+		cookie, err := a.Exchange(newCode(t, a, PurposeSignIn))
 		if err != nil {
 			t.Fatal(err)
 		}
-		cookie, err := a.Exchange(code)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if cookie.Secure != secure {
+		if cookie.Secure != secure || a.ClearedCookie().Secure != secure {
 			t.Errorf("secure=%v: cookie.Secure = %v", secure, cookie.Secure)
 		}
 	}
@@ -157,8 +192,8 @@ func TestBearer(t *testing.T) {
 		"":                    KindNone,
 	}
 	for h, want := range cases {
-		if got := authenticate(t, a, request(h, "")); got != want {
-			t.Errorf("Authorization %q = %v, want %v", h, got, want)
+		if got := authenticate(t, a, request(h, "")); got.Kind != want {
+			t.Errorf("Authorization %q = %v, want %v", h, got.Kind, want)
 		}
 	}
 }
@@ -166,7 +201,7 @@ func TestBearer(t *testing.T) {
 func TestLoginCodeFlow(t *testing.T) {
 	clock := t0
 	a, _ := newAuth(t, &clock)
-	code, exp, err := a.NewLoginCode()
+	code, exp, err := a.NewLoginCode(PurposeSignIn)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,48 +215,116 @@ func TestLoginCodeFlow(t *testing.T) {
 	if !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" {
 		t.Fatalf("cookie attributes = %+v", cookie)
 	}
-	if got := authenticate(t, a, request("", cookie.Value)); got != KindSession {
-		t.Fatalf("session auth = %v", got)
+	p := authenticate(t, a, request("", cookie.Value))
+	if p.Kind != KindSession || p.ID == "" || p.ID == cookie.Value {
+		t.Fatalf("session auth = %+v; its ID must name the session without being its cookie", p)
 	}
-	if got := authenticate(t, a, request("Bearer wrong", cookie.Value)); got != KindNone {
-		t.Fatalf("a wrong bearer token must not fall back to the cookie, got %v", got)
+	if got := authenticate(t, a, request("Bearer wrong", cookie.Value)); got.Kind != KindNone {
+		t.Fatalf("a wrong bearer token must not fall back to the cookie, got %+v", got)
 	}
 	if _, err := a.Exchange(code); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("reused code = %v, want ErrInvalidCode", err)
 	}
 	clock = clock.Add(sessionTTL)
-	if got := authenticate(t, a, request("", cookie.Value)); got != KindNone {
-		t.Fatalf("expired session = %v", got)
+	if got := authenticate(t, a, request("", cookie.Value)); got.Kind != KindNone {
+		t.Fatalf("expired session = %+v", got)
 	}
 }
 
 func TestLoginCodeExpires(t *testing.T) {
 	clock := t0
 	a, _ := newAuth(t, &clock)
-	code, _, err := a.NewLoginCode()
-	if err != nil {
-		t.Fatal(err)
-	}
+	code := newCode(t, a, PurposeSignIn)
 	clock = clock.Add(CodeTTL)
 	if _, err := a.Exchange(code); !errors.Is(err, ErrInvalidCode) {
 		t.Fatalf("expired code = %v, want ErrInvalidCode", err)
 	}
 }
 
-func TestWrongGuessesRevokeCodes(t *testing.T) {
+// TestWrongCodesAreRateLimited: wrong guesses pause every attempt for a while
+// but never discard the owner's code, which anyone could otherwise use to
+// keep the owner from signing in.
+func TestWrongCodesAreRateLimited(t *testing.T) {
 	clock := t0
 	a, _ := newAuth(t, &clock)
-	code, _, err := a.NewLoginCode()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range maxFailedExchanges {
+	code := newCode(t, a, PurposeSignIn)
+	for range maxFailures {
 		if _, err := a.Exchange("AAAA-AAAA"); !errors.Is(err, ErrInvalidCode) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := a.Exchange(code); !errors.Is(err, ErrInvalidCode) {
-		t.Fatalf("code after %d wrong guesses = %v, want revoked", maxFailedExchanges, err)
+	if _, err := a.Exchange(code); !errors.Is(err, ErrTooManyAttempts) {
+		t.Fatalf("the right code during the pause = %v, want ErrTooManyAttempts", err)
+	}
+	clock = clock.Add(failureWindow)
+	if _, err := a.Exchange(code); err != nil {
+		t.Fatalf("the right code after the pause = %v", err)
+	}
+}
+
+// TestValidEndsWithAccess: what outlives a request (a stream, a media URL)
+// stops working when the device is revoked or the session ends.
+func TestValidEndsWithAccess(t *testing.T) {
+	clock := t0
+	store := newDevices()
+	a := New("agent-token", sessionTTL, false, store, func() time.Time { return clock })
+	ctx := context.Background()
+	valid := func(p Principal) bool {
+		t.Helper()
+		ok, err := a.Valid(ctx, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+
+	agent := authenticate(t, a, request("Bearer agent-token", ""))
+	if !valid(agent) || valid(Principal{Kind: KindBearer, ID: "someone"}) {
+		t.Fatal("the agent token is the only bearer principal")
+	}
+
+	id, token, err := a.Pair(ctx, newCode(t, a, PurposePair), "Laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := authenticate(t, a, request("Bearer "+token, ""))
+	if !valid(device) {
+		t.Fatal("a paired device is not valid")
+	}
+	store.revoked[id] = true
+	if valid(device) {
+		t.Fatal("a revoked device is still valid")
+	}
+
+	var sessions []Principal
+	for range 3 {
+		cookie, exchangeErr := a.Exchange(newCode(t, a, PurposeSignIn))
+		if exchangeErr != nil {
+			t.Fatal(exchangeErr)
+		}
+		sessions = append(sessions, authenticate(t, a, request("", cookie.Value)))
+	}
+	if a.Sessions() != 3 || !valid(sessions[0]) {
+		t.Fatalf("sessions = %d", a.Sessions())
+	}
+	if !a.SignOut(sessions[0].ID) || valid(sessions[0]) || a.SignOut(sessions[0].ID) {
+		t.Fatal("a signed-out session is still valid, or signed out twice")
+	}
+	if n := a.SignOutAll(); n != 2 || valid(sessions[1]) || a.Sessions() != 0 {
+		t.Fatalf("SignOutAll ended %d sessions; %d left", n, a.Sessions())
+	}
+
+	cookie, err := a.Exchange(newCode(t, a, PurposeSignIn))
+	if err != nil {
+		t.Fatal(err)
+	}
+	late := authenticate(t, a, request("", cookie.Value))
+	clock = clock.Add(sessionTTL)
+	if valid(late) {
+		t.Fatal("an expired session is still valid")
+	}
+	if c := a.ClearedCookie(); c.MaxAge >= 0 || c.Value != "" || c.Name != SessionCookie {
+		t.Fatalf("cleared cookie = %+v", c)
 	}
 }
 

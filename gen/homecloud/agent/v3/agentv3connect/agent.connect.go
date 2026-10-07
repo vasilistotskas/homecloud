@@ -81,6 +81,11 @@ const (
 	// AgentServiceRevokeDeviceProcedure is the fully-qualified name of the AgentService's RevokeDevice
 	// RPC.
 	AgentServiceRevokeDeviceProcedure = "/homecloud.agent.v3.AgentService/RevokeDevice"
+	// AgentServiceSignOutProcedure is the fully-qualified name of the AgentService's SignOut RPC.
+	AgentServiceSignOutProcedure = "/homecloud.agent.v3.AgentService/SignOut"
+	// AgentServiceSignOutBrowsersProcedure is the fully-qualified name of the AgentService's
+	// SignOutBrowsers RPC.
+	AgentServiceSignOutBrowsersProcedure = "/homecloud.agent.v3.AgentService/SignOutBrowsers"
 )
 
 // AgentServiceClient is a client for the homecloud.agent.v3.AgentService service.
@@ -112,21 +117,26 @@ type AgentServiceClient interface {
 	SendTestNotification(context.Context, *connect.Request[v3.SendTestNotificationRequest]) (*connect.Response[v3.SendTestNotificationResponse], error)
 	// GetSettings returns the agent's effective configuration.
 	GetSettings(context.Context, *connect.Request[v3.GetSettingsRequest]) (*connect.Response[v3.GetSettingsResponse], error)
-	// CreateLoginCode issues a short-lived, single-use code that a browser can
-	// exchange for a session, or a device can pair with. Requires the agent
-	// token.
+	// CreateLoginCode issues a short-lived, single-use code for one purpose: a
+	// browser exchanges a sign-in code for a session, a device pairs with a
+	// pairing code. Requires the agent token.
 	CreateLoginCode(context.Context, *connect.Request[v3.CreateLoginCodeRequest]) (*connect.Response[v3.CreateLoginCodeResponse], error)
-	// ExchangeLoginCode trades a login code for a session cookie. Callable
+	// ExchangeLoginCode trades a sign-in code for a session cookie. Callable
 	// without credentials: the code is the credential.
 	ExchangeLoginCode(context.Context, *connect.Request[v3.ExchangeLoginCodeRequest]) (*connect.Response[v3.ExchangeLoginCodeResponse], error)
-	// PairDevice trades a login code for a device token, which the device
+	// PairDevice trades a pairing code for a device token, which the device
 	// keeps and sends as its bearer token until it is revoked. Callable without
 	// credentials: the code is the credential.
 	PairDevice(context.Context, *connect.Request[v3.PairDeviceRequest]) (*connect.Response[v3.PairDeviceResponse], error)
-	// ListDevices lists the paired devices that are not revoked.
+	// ListDevices lists the paired devices that are not revoked, and counts the
+	// open browser sessions.
 	ListDevices(context.Context, *connect.Request[v3.ListDevicesRequest]) (*connect.Response[v3.ListDevicesResponse], error)
 	// RevokeDevice ends a paired device's access at once.
 	RevokeDevice(context.Context, *connect.Request[v3.RevokeDeviceRequest]) (*connect.Response[v3.RevokeDeviceResponse], error)
+	// SignOut ends the calling browser session and clears its cookie.
+	SignOut(context.Context, *connect.Request[v3.SignOutRequest]) (*connect.Response[v3.SignOutResponse], error)
+	// SignOutBrowsers ends every browser session, the caller's too.
+	SignOutBrowsers(context.Context, *connect.Request[v3.SignOutBrowsersRequest]) (*connect.Response[v3.SignOutBrowsersResponse], error)
 }
 
 // NewAgentServiceClient constructs a client for the homecloud.agent.v3.AgentService service. By
@@ -251,6 +261,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("RevokeDevice")),
 			connect.WithClientOptions(opts...),
 		),
+		signOut: connect.NewClient[v3.SignOutRequest, v3.SignOutResponse](
+			httpClient,
+			baseURL+AgentServiceSignOutProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SignOut")),
+			connect.WithClientOptions(opts...),
+		),
+		signOutBrowsers: connect.NewClient[v3.SignOutBrowsersRequest, v3.SignOutBrowsersResponse](
+			httpClient,
+			baseURL+AgentServiceSignOutBrowsersProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SignOutBrowsers")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -273,6 +295,8 @@ type agentServiceClient struct {
 	pairDevice           *connect.Client[v3.PairDeviceRequest, v3.PairDeviceResponse]
 	listDevices          *connect.Client[v3.ListDevicesRequest, v3.ListDevicesResponse]
 	revokeDevice         *connect.Client[v3.RevokeDeviceRequest, v3.RevokeDeviceResponse]
+	signOut              *connect.Client[v3.SignOutRequest, v3.SignOutResponse]
+	signOutBrowsers      *connect.Client[v3.SignOutBrowsersRequest, v3.SignOutBrowsersResponse]
 }
 
 // GetInfo calls homecloud.agent.v3.AgentService.GetInfo.
@@ -360,6 +384,16 @@ func (c *agentServiceClient) RevokeDevice(ctx context.Context, req *connect.Requ
 	return c.revokeDevice.CallUnary(ctx, req)
 }
 
+// SignOut calls homecloud.agent.v3.AgentService.SignOut.
+func (c *agentServiceClient) SignOut(ctx context.Context, req *connect.Request[v3.SignOutRequest]) (*connect.Response[v3.SignOutResponse], error) {
+	return c.signOut.CallUnary(ctx, req)
+}
+
+// SignOutBrowsers calls homecloud.agent.v3.AgentService.SignOutBrowsers.
+func (c *agentServiceClient) SignOutBrowsers(ctx context.Context, req *connect.Request[v3.SignOutBrowsersRequest]) (*connect.Response[v3.SignOutBrowsersResponse], error) {
+	return c.signOutBrowsers.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the homecloud.agent.v3.AgentService service.
 type AgentServiceHandler interface {
 	// GetInfo identifies the agent. Incompatible API changes get a new proto
@@ -389,21 +423,26 @@ type AgentServiceHandler interface {
 	SendTestNotification(context.Context, *connect.Request[v3.SendTestNotificationRequest]) (*connect.Response[v3.SendTestNotificationResponse], error)
 	// GetSettings returns the agent's effective configuration.
 	GetSettings(context.Context, *connect.Request[v3.GetSettingsRequest]) (*connect.Response[v3.GetSettingsResponse], error)
-	// CreateLoginCode issues a short-lived, single-use code that a browser can
-	// exchange for a session, or a device can pair with. Requires the agent
-	// token.
+	// CreateLoginCode issues a short-lived, single-use code for one purpose: a
+	// browser exchanges a sign-in code for a session, a device pairs with a
+	// pairing code. Requires the agent token.
 	CreateLoginCode(context.Context, *connect.Request[v3.CreateLoginCodeRequest]) (*connect.Response[v3.CreateLoginCodeResponse], error)
-	// ExchangeLoginCode trades a login code for a session cookie. Callable
+	// ExchangeLoginCode trades a sign-in code for a session cookie. Callable
 	// without credentials: the code is the credential.
 	ExchangeLoginCode(context.Context, *connect.Request[v3.ExchangeLoginCodeRequest]) (*connect.Response[v3.ExchangeLoginCodeResponse], error)
-	// PairDevice trades a login code for a device token, which the device
+	// PairDevice trades a pairing code for a device token, which the device
 	// keeps and sends as its bearer token until it is revoked. Callable without
 	// credentials: the code is the credential.
 	PairDevice(context.Context, *connect.Request[v3.PairDeviceRequest]) (*connect.Response[v3.PairDeviceResponse], error)
-	// ListDevices lists the paired devices that are not revoked.
+	// ListDevices lists the paired devices that are not revoked, and counts the
+	// open browser sessions.
 	ListDevices(context.Context, *connect.Request[v3.ListDevicesRequest]) (*connect.Response[v3.ListDevicesResponse], error)
 	// RevokeDevice ends a paired device's access at once.
 	RevokeDevice(context.Context, *connect.Request[v3.RevokeDeviceRequest]) (*connect.Response[v3.RevokeDeviceResponse], error)
+	// SignOut ends the calling browser session and clears its cookie.
+	SignOut(context.Context, *connect.Request[v3.SignOutRequest]) (*connect.Response[v3.SignOutResponse], error)
+	// SignOutBrowsers ends every browser session, the caller's too.
+	SignOutBrowsers(context.Context, *connect.Request[v3.SignOutBrowsersRequest]) (*connect.Response[v3.SignOutBrowsersResponse], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -524,6 +563,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("RevokeDevice")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSignOutHandler := connect.NewUnaryHandler(
+		AgentServiceSignOutProcedure,
+		svc.SignOut,
+		connect.WithSchema(agentServiceMethods.ByName("SignOut")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceSignOutBrowsersHandler := connect.NewUnaryHandler(
+		AgentServiceSignOutBrowsersProcedure,
+		svc.SignOutBrowsers,
+		connect.WithSchema(agentServiceMethods.ByName("SignOutBrowsers")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/homecloud.agent.v3.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceGetInfoProcedure:
@@ -560,6 +611,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceListDevicesHandler.ServeHTTP(w, r)
 		case AgentServiceRevokeDeviceProcedure:
 			agentServiceRevokeDeviceHandler.ServeHTTP(w, r)
+		case AgentServiceSignOutProcedure:
+			agentServiceSignOutHandler.ServeHTTP(w, r)
+		case AgentServiceSignOutBrowsersProcedure:
+			agentServiceSignOutBrowsersHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -635,4 +690,12 @@ func (UnimplementedAgentServiceHandler) ListDevices(context.Context, *connect.Re
 
 func (UnimplementedAgentServiceHandler) RevokeDevice(context.Context, *connect.Request[v3.RevokeDeviceRequest]) (*connect.Response[v3.RevokeDeviceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.RevokeDevice is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SignOut(context.Context, *connect.Request[v3.SignOutRequest]) (*connect.Response[v3.SignOutResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.SignOut is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SignOutBrowsers(context.Context, *connect.Request[v3.SignOutBrowsersRequest]) (*connect.Response[v3.SignOutBrowsersResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.SignOutBrowsers is not implemented"))
 }

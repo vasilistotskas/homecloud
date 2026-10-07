@@ -119,7 +119,8 @@ The agent serves a local API ([Connect](https://connectrpc.com), contract in
 `proto/homecloud/agent/v3`) on `web.listen` (always `127.0.0.1`). Same-user clients read the
 bearer token from the owner-only discovery file `agent.json` in the per-user state directory
 (`%LOCALAPPDATA%\homecloud` on Windows, `$XDG_STATE_HOME/homecloud` on Linux); the token changes
-every time the agent starts. Browsers sign in with a one-time code from `homecloud open`.
+every time the agent starts. Browsers sign in with a one-time code from `homecloud open`, at
+`http://homecloud.localhost:<port>` on this computer, so the session cookie stays the app's own.
 
 ## Architecture and stack
 
@@ -315,10 +316,10 @@ the running agent with the token from its discovery file; the agent stays instal
 on its own. The app and the agent are built from the same commit: install both together.
 
 To use homecloud on a NAS instead, open **Settings → Connection → Connect to another device**,
-enter its Tailscale address and a one-time code from `homecloud open --print` there: the app
+enter its Tailscale address and a pairing code from `homecloud pair` there: the app
 pairs once and keeps its own device token in the system credential store (Windows Credential
 Manager, Secret Service on Linux). **Settings → Paired devices** lists and revokes paired
-devices; **Disconnect** revokes this computer there and returns to this PC's agent.
+devices and signs browsers out; **Disconnect** revokes this computer there and returns to this PC's agent.
 
 ```powershell
 pnpm --dir ui build                              # the installer packages ui/dist as it is
@@ -358,7 +359,8 @@ path it validated. Every key is required; the schema is `internal/config`.
 |---|---|
 | `homecloud archive init --root R` | Mark `R` as a new archive (writes `homecloud-archive.json`, never replaces one) and print its id for `storage.archive_id` |
 | `homecloud doctor` | Read-only checks: archive root and identity, that the archive, the ledger backups and kei's folder are this account's alone, free space, backup dir on another drive, generated kei config, pinned tool versions, the health of every drive and RAID array under the archive, iPhone backup folders and the incoming folder |
-| `homecloud open [--print]` | Open the web app in the browser, signed in through a one-time code; `--print` prints the link instead (another device, or a NAS) |
+| `homecloud open [--print]` | Open the web app in the browser (`http://homecloud.localhost:<port>`, or the public origin) with a one-time sign-in code, which you confirm on the page; `--print` prints the link instead (another device, or a NAS) |
+| `homecloud pair` | Print a one-time code that pairs the desktop app on another computer with this agent (needs `web.public_origin`); each pairing sends an alert |
 | `homecloud status` | Asset counts by state |
 | `homecloud quarantine list` | Files that failed a check, with the reason |
 | `homecloud quarantine release --library L --asset A --reason R` | Lift a quarantine (audited); the asset's files are checked again |

@@ -3,13 +3,15 @@
 //
 // Every request passes, in order:
 //
-//  1. an exact Host check: the listen address, and the public origin's host
-//     when a proxy serves the agent (defeats DNS rebinding),
-//  2. an Origin allow-list (the agent's own origins and the desktop app's),
+//  1. an exact Host check: the listen address, the browser address
+//     (BrowserHost) and the public origin's host when a proxy serves the
+//     agent (defeats DNS rebinding),
+//  2. an Origin allow-list (the browser address, the public origin and the
+//     desktop app's origins),
 //  3. CORS, granted only to the desktop app's origins,
 //  4. security headers,
 //  5. for the API: authentication (bearer token or session cookie, with CSRF
-//     protection for cookies).
+//     protection for cookies), whose principal the request then carries.
 package web
 
 import (
@@ -23,6 +25,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -38,6 +41,13 @@ import (
 // (tauri-utils config, useHttpsScheme = false).
 var DesktopOrigins = []string{"http://tauri.localhost", "tauri://localhost"}
 
+// BrowserHost is the name a browser on the agent's own computer uses for the
+// web app. Browsers resolve every *.localhost name to the loopback address
+// themselves (Chrome and Edge, and Firefox since bug 1220810), and keep
+// cookies by host name, not port: on its own name the session cookie never
+// reaches another service on 127.0.0.1.
+const BrowserHost = "homecloud.localhost"
+
 const (
 	readHeaderTimeout = 10 * time.Second
 	readTimeout       = 30 * time.Second
@@ -45,7 +55,20 @@ const (
 	shutdownWait      = 5 * time.Second
 	corsMaxAge        = 2 * time.Hour
 	maxRequestBytes   = 1 << 20
+	// refusalWindow is how often refused requests (a foreign Host or Origin)
+	// are logged: the first at once, the rest as a count.
+	refusalWindow = time.Minute
 )
+
+// BrowserAddr is the host:port a browser on this computer uses for an agent
+// listening on listen.
+func BrowserAddr(listen string) (string, error) {
+	_, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return "", fmt.Errorf("listen address %q: %w", listen, err)
+	}
+	return net.JoinHostPort(BrowserHost, port), nil
+}
 
 // Options configures Handler.
 type Options struct {
@@ -66,15 +89,23 @@ type Options struct {
 
 // Handler returns the agent's root HTTP handler.
 func Handler(o Options) (http.Handler, error) {
-	hosts := []string{o.Listen}
-	own := []string{"http://" + o.Listen}
+	browser, err := BrowserAddr(o.Listen)
+	if err != nil {
+		return nil, err
+	}
+	hosts := []string{o.Listen, browser}
+	// The app's own origins; the listen address serves no pages (a browser
+	// that opens it is sent to the browser address).
+	own := []string{"http://" + browser}
+	signIn := []string{browser}
 	if o.PublicOrigin != "" {
-		u, err := url.Parse(o.PublicOrigin)
-		if err != nil {
-			return nil, fmt.Errorf("public origin %q: %w", o.PublicOrigin, err)
+		u, parseErr := url.Parse(o.PublicOrigin)
+		if parseErr != nil {
+			return nil, fmt.Errorf("public origin %q: %w", o.PublicOrigin, parseErr)
 		}
 		hosts = append(hosts, u.Host)
 		own = append(own, o.PublicOrigin)
+		signIn = append(signIn, u.Host)
 	}
 	origins := slices.Concat(own, DesktopOrigins)
 
@@ -85,11 +116,14 @@ func Handler(o Options) (http.Handler, error) {
 		}
 	}
 
-	apiPath, apiHandler := agentv3connect.NewAgentServiceHandler(o.Service, connect.WithReadMaxBytes(maxRequestBytes))
+	// No request compression: no client sends any, and a small compressed
+	// body could make the agent inflate a large one before anyone signed in.
+	apiPath, apiHandler := agentv3connect.NewAgentServiceHandler(o.Service,
+		connect.WithReadMaxBytes(maxRequestBytes), connect.WithCompression("gzip", nil, nil))
 	mux := http.NewServeMux()
-	mux.Handle(apiPath, authenticate(o.Auth, csrf, apiHandler))
+	mux.Handle(apiPath, http.MaxBytesHandler(authenticate(o.Auth, csrf, signIn, browser, o.Log, apiHandler), maxRequestBytes))
 	app := serveApp(o.App)
-	mux.Handle("GET /{$}", app)
+	mux.Handle("GET /{$}", toBrowserAddr(o.Listen, browser, app))
 	mux.Handle("GET /assets/", app)
 	mux.Handle("GET "+media.Prefix, o.Media)
 
@@ -100,12 +134,59 @@ func Handler(o Options) (http.Handler, error) {
 		connectcors.ExposedHeaders(),
 		corsMaxAge,
 	)
-	return checkHost(hosts, checkOrigin(origins, cors.handler(secureHeaders(mux)))), nil
+	refused := &refusals{log: o.Log}
+	return checkHost(hosts, refused, checkOrigin(origins, refused, cors.handler(secureHeaders(mux)))), nil
 }
 
-func checkHost(allowed []string, next http.Handler) http.Handler {
+// toBrowserAddr sends a browser that opens the app at the listen address to
+// the browser address, keeping the URL's fragment (where the app keeps its
+// route and a sign-in code), which browsers carry over a redirect.
+func toBrowserAddr(listen, browser string, app http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == listen {
+			http.Redirect(w, r, "http://"+browser+"/", http.StatusTemporaryRedirect)
+			return
+		}
+		app.ServeHTTP(w, r)
+	})
+}
+
+// refusals logs requests refused for their Host or Origin: the first of each
+// window at once, then how many more there were, so that a flood of them
+// cannot push the rest of the log out.
+type refusals struct {
+	log *slog.Logger
+
+	mu    sync.Mutex
+	since time.Time
+	count int
+}
+
+func (f *refusals) refuse(r *http.Request, why string) {
+	now := time.Now()
+	f.mu.Lock()
+	first := now.Sub(f.since) >= refusalWindow
+	more := f.count
+	if first {
+		f.since, f.count = now, 0
+	} else {
+		f.count++
+	}
+	f.mu.Unlock()
+	if !first {
+		return
+	}
+	if more > 0 {
+		f.log.Warn("more requests were refused", "count", more, "window", refusalWindow.String())
+	}
+	f.log.Warn("request refused", "reason", why, "host", r.Host, "origin", r.Header.Get("Origin"),
+		"method", r.Method, "path", r.URL.Path, "remote", r.RemoteAddr)
+}
+
+func checkHost(allowed []string, refused *refusals, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !slices.Contains(allowed, r.Host) {
+			refused.refuse(r, "foreign host")
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
@@ -113,9 +194,10 @@ func checkHost(allowed []string, next http.Handler) http.Handler {
 	})
 }
 
-func checkOrigin(allowed []string, next http.Handler) http.Handler {
+func checkOrigin(allowed []string, refused *refusals, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if o := r.Header.Get("Origin"); o != "" && !slices.Contains(allowed, o) {
+			refused.refuse(r, "foreign origin")
 			http.Error(w, "forbidden origin", http.StatusForbidden)
 			return
 		}
@@ -134,11 +216,15 @@ func secureHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// authenticate admits API calls with a valid credential. ExchangeLoginCode
-// and PairDevice are open (they are how a browser or a device obtains a
-// credential; the login code is the credential); CreateLoginCode requires the
-// agent token; cookie-authenticated calls must also pass CSRF checks.
-func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next http.Handler) http.Handler {
+// authenticate admits API calls with a valid credential and passes their
+// principal on (auth.PrincipalFrom). ExchangeLoginCode and PairDevice are
+// open (they are how a browser or a device obtains a credential; the code is
+// the credential); a session is issued only on the browser address or the
+// public origin; CreateLoginCode requires the agent token; cookie-
+// authenticated calls must also pass CSRF checks.
+func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, signIn []string, browser string,
+	log *slog.Logger, next http.Handler,
+) http.Handler {
 	errs := connect.NewErrorWriter()
 	deny := func(w http.ResponseWriter, r *http.Request, code connect.Code, msg string) {
 		if err := errs.Write(w, r, connect.NewError(code, errors.New(msg))); err != nil {
@@ -149,7 +235,12 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 		procedure := strings.TrimSuffix(r.URL.Path, "/")
 		switch procedure {
 		case agentv3connect.AgentServiceExchangeLoginCodeProcedure:
-			// It sets a cookie: no cross-site page may log a browser in.
+			// It sets a cookie: no cross-site page may log a browser in, and
+			// only on the app's own names may a cookie be set.
+			if !slices.Contains(signIn, r.Host) {
+				deny(w, r, connect.CodePermissionDenied, "sign in at http://"+browser)
+				return
+			}
 			if err := csrf.Check(r); err != nil {
 				deny(w, r, connect.CodePermissionDenied, "cross-origin request rejected")
 				return
@@ -162,12 +253,13 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 			next.ServeHTTP(w, r)
 			return
 		}
-		kind, err := a.Authenticate(r)
+		p, err := a.Authenticate(r)
 		if err != nil {
+			log.Error("credentials could not be checked", "procedure", procedure, "err", err)
 			deny(w, r, connect.CodeUnavailable, "credentials cannot be checked right now")
 			return
 		}
-		switch kind {
+		switch p.Kind {
 		case auth.KindBearer:
 		case auth.KindDevice:
 			if procedure == agentv3connect.AgentServiceCreateLoginCodeProcedure {
@@ -187,7 +279,7 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, next 
 			deny(w, r, connect.CodeUnauthenticated, "missing or invalid credentials")
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	})
 }
 

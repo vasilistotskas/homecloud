@@ -523,6 +523,35 @@ describe("App", () => {
     window.location.hash = "";
   });
 
+  it("counts browser sessions and signs this browser out", async () => {
+    let session = true;
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        watchOverview: () =>
+          session
+            ? (async function* () {
+                yield { overview: create(OverviewSchema, { assets: { verified: 1n } }) };
+                await never();
+              })()
+            : failingStream(new ConnectError("missing or invalid credentials", Code.Unauthenticated)),
+        getSettings: () => ({ settings }),
+        getInfo: () => ({ agentVersion: "test", apiVersion: "v1", os: "linux" }),
+        listDevices: () => ({ devices: [], browserSessions: 2 }),
+        signOut: () => {
+          session = false;
+          return {};
+        },
+      });
+    });
+    const user = userEvent.setup();
+    window.location.hash = "#/settings";
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText(/^2 signed in/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Sign out this browser" }));
+    expect(await screen.findByText("Connect this browser")).toBeInTheDocument();
+    window.location.hash = "";
+  });
+
   it("says the archive drive is missing when the agent reports it", async () => {
     const transport = createRouterTransport(({ service }) => {
       service(AgentService, {
@@ -559,7 +588,7 @@ describe("App", () => {
     expect(await screen.findByText("Connect this browser")).toBeInTheDocument();
   });
 
-  it("signs in with the code from the link and shows the overview", async () => {
+  it("fills in the code from the link, sends it only when asked, and shows the overview", async () => {
     let session = false;
     const exchanged: string[] = [];
     const transport = createRouterTransport(({ service }) => {
@@ -582,6 +611,11 @@ describe("App", () => {
     });
     window.location.hash = "#/connect?code=ABCD-EFGH";
     render(<App transport={transport} platform={browser} />);
+    // Any web page can link here: a code in the link waits for the owner.
+    const connect = await screen.findByRole("button", { name: "Connect" });
+    expect(screen.getByDisplayValue("ABCD-EFGH")).toBeInTheDocument();
+    expect(exchanged).toEqual([]);
+    await userEvent.setup().click(connect);
     expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();
     expect(exchanged).toEqual(["ABCD-EFGH"]);
   });

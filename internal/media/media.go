@@ -1,7 +1,9 @@
 // Package media serves thumbnails and previews of archived files over
 // signed, expiring URLs. Image elements cannot send the API's bearer token or
-// rely on its session checks, so each URL carries an HMAC of its path and
-// expiry instead; only the agent can mint them, and only for ledger entries.
+// rely on its session checks, so each URL carries an HMAC of its path, its
+// expiry and the principal it was made for instead: only the agent can mint
+// them, only for ledger entries, and they stop working when that principal's
+// access ends (a revoked device, an ended session).
 package media
 
 import (
@@ -19,6 +21,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
 )
@@ -55,33 +58,36 @@ func NewSigner(now func() time.Time) (*Signer, error) {
 	return &Signer{key: key, now: now}, nil
 }
 
-func (s *Signer) mac(path string, exp int64) string {
+func (s *Signer) mac(path, principal string, exp int64) string {
 	m := hmac.New(sha256.New, s.key)
-	m.Write([]byte(path + "\n" + strconv.FormatInt(exp, 10)))
+	m.Write([]byte(path + "\n" + principal + "\n" + strconv.FormatInt(exp, 10)))
 	return base64.RawURLEncoding.EncodeToString(m.Sum(nil))
 }
 
-// URL returns a signed URL for one rendition at size.
-func (s *Signer) URL(size thumbs.Size, library, assetID, version string) string {
+// URL returns a signed URL for one rendition at size, for principal p.
+func (s *Signer) URL(p auth.Principal, size thumbs.Size, library, assetID, version string) string {
 	path := Prefix + url.PathEscape(string(size)) + "/" + url.PathEscape(library) + "/" +
 		url.PathEscape(assetID) + "/" + url.PathEscape(version)
 	exp := s.now().Add(validity).Truncate(window).Add(window).Unix()
-	return path + "?exp=" + strconv.FormatInt(exp, 10) + "&sig=" + s.mac(path, exp)
+	principal := p.String()
+	return path + "?p=" + url.QueryEscape(principal) + "&exp=" + strconv.FormatInt(exp, 10) + "&sig=" + s.mac(path, principal, exp)
 }
 
-// verify checks a request's signature and expiry.
-func (s *Signer) verify(r *http.Request) error {
-	exp, err := strconv.ParseInt(r.URL.Query().Get("exp"), 10, 64)
+// verify checks a request's signature and expiry and returns the principal
+// its URL was made for.
+func (s *Signer) verify(r *http.Request) (auth.Principal, error) {
+	q := r.URL.Query()
+	exp, err := strconv.ParseInt(q.Get("exp"), 10, 64)
 	if err != nil {
-		return errors.New("missing or malformed expiry")
+		return auth.Principal{}, errors.New("missing or malformed expiry")
 	}
 	if s.now().Unix() > exp {
-		return errors.New("link expired")
+		return auth.Principal{}, errors.New("link expired")
 	}
-	if !hmac.Equal([]byte(r.URL.Query().Get("sig")), []byte(s.mac(r.URL.EscapedPath(), exp))) {
-		return errors.New("bad signature")
+	if !hmac.Equal([]byte(q.Get("sig")), []byte(s.mac(r.URL.EscapedPath(), q.Get("p"), exp))) {
+		return auth.Principal{}, errors.New("bad signature")
 	}
-	return nil
+	return auth.ParsePrincipal(q.Get("p")) //nolint:wrapcheck // package auth's own error
 }
 
 // Ledger finds a rendition's file.
@@ -89,12 +95,23 @@ type Ledger interface {
 	Rendition(ctx context.Context, library, assetID, version string) (ledger.RenditionFile, error)
 }
 
-// Handler serves GET /media/{size}/{library}/{asset}/{version}.
-func Handler(s *Signer, db Ledger, renderer *thumbs.Renderer, log *slog.Logger) http.Handler {
+// Handler serves GET /media/{size}/{library}/{asset}/{version} to links whose
+// principal a still admits.
+func Handler(s *Signer, a *auth.Authenticator, db Ledger, renderer *thumbs.Renderer, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+Prefix+"{size}/{library}/{asset}/{version}", func(w http.ResponseWriter, r *http.Request) {
-		if err := s.verify(r); err != nil {
+		p, err := s.verify(r)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		switch ok, validErr := a.Valid(r.Context(), p); {
+		case validErr != nil:
+			log.Error("media: check access", "err", validErr)
+			http.Error(w, "access cannot be checked right now", http.StatusServiceUnavailable)
+			return
+		case !ok:
+			http.Error(w, "the access this link was made for has ended", http.StatusForbidden)
 			return
 		}
 		size, err := thumbs.ParseSize(r.PathValue("size"))
