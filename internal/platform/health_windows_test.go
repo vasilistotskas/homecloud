@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -31,22 +32,26 @@ func TestParseNVMeHealthLog(t *testing.T) {
 }
 
 func TestParseDeviceDescriptor(t *testing.T) {
-	b := make([]byte, 80)
+	b := make([]byte, 64)
 	binary.LittleEndian.PutUint32(b[16:], 40)
-	binary.LittleEndian.PutUint32(b[24:], 60)
 	binary.LittleEndian.PutUint32(b[28:], busTypeNvme)
 	copy(b[40:], "Fast Disk  \x00junk")
-	copy(b[60:], "  S5H9NS0N\x00")
-	got, err := parseDeviceDescriptor(b)
-	if err != nil || got != (descriptor{model: "Fast Disk", serial: "S5H9NS0N", bus: busTypeNvme}) {
-		t.Fatalf("descriptor = %+v %v", got, err)
+	model, bus, err := parseDeviceDescriptor(b)
+	if err != nil || model != "Fast Disk" || bus != busTypeNvme {
+		t.Fatalf("descriptor = %q %d %v", model, bus, err)
 	}
-	binary.LittleEndian.PutUint32(b[24:], 0xFFFFFFFF) // "no serial" as some drivers write it
-	if got, err := parseDeviceDescriptor(b); err != nil || got.serial != "" {
-		t.Fatalf("absent serial = %+v %v", got, err)
-	}
-	if _, err := parseDeviceDescriptor(b[:10]); err == nil {
+	if _, _, err := parseDeviceDescriptor(b[:10]); err == nil {
 		t.Fatal("a short descriptor must be rejected")
+	}
+}
+
+func TestParseIdentifyController(t *testing.T) {
+	b := make([]byte, nvmeIdentifySize)
+	copy(b[4:24], "S4EWNX0R123456A     ")
+	copy(b[24:64], "Samsung SSD 970 EVO Plus 1TB            ")
+	model, serial := parseIdentifyController(b)
+	if model != "Samsung SSD 970 EVO Plus 1TB" || serial != "S4EWNX0R123456A" {
+		t.Fatalf("identify = %q %q", model, serial)
 	}
 }
 
@@ -80,11 +85,14 @@ func TestProtocolDataBounds(t *testing.T) {
 	spec := b[protocolDescriptorHeader:]
 	binary.LittleEndian.PutUint32(spec[16:], protocolSpecificDataSize)
 	binary.LittleEndian.PutUint32(spec[20:], nvmeHealthLogSize)
-	if data, err := protocolData(b); err != nil || len(data) != nvmeHealthLogSize {
+	if data, err := protocolData(b, nvmeHealthLogSize); err != nil || len(data) != nvmeHealthLogSize {
 		t.Fatalf("protocolData = %d bytes, %v", len(data), err)
 	}
+	if _, err := protocolData(b, nvmeIdentifySize); err == nil {
+		t.Fatal("less data than asked for must be rejected")
+	}
 	binary.LittleEndian.PutUint32(spec[20:], nvmeHealthLogSize*2)
-	if _, err := protocolData(b); err == nil {
+	if _, err := protocolData(b, nvmeHealthLogSize); err == nil {
 		t.Fatal("a length past the buffer must be rejected")
 	}
 }
@@ -110,6 +118,12 @@ func TestStorageAndHealthOfThisMachine(t *testing.T) {
 		if h.Protocol != "NVMe" || h.Model == "" || h.PercentUsed == nil || h.PowerOnHours == nil || h.TemperatureCelsius == nil {
 			t.Fatalf("health = %+v", h)
 		}
-		t.Logf("%s: %s warnings=%v temp=%d°C used=%d%% hours=%d", d.Name, h.Model, h.Warnings, *h.TemperatureCelsius, *h.PercentUsed, *h.PowerOnHours)
+		// The drive's own serial number, not the EUI-64 Windows puts in the
+		// storage descriptor ("0025_385C_1190_32F6.").
+		if h.Serial == "" || strings.ContainsAny(h.Serial, "_.") {
+			t.Fatalf("serial = %q", h.Serial)
+		}
+		t.Logf("%s: %s (%d-character serial) warnings=%v temp=%d°C used=%d%% hours=%d",
+			d.Name, h.Model, len(h.Serial), h.Warnings, *h.TemperatureCelsius, *h.PercentUsed, *h.PowerOnHours)
 	}
 }
