@@ -1,6 +1,7 @@
 package iphonebackup
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -346,7 +347,7 @@ func malformedBinary(tb testing.TB) map[string]struct {
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12,
 		}, "not a dictionary"},
 		"dictionary of 2^64-8 entries":  {craft(tb, append([]byte{markerDict | countFollows}, huge...)), "count"},
-		"dictionary of 2^40 entries":    {craft(tb, []byte{markerDict | countFollows, 0x13, 0, 0, 1, 0, 0, 0, 0, 0}), "run past the objects"},
+		"dictionary of 2^40 entries":    {craft(tb, []byte{markerDict | countFollows, 0x13, 0, 0, 1, 0, 0, 0, 0, 0}), "more than the"},
 		"references past the objects":   {craft(tb, []byte{markerDict | 3, 1, 2}), "run past the objects"},
 		"string of 2^64-8 bytes":        {craft(tb, []byte{markerDict | 1, 1, 2}, append([]byte{markerASCII | countFollows}, huge...), []byte{markerTrue}), "count"},
 		"string of 2^63-1 bytes":        {craft(tb, []byte{markerDict | 1, 1, 2}, []byte{markerASCII | countFollows, 0x13, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, []byte{markerTrue}), "run past the objects"},
@@ -507,5 +508,50 @@ func readAll(t *testing.T, data []byte) {
 		_ = d.str(k, &s)
 		_ = d.boolean(k, &b)
 		_ = d.date(k, &tm)
+	}
+}
+
+// TestHugeTopDictionary: a dictionary whose count is backed by as many
+// references (two bytes per entry), all naming one key, must be refused
+// before a map of that size is made.
+func TestHugeTopDictionary(t *testing.T) {
+	const n = 200_000
+	b := []byte(binaryMagic)
+	b = append(b, markerDict|countFollows, markerInt|2)
+	b = binary.BigEndian.AppendUint32(b, n)
+	b = append(b, bytes.Repeat([]byte{1}, 2*n)...) // every key and value is object 1
+	key := len(b)
+	b = append(b, markerASCII|1, 'a')
+	table := len(b)
+	b = binary.BigEndian.AppendUint32(b, headerSize)
+	b = binary.BigEndian.AppendUint32(b, uint32(key)) //nolint:gosec // a few hundred kilobytes
+	trailer := make([]byte, trailerSize)
+	trailer[6], trailer[7] = 4, 1
+	binary.BigEndian.PutUint64(trailer[8:], 2)
+	binary.BigEndian.PutUint64(trailer[24:], uint64(table)) //nolint:gosec // a few hundred kilobytes
+	b = append(b, trailer...)
+
+	var err error
+	if a := allocated(func() { _, err = parsePlist(b) }); a > maxMalformedAlloc {
+		t.Errorf("allocated %d bytes", a)
+	}
+	if err == nil || !strings.Contains(err.Error(), "entries") {
+		t.Fatalf("a dictionary of %d entries: %v", n, err)
+	}
+}
+
+// TestDeeplyNestedXML: a skipped value nested far deeper than any backup's
+// must be refused before encoding/xml's stack of open elements grows with it.
+func TestDeeplyNestedXML(t *testing.T) {
+	const levels = 100_000
+	doc := "<plist><dict><key>a</key><array>" + strings.Repeat("<array>", levels) +
+		strings.Repeat("</array>", levels) + "</array></dict></plist>"
+	data := []byte(doc)
+	var err error
+	if a := allocated(func() { _, err = parsePlist(data) }); a > maxMalformedAlloc {
+		t.Errorf("allocated %d bytes", a)
+	}
+	if err == nil || !strings.Contains(err.Error(), "deeper than") {
+		t.Fatalf("deep nesting: %v", err)
 	}
 }

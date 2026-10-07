@@ -212,14 +212,14 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 			}
 		}
 	}()
-	var stderr bytes.Buffer
+	stderr := &tool.Tail{}
 	cmd := platform.Command(ctx, r.cfg.FFmpeg, renderArgs(input, tmp, sizeFilters[size], tiled)...)
 	if isRaw {
 		cmd.Stdin = bytes.NewReader(preview)
 	}
-	cmd.Stderr = &stderr
+	cmd.Stderr = stderr
 	if err = cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg %s: %w: %s", src.Path, err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("ffmpeg %s: %w: %s", src.Path, err, stderr)
 	}
 	if err = os.Rename(tmp, dest); err != nil {
 		return fmt.Errorf("store rendering of %s: %w", src.Path, err)
@@ -246,9 +246,12 @@ func renderArgs(input []string, dest, filter string, tiled bool) []string {
 // isTiled reports whether src is a tiled (grid) HEIF image.
 func (r *Renderer) isTiled(ctx context.Context, src string) (bool, error) {
 	args := append([]string{"-v", "error", "-show_entries", "stream_group=index", "-of", "csv=p=0"}, tool.FFmpegFile(src)...)
-	out, err := platform.Command(ctx, r.cfg.FFprobe, args...).Output()
-	if err != nil {
-		return false, fmt.Errorf("ffprobe %s: %w", src, err)
+	// Any stream group at all means tiled: the start of the list is enough.
+	out, stderr := &tool.Head{Max: 1 << 10}, &tool.Tail{}
+	cmd := platform.Command(ctx, r.cfg.FFprobe, args...)
+	cmd.Stdout, cmd.Stderr = out, stderr
+	if err := cmd.Run(); err != nil {
+		return false, fmt.Errorf("ffprobe %s: %w: %s", src, err, stderr)
 	}
-	return len(bytes.TrimSpace(out)) > 0, nil
+	return len(bytes.TrimSpace(out.Bytes())) > 0, nil
 }

@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"encoding/binary"
 	"errors"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -357,4 +358,30 @@ func FuzzPreview(f *testing.F) {
 			t.Fatalf("preview %+v outside a %d-byte input", ref, len(file))
 		}
 	})
+}
+
+// TestDNGWalkerReadsOnlyWhatItUses: an IFD of maxEntries fields, each
+// claiming most of the file, must not make the walker read each of them.
+func TestDNGWalkerReadsOnlyWhatItUses(t *testing.T) {
+	const size = 64 << 10
+	file := binary.LittleEndian.AppendUint32([]byte{'I', 'I', 42, 0}, 8)
+	file = binary.LittleEndian.AppendUint16(file, maxEntries)
+	for i := range uint16(maxEntries) {
+		file = binary.LittleEndian.AppendUint16(file, 1000+i)   // a tag the walker does not use
+		file = binary.LittleEndian.AppendUint16(file, typeByte) // ...of BYTE values
+		file = binary.LittleEndian.AppendUint32(file, size-8)   // ...as many as the file holds
+		file = binary.LittleEndian.AppendUint32(file, 8)        // ...right after the header
+	}
+	file = append(file, make([]byte, size-len(file))...)
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, isDNG, err := dngPreview(bytes.NewReader(file), size)
+	runtime.ReadMemStats(&after)
+	if isDNG || err != nil {
+		t.Fatalf("a TIFF without DNGVersion: isDNG=%v err=%v", isDNG, err)
+	}
+	if a := after.TotalAlloc - before.TotalAlloc; a > 4*size {
+		t.Fatalf("allocated %d bytes for a %d-byte file", a, size)
+	}
 }

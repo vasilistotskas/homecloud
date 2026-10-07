@@ -37,6 +37,16 @@ import (
 // magnitude above, while a file larger than this is not a backup's plist.
 const maxPlistSize = 256 << 20
 
+// maxTopEntries bounds a plist's top-level dictionary. A backup's plists hold
+// a few dozen top-level keys (Info.plist the most); the bound refuses a
+// crafted count before it costs anything.
+const maxTopEntries = 1 << 12
+
+// maxXMLDepth bounds how deep the values homecloud skips may nest: Apple's
+// backup plists use a few levels, while encoding/xml keeps every open element
+// on a stack that a deeply nested document would grow without bound.
+const maxXMLDepth = 64
+
 // kind is the type of a plist value. Only strings, booleans and dates are
 // decoded; the other kinds are recorded so that reading one of them as a
 // string, boolean or date is an error.
@@ -385,6 +395,9 @@ func (p binaryPlist) topDict(off uint64) (dict, error) {
 	if err != nil {
 		return nil, err
 	}
+	if n > maxTopEntries {
+		return nil, fmt.Errorf("binary plist: a top-level dictionary of %d entries, more than the %d a backup's plists hold", n, maxTopEntries)
+	}
 	// Both halves of the references must lie within the objects before
 	// anything is allocated for them.
 	hi, width := bits.Mul64(n, 2*p.refSize)
@@ -394,7 +407,7 @@ func (p binaryPlist) topDict(off uint64) (dict, error) {
 	if _, err := p.span(refs, width); err != nil {
 		return nil, err
 	}
-	d := make(dict, n)
+	d := make(dict, n) // at most maxTopEntries
 	half := n * p.refSize
 	for i := range n {
 		at := i * p.refSize
@@ -629,6 +642,9 @@ func text(dec *xml.Decoder, name string) (string, error) {
 func xmlDict(dec *xml.Decoder) (dict, error) {
 	d := dict{}
 	for {
+		if len(d) > maxTopEntries {
+			return nil, fmt.Errorf("a top-level dictionary of more than the %d entries a backup's plists hold", maxTopEntries)
+		}
 		t, err := significant(dec)
 		if err != nil {
 			return nil, err
@@ -691,8 +707,28 @@ func xmlValue(dec *xml.Decoder, start xml.StartElement) (value, error) {
 	if !ok {
 		return value{}, fmt.Errorf("unknown value element <%s>", name)
 	}
-	if err := dec.Skip(); err != nil {
+	if err := skip(dec); err != nil {
 		return value{}, fmt.Errorf("<%s>: %w", name, err)
 	}
 	return value{kind: k}, nil
+}
+
+// skip consumes the rest of the element whose start was just read, as
+// Decoder.Skip does, but refuses to go deeper than maxXMLDepth.
+func skip(dec *xml.Decoder) error {
+	for depth := 1; depth > 0; {
+		t, err := dec.Token()
+		if err != nil {
+			return err //nolint:wrapcheck // wrapped by xmlValue
+		}
+		switch t.(type) {
+		case xml.StartElement:
+			if depth++; depth > maxXMLDepth {
+				return fmt.Errorf("values nested deeper than %d levels", maxXMLDepth)
+			}
+		case xml.EndElement:
+			depth--
+		}
+	}
+	return nil
 }

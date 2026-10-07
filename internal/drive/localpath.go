@@ -15,7 +15,7 @@ const maxNameUnits = 255
 // reservedNames are Windows device names, unusable as a file's base name with
 // any extension.
 var reservedNames = func() map[string]bool {
-	m := map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true}
+	m := map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true, "CONIN$": true, "CONOUT$": true}
 	for _, digit := range []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³"} {
 		m["COM"+digit], m["LPT"+digit] = true, true
 	}

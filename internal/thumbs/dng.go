@@ -108,11 +108,13 @@ type ifdEntry struct {
 	Value     [4]byte // the value itself if it fits, else its offset
 }
 
-// field is an entry with its value bytes resolved.
+// field is an entry as stored. Its values are read only for the few tags the
+// walker uses (uints): a directory holds up to maxEntries fields, each of
+// which may claim nearly the whole file.
 type field struct {
 	typ   uint16
 	count int64
-	value []byte
+	raw   [4]byte // the value itself if it fits, else its offset
 }
 
 // directory is one IFD's fields by tag.
@@ -142,31 +144,34 @@ func (t tiff) ifd(off int64) (directory, error) {
 		if !known {
 			continue // TIFF 6.0: readers skip fields of unknown types
 		}
-		total := size * int64(e.Count)
-		if total > t.size {
+		if total := size * int64(e.Count); total > t.size {
 			return nil, fmt.Errorf("%w: tag %d claims %d bytes", errMalformed, e.Tag, total)
 		}
-		value := e.Value[:]
-		if total > 4 {
-			if value, err = t.read(int64(t.order.Uint32(e.Value[:])), total); err != nil {
-				return nil, err
-			}
-		}
-		value = value[:total]
-		d[e.Tag] = field{typ: e.Type, count: int64(e.Count), value: value}
+		d[e.Tag] = field{typ: e.Type, count: int64(e.Count), raw: e.Value}
 	}
 	return d, nil
 }
 
-// uints returns an integer field's values.
-func (t tiff) uints(f field) ([]int64, bool) {
+// uints reads an integer field's values, refusing more than limit of them
+// before reading anything.
+func (t tiff) uints(f field, limit int64) ([]int64, error) {
 	if f.typ != typeByte && f.typ != typeShort && f.typ != typeLong && f.typ != typeIFD {
-		return nil, false
+		return nil, fmt.Errorf("%w: an integer field of type %d", errMalformed, f.typ)
+	}
+	if f.count > limit {
+		return nil, fmt.Errorf("%w: %d values where at most %d belong", errMalformed, f.count, limit)
 	}
 	size := fieldSize[f.typ]
+	value := f.raw[:]
+	if total := size * f.count; total > 4 {
+		var err error
+		if value, err = t.read(int64(t.order.Uint32(f.raw[:])), total); err != nil {
+			return nil, err
+		}
+	}
 	out := make([]int64, f.count)
 	for i := range out {
-		v := f.value[int64(i)*size:]
+		v := value[int64(i)*size:]
 		switch size {
 		case 1:
 			out[i] = int64(v[0])
@@ -176,17 +181,17 @@ func (t tiff) uints(f field) ([]int64, bool) {
 			out[i] = int64(t.order.Uint32(v))
 		}
 	}
-	return out, true
+	return out, nil
 }
 
-// uint returns a single-valued integer field.
+// uint returns a single-valued integer field (held in the entry itself).
 func (t tiff) uint(d directory, tag uint16) (int64, bool) {
 	f, ok := d[tag]
 	if !ok || f.count != 1 {
 		return 0, false
 	}
-	v, ok := t.uints(f)
-	if !ok {
+	v, err := t.uints(f, 1)
+	if err != nil {
 		return 0, false
 	}
 	return v[0], true
@@ -209,9 +214,9 @@ func (t tiff) tree(ifd0Off int64, ifd0 directory) iter.Seq2[directory, error] {
 			if !ok {
 				continue
 			}
-			offs, ok := t.uints(f)
-			if !ok {
-				yield(nil, fmt.Errorf("%w: SubIFDs of type %d", errMalformed, f.typ))
+			offs, err := t.uints(f, maxIFDs)
+			if err != nil {
+				yield(nil, fmt.Errorf("SubIFDs: %w", err))
 				return
 			}
 			for _, off := range offs {

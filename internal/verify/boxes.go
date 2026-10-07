@@ -36,76 +36,80 @@ func Structure(path string) error {
 	return checkBoxes(path, boxes)
 }
 
-// box is a top-level box type and its declared size in bytes.
-type box struct {
-	typ  string
-	size int64
+// boxes is what the check needs of a file's top-level boxes. Nothing is kept
+// per box: a crafted file of 8-byte boxes would otherwise cost memory several
+// times its size.
+type boxes struct {
+	count      int
+	first      string
+	moov, mdat bool
 }
 
-func topLevelBoxes(r io.ReaderAt, fileSize int64) ([]box, error) {
-	var boxes []box
+func topLevelBoxes(r io.ReaderAt, fileSize int64) (boxes, error) {
+	var found boxes
 	var hdr [16]byte
 	for off := int64(0); off < fileSize; {
 		if fileSize-off < 8 {
-			return nil, fmt.Errorf("%w: %d trailing bytes at offset %d are not a box", ErrMismatch, fileSize-off, off)
+			return boxes{}, fmt.Errorf("%w: %d trailing bytes at offset %d are not a box", ErrMismatch, fileSize-off, off)
 		}
 		if _, err := r.ReadAt(hdr[:8], off); err != nil {
-			return nil, fmt.Errorf("read box header at %d: %w", off, err)
+			return boxes{}, fmt.Errorf("read box header at %d: %w", off, err)
 		}
 		size := int64(binary.BigEndian.Uint32(hdr[:4]))
-		typ := string(hdr[4:8])
+		// The type is only compared, as an array: a string or a slice of it per
+		// box would be allocated per box.
+		typ := [4]byte(hdr[4:8])
 		headerLen := int64(8)
 		switch size {
 		case 0:
 			size = fileSize - off
 		case 1:
 			if fileSize-off < 16 {
-				return nil, fmt.Errorf("%w: truncated 64-bit size of %q at offset %d", ErrMismatch, typ, off)
+				return boxes{}, fmt.Errorf("%w: truncated 64-bit size of %q at offset %d", ErrMismatch, hdr[4:8], off)
 			}
 			if _, err := r.ReadAt(hdr[8:16], off+8); err != nil {
-				return nil, fmt.Errorf("read largesize at %d: %w", off, err)
+				return boxes{}, fmt.Errorf("read largesize at %d: %w", off, err)
 			}
 			large := binary.BigEndian.Uint64(hdr[8:16])
 			if large > math.MaxInt64 {
-				return nil, fmt.Errorf("%w: box %q at offset %d declares impossible size %d", ErrMismatch, typ, off, large)
+				return boxes{}, fmt.Errorf("%w: box %q at offset %d declares impossible size %d", ErrMismatch, hdr[4:8], off, large)
 			}
 			size = int64(large) // bounded by the check above; truncation is caught below
 			headerLen = 16
 		}
 		if size < headerLen {
-			return nil, fmt.Errorf("%w: box %q at offset %d has invalid size %d", ErrMismatch, typ, off, size)
+			return boxes{}, fmt.Errorf("%w: box %q at offset %d has invalid size %d", ErrMismatch, hdr[4:8], off, size)
 		}
 		if size > fileSize-off {
-			return nil, fmt.Errorf("%w: box %q at offset %d declares %d bytes, only %d remain (truncated)", ErrMismatch, typ, off, size, fileSize-off)
+			return boxes{}, fmt.Errorf("%w: box %q at offset %d declares %d bytes, only %d remain (truncated)", ErrMismatch, hdr[4:8], off, size, fileSize-off)
 		}
-		boxes = append(boxes, box{typ: typ, size: size})
+		if found.count == 0 {
+			found.first = string(hdr[4:8])
+		}
+		found.count++
+		found.moov = found.moov || typ == [4]byte{'m', 'o', 'o', 'v'}
+		found.mdat = found.mdat || typ == [4]byte{'m', 'd', 'a', 't'}
 		off += size
 	}
-	return boxes, nil
+	return found, nil
 }
 
-func checkBoxes(path string, boxes []box) error {
-	if len(boxes) == 0 {
+func checkBoxes(path string, b boxes) error {
+	if b.count == 0 {
 		return fmt.Errorf("%w: %s is empty", ErrMismatch, path)
 	}
 	isoBMFF := strings.ToLower(filepath.Ext(path)) != ".mov"
-	if isoBMFF && boxes[0].typ != "ftyp" {
-		return fmt.Errorf("%w: %s starts with %q, ISO-BMFF requires ftyp", ErrMismatch, path, boxes[0].typ)
+	if isoBMFF && b.first != "ftyp" {
+		return fmt.Errorf("%w: %s starts with %q, ISO-BMFF requires ftyp", ErrMismatch, path, b.first)
 	}
 	var errs []error
-	for _, need := range []string{"moov", "mdat"} {
-		if !hasBox(boxes, need) {
-			errs = append(errs, fmt.Errorf("%w: %s has no top-level %s box", ErrMismatch, path, need))
+	for _, need := range []struct {
+		typ   string
+		found bool
+	}{{"moov", b.moov}, {"mdat", b.mdat}} {
+		if !need.found {
+			errs = append(errs, fmt.Errorf("%w: %s has no top-level %s box", ErrMismatch, path, need.typ))
 		}
 	}
 	return errors.Join(errs...)
-}
-
-func hasBox(boxes []box, typ string) bool {
-	for _, b := range boxes {
-		if b.typ == typ {
-			return true
-		}
-	}
-	return false
 }

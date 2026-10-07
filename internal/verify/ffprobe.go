@@ -2,7 +2,6 @@
 package verify
 
 import (
-	"bytes"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -43,17 +42,22 @@ type probeReport struct {
 	} `json:"format"`
 }
 
+// maxProbeOutput bounds ffprobe's report on one file.
+const maxProbeOutput = 1 << 20
+
 // Probe runs ffprobe on a video (tier 3). It requires a clean exit with no
 // diagnostics, a positive container duration, and at least one video stream
 // with a positive duration.
 func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
 	ctx, cancel := context.WithTimeout(ctx, cfg.ProbeTimeout.Std())
 	defer cancel()
-	var stdout, stderr bytes.Buffer
+	// The report lists one entry per stream; a megabyte holds thousands, far
+	// more than any recording has.
+	stdout, stderr := &tool.Head{Max: maxProbeOutput}, &tool.Tail{}
 	args := append([]string{"-v", "error", "-show_entries", "format=duration:stream=codec_type,duration", "-of", "json"},
 		tool.FFmpegFile(path)...)
 	cmd := platform.Command(ctx, cfg.FFprobe, args...)
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return fmt.Errorf("ffprobe %s: %w", path, ctx.Err())
@@ -64,10 +68,13 @@ func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
 		if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 			return fmt.Errorf("run ffprobe on %s: %w", path, err)
 		}
-		return fmt.Errorf("%w: ffprobe rejected %s: %s", ErrMismatch, path, bytes.TrimSpace(stderr.Bytes()))
+		return fmt.Errorf("%w: ffprobe rejected %s: %s", ErrMismatch, path, stderr)
 	}
-	if msg := bytes.TrimSpace(stderr.Bytes()); len(msg) > 0 {
+	if msg := stderr.String(); msg != "" {
 		return fmt.Errorf("%w: ffprobe reported problems in %s: %s", ErrMismatch, path, msg)
+	}
+	if stdout.Truncated() {
+		return fmt.Errorf("%w: ffprobe describes more streams in %s than any recording has", ErrMismatch, path)
 	}
 	var rep probeReport
 	if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil {

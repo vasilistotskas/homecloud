@@ -13,6 +13,7 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/tool"
 )
 
 // Status is kei's per-version download state (kei src/state/types.rs AssetStatus).
@@ -125,14 +126,22 @@ func ParseManifest(r io.Reader, dir string) ([]ManifestRow, error) {
 	return rows, nil
 }
 
+// manifestTimeout bounds `kei manifest`, which reads kei's local state: 6,041
+// renditions take about a second, so this leaves room for a library a hundred
+// times larger on a slow disk.
+const manifestTimeout = 10 * time.Minute
+
 // Manifest runs `kei manifest --format json` (read-only; does not contact
 // iCloud) for the library kei downloads into dir.
 func Manifest(ctx context.Context, cfg config.Kei, dir string) ([]ManifestRow, error) {
-	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithTimeout(ctx, manifestTimeout)
+	defer cancel()
+	var stdout bytes.Buffer
+	stderr := &tool.Tail{}
 	cmd := platform.Command(ctx, cfg.Binary, "manifest", "--format", "json", "--config", cfg.Config)
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.Stdout, cmd.Stderr = &stdout, stderr
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("kei manifest: %w: %s", err, bytes.TrimSpace(stderr.Bytes()))
+		return nil, fmt.Errorf("kei manifest: %w: %s", err, stderr)
 	}
 	return ParseManifest(&stdout, dir)
 }

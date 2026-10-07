@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -163,5 +164,33 @@ func TestProbeReal(t *testing.T) {
 	}
 	if err := Probe(ctx, cfg, truncated); !errors.Is(err, ErrMismatch) {
 		t.Errorf("Probe(truncated): want ErrMismatch, got %v", err)
+	}
+}
+
+// TestStructureKeepsNothingPerBox: a file of tiny boxes must cost no memory
+// in proportion to how many it holds.
+func TestStructureKeepsNothingPerBox(t *testing.T) {
+	const n = 1 << 17 // 1 MiB of 8-byte boxes
+	data := binary.BigEndian.AppendUint32(nil, 8)
+	data = append(data, "ftyp"...)
+	for range n - 3 {
+		data = binary.BigEndian.AppendUint32(data, 8)
+		data = append(data, "free"...)
+	}
+	for _, typ := range []string{"moov", "mdat"} {
+		data = binary.BigEndian.AppendUint32(data, 8)
+		data = append(data, typ...)
+	}
+	path := writeFile(t, "tiny.mp4", data)
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	err := Structure(path)
+	runtime.ReadMemStats(&after)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Box types are 4-byte strings: one per box would be several MiB.
+	if a := after.TotalAlloc - before.TotalAlloc; a > 1<<20 {
+		t.Fatalf("allocated %d bytes for %d boxes", a, n)
 	}
 }

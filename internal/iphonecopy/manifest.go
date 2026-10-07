@@ -28,8 +28,9 @@ type Manifest map[string]Digest
 // pathPart is one component of a path inside a backup: Apple's tools write
 // Info.plist, Manifest.plist, Status.plist, Manifest.db and files named by a
 // hex hash in two-hex-digit folders. Anything else is refused, so a manifest
-// can never name a path outside its folder.
-var pathPart = regexp.MustCompile(`^[A-Za-z0-9_-][A-Za-z0-9._-]*$`)
+// can never name a path outside its folder; nor a name ending in a dot, which
+// NTFS stores but Windows programs cannot open.
+var pathPart = regexp.MustCompile(`^[A-Za-z0-9_-]([A-Za-z0-9._-]*[A-Za-z0-9_-])?$`)
 
 // maxDepth bounds the folders a path may go through.
 const maxDepth = 4
