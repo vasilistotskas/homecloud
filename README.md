@@ -4,7 +4,8 @@ Personal, private service that makes a local drive the verified home of my iClou
 (Photos, Drive, iPhone backups) and, once P3 is built, keeps iCloud itself down to the most
 recent 30 days.
 
-- Design, decisions, sources and spike findings: [`docs/design.md`](docs/design.md)
+- How the parts fit together and why this stack: [Architecture and stack](#architecture-and-stack);
+  decisions, sources and spike findings: [`docs/design.md`](docs/design.md)
 - Status: **P1 done, M1–M4 live, P2 built** (its iPhone monitor waits for the first encrypted
   backup): iCloud Photos archive with verification, scheduled integrity re-checks, ledger backups,
   drive health, library browser, local API, web and desktop apps, a monitor of the local iPhone
@@ -119,6 +120,109 @@ The agent serves a local API ([Connect](https://connectrpc.com), contract in
 bearer token from the owner-only discovery file `agent.json` in the per-user state directory
 (`%LOCALAPPDATA%\homecloud` on Windows, `$XDG_STATE_HOME/homecloud` on Linux); the token changes
 every time the agent starts. Browsers sign in with a one-time code from `homecloud open`.
+
+## Architecture and stack
+
+### The parts
+
+| Part | What it is | Where it runs |
+|---|---|---|
+| `homecloud-agent` | The service. It alone runs kei, verifies files, schedules every job, writes the ledger, sends alerts, and serves the API and the web app. | At logon for the owner (Windows Task Scheduler, systemd `--user`), or a container on a NAS |
+| `homecloud` | The command-line tool: setup (`archive init`, `install`), sign-in (`icloud login`), checks (`doctor`, `status`), and `iphone push`. It shares the agent's packages and takes the same lock before writing the ledger. | The same computer, or `docker compose exec` on the NAS |
+| Web app (`ui/`) | The whole interface: Overview, Library, Activity, Quarantine, Settings. Built once and embedded in the agent's binary. | Any browser, served by the agent |
+| Desktop app (`desktop/`) | A native window around the same web app. It talks to this PC's agent or to a paired homecloud on a NAS and keeps its credentials in the OS credential store. | Windows, Linux |
+| kei, FFmpeg, smartctl | Pinned external tools: kei downloads iCloud Photos, `ffprobe` checks videos and `ffmpeg` renders thumbnails, `smartctl` reads drive health in the container. | Next to the agent |
+| The archive | Plain files you can use without homecloud (`Photos/`, `Drive/`, `iPhone backups/`) plus `homecloud.db`, the ledger of what was downloaded, when and how it was verified, and `manifest.csv`. | One folder: `storage.root` |
+
+```mermaid
+flowchart LR
+    subgraph pc["Mode 1 · this PC (today)"]
+        direction TB
+        pcagent["homecloud-agent<br/>(logon task)"]
+        pcdesk["Desktop app"]
+        pcdevices["Apple Devices app"]
+        pcdisk[("E: · the archive")]
+        pcdesk -- "127.0.0.1 + token" --> pcagent
+        pcagent --> pcdisk
+        pcdevices -- "iPhone backups on C:" --> pcagent
+    end
+    subgraph nas["Mode 2 · NAS (DXP2800, RAID 1)"]
+        direction TB
+        ts["Tailscale container<br/>(Serve: HTTPS)"]
+        nasagent["homecloud-agent container<br/>(listens on 127.0.0.1 only)"]
+        pool[("RAID 1 pool · the archive")]
+        ts -- "shared network namespace" --> nasagent
+        nasagent --> pool
+    end
+    subgraph pc2["The PC, with a NAS"]
+        direction TB
+        desk2["Desktop app<br/>(paired device token)"]
+        push["homecloud iphone push<br/>(hourly task)"]
+    end
+    phone["Phone<br/>(ntfy, browser)"]
+    desk2 -- "https://…ts.net" --> ts
+    push -- "SMB share: changed files + manifest" --> nasagent
+    phone -- "tailnet" --> ts
+    nasagent -. "alerts" .-> phone
+    pcagent -. "alerts" .-> phone
+```
+
+Both modes run the same agent; only where it runs and how you reach it change. On a NAS the
+agent still listens on loopback only: the Tailscale container shares its network and publishes
+it to your own devices at `https://<name>.<tailnet>.ts.net` with a real certificate, and nowhere
+else.
+
+### Why this stack
+
+| Layer | Choice | Why | Instead of |
+|---|---|---|---|
+| Agent and CLI | **Go** | One self-contained binary per platform, built without C (`CGO_ENABLED=0`), so Windows and Linux on amd64 and arm64 all come from one machine and the NAS image needs no runtime. The standard library covers most of what the agent needs (HTTP server, SHA-256, XML, files confined with `os.Root`, the web app embedded with `go:embed`); the few formats it lacks, binary plists and DNG previews, are small parsers of our own. Goroutines run verification and Drive downloads in parallel within set limits. | A runtime to install on every host (Node, Python, .NET) |
+| Ledger | **SQLite** through `modernc.org/sqlite` (pure Go): WAL, `synchronous=FULL`, STRICT tables, an append-only event log enforced by triggers | One transactional file next to the archive, with no server to run. Scheduled snapshots, checked with `integrity_check` before they count, go to another drive. On a NAS the ledger stays on the NAS's own disk: SQLite's WAL does not work over a network share. | A database server for a single writer; plain JSON files without transactions |
+| Photos download | **kei** (pinned, driven through its CLI and JSON manifest) | Maintained, checksum-verified downloads, and a manifest homecloud can verify against; deleting from iCloud is outside its scope. | icloudpd: its move mode deletes assets whose download failed (#1312), it truncates videos over 1 GB (#1311), and it is looking for a maintainer |
+| iCloud Drive | **homecloud's own client** (`internal/icloud`, `internal/drive`) | No maintained tool archives Drive without deleting: rclone's backend deletes valid Pages/Numbers/Keynote downloads (#8404) and exposes no hashes. Apple's download signature lets every file be checked end to end. | rclone, pyicloud |
+| API | **Connect** with a Protobuf contract (Buf) | One typed contract generates both the Go server and the TypeScript client. It runs over plain HTTP on loopback, server streaming included (the live Overview), and a browser calls it directly, without a gRPC-Web proxy. CI rejects an incompatible change to an API version (`buf breaking`); a breaking change gets a new version (`v3` now). | REST with hand-written types; gRPC, which needs a proxy for browsers |
+| Interface | **React 19 + Fluent UI v9**, TypeScript, Vite | Fluent is Microsoft's design system, so the app looks native on Windows 11. One app serves the browser, the desktop window and the NAS. | Separate native interfaces per platform |
+| Desktop | **Tauri 2** (a Rust shell) | Uses the system's web view (WebView2, WebKitGTK), so the installer is about 2.5 MB. The page can call only seven small commands (where its agent is and how to sign in to it, pairing with a NAS, starting the agent, showing a file in its folder), and its content security policy lets it reach only the local agent and `*.ts.net`. It runs on Windows and Linux. | Electron (ships its own Chromium); Wails v3 (beta); WinUI 3 (Windows only); MAUI (no Linux); Flutter and Avalonia (another UI stack) |
+| Remote access | **Tailscale Serve** | Your devices only, with real HTTPS, and nothing opened on the LAN or the internet; the agent never leaves loopback. | Listening on the LAN (cleartext, or a private CA on every device); Cloudflare Tunnel (puts the app on the internet) |
+| Alerts | **ntfy** | Push notifications to the phone with no account; a long random topic is the secret, and alerts never name files or devices. | Email, an account-based push service |
+| Container | Debian 13 image for amd64 and arm64, pinned by digest | Every input is pinned: kei by its release checksums, FFmpeg by its signed release tarball, smartmontools by its Debian package. It runs as your NAS user; only `smartctl` gets the rights to query drives. | A general-purpose image with tools fetched at run time |
+
+### Principles the code follows
+
+- **Fail closed.** A missing drive, a hash mismatch or a health problem stops the step and alerts.
+  Nothing is ever taken as fine by default.
+- **Verify everything, keep everything.** Every downloaded file is checked against what iCloud
+  says it is (SHA-256, video structure, `ffprobe`) and re-checked on a schedule. A file that
+  fails is quarantined and kept. Nothing is deleted, from iCloud or from the archive, except
+  homecloud's own derived data: the thumbnail cache, rotated logs, old ledger snapshots, and
+  iPhone backup copies beyond `keep`.
+- **One writer.** Only one process writes the ledger at a time (the agent, or the CLI while the
+  agent is stopped).
+- **No lock-in.** The archive is ordinary files in dated folders, with XMP sidecars,
+  `manifest.csv` and `README.txt`. iPhone backup copies can be restored by copying them back.
+- **The operating system stays in one place.** OS-specific code lives only in `internal/platform`
+  (`*_windows.go`, `*_linux.go`); everything else is shared.
+- **Pinned, verified dependencies.** Tools and libraries are pinned and their versions checked
+  (`homecloud doctor`). Third-party libraries are used only where no official one exists and
+  writing our own would be worse ([docs/design.md §9](docs/design.md#9-dependencies-verified-2026-10-07)).
+
+### Repository layout
+
+| Path | What is there |
+|---|---|
+| `cmd/homecloud`, `cmd/homecloud-agent` | The CLI and the agent (built windowless on Windows) |
+| `internal/app` | The agent: the cycle, maintenance jobs, live status |
+| `internal/ledger` | The SQLite ledger and its migrations |
+| `internal/kei`, `internal/verify` | Running kei; the verification tiers |
+| `internal/icloud`, `internal/drive` | homecloud's own iCloud sign-in and the iCloud Drive archive |
+| `internal/iphonebackup`, `internal/iphonecopy` | Judging iPhone backups; their verified copies and pushes |
+| `internal/health`, `internal/smartctl` | Drive and RAID health |
+| `internal/api`, `internal/web`, `internal/auth` | The Connect API, the HTTP server (Host, Origin, CORS checks), tokens and sign-in codes |
+| `internal/platform` | Everything specific to Windows or Linux |
+| `proto/`, `gen/`, `ui/src/gen/` | The API contract and the code generated from it |
+| `ui/`, `desktop/` | The web app and the Tauri desktop shell |
+| `Dockerfile`, `deploy/` | The container image and the NAS compose setup |
+| `docs/design.md` | Decisions, sources and findings behind all of the above |
 
 ## Requirements
 
