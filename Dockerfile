@@ -13,7 +13,7 @@
 # The web app, embedded in the agent. Built once, on the build machine, with
 # pnpm's own image (the version ui/package.json's packageManager names), which
 # installs the Node.js that ui/package.json's devEngines.runtime pins.
-FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.9.1@sha256:77123fd40a39db0eb8be6bddfcf0cea15e000122b9221ccce2e4415be29050f2 AS ui
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.10.1@sha256:1aa6cd5e8ec50c046a2690efde0c25ced4c6ed896ada5509f7d33b0b94dc04a3 AS ui
 WORKDIR /src/ui
 COPY ui/package.json ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
