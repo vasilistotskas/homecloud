@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -168,7 +169,9 @@ func TestProbeReal(t *testing.T) {
 }
 
 // TestStructureKeepsNothingPerBox: a file of tiny boxes must cost no memory
-// in proportion to how many it holds.
+// in proportion to how many it holds. The scan reads from memory here: what a
+// file read allocates is the operating system's (os.File.ReadAt allocates per
+// call on Windows under the race detector), not the scan's.
 func TestStructureKeepsNothingPerBox(t *testing.T) {
 	const n = 1 << 17 // 1 MiB of 8-byte boxes
 	data := binary.BigEndian.AppendUint32(nil, 8)
@@ -181,13 +184,16 @@ func TestStructureKeepsNothingPerBox(t *testing.T) {
 		data = binary.BigEndian.AppendUint32(data, 8)
 		data = append(data, typ...)
 	}
-	path := writeFile(t, "tiny.mp4", data)
+	r := bytes.NewReader(data)
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
-	err := Structure(path)
+	found, err := topLevelBoxes(r, int64(len(data)))
 	runtime.ReadMemStats(&after)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := checkBoxes("tiny.mp4", found); err != nil || found.count != n {
+		t.Fatalf("%d boxes found: %v", found.count, err)
 	}
 	// Box types are 4-byte strings: one per box would be several MiB.
 	if a := after.TotalAlloc - before.TotalAlloc; a > 1<<20 {

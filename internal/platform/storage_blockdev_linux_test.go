@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -128,6 +129,11 @@ func wantDrives(t *testing.T, got Storage, names []string) {
 
 // partitionNode returns partition n's device node of loop, creating it from
 // sysfs where nothing (udev, devtmpfs) does, as in a container.
+// partitionWait bounds how long a loop device's partitions take to appear:
+// when udev opens the new device at once, the kernel's partition scan for
+// losetup --partscan completes only after it.
+const partitionWait = 10 * time.Second
+
 func partitionNode(t *testing.T, loop string, n int) string {
 	t.Helper()
 	name := fmt.Sprintf("%sp%d", filepath.Base(loop), n)
@@ -135,7 +141,13 @@ func partitionNode(t *testing.T, loop string, n int) string {
 	if _, err := os.Stat(node); err == nil {
 		return node
 	}
-	rdev, err := deviceNumber(filepath.Join(sysfsRoot, "class", "block", name))
+	sys := filepath.Join(sysfsRoot, "class", "block", name)
+	for deadline := time.Now().Add(partitionWait); ; time.Sleep(50 * time.Millisecond) {
+		if _, err := os.Stat(sys); err == nil || time.Now().After(deadline) {
+			break
+		}
+	}
+	rdev, err := deviceNumber(sys)
 	if err != nil {
 		t.Fatal(err)
 	}
