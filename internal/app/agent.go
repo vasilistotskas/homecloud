@@ -399,17 +399,60 @@ func (a *Agent) checkStorage(ctx context.Context) error {
 	if !changed {
 		return nil
 	}
-	a.log.Info("archive storage health changed", "from", previous, "to", report.State, "reasons", report.Reasons)
+	level := map[health.State]slog.Level{
+		health.StateOK:          slog.LevelInfo,
+		health.StateUnavailable: slog.LevelWarn,
+		health.StateWarning:     slog.LevelWarn,
+		health.StateFailing:     slog.LevelError,
+	}[report.State]
+	a.log.Log(ctx, level, "archive storage health changed", "from", previous, "to", report.State, "reasons", report.Reasons)
 	if report.State == health.StateWarning || report.State == health.StateFailing {
 		a.alert(ctx, notify.Msg{
 			Title: "homecloud: archive storage needs attention",
-			Body: "The storage holding your archive reports a problem (" + strings.Join(report.Reasons, "; ") +
-				"). It holds your only copy: replace a failing drive soon, and keep iCloud cleanup off until then.",
+			Body: "The storage holding your archive reports a problem" + storageProblems(report) +
+				". It holds your only copy: replace a failing drive soon, and keep iCloud cleanup off until then. The app shows which and why.",
 			Priority: notify.PriorityUrgent,
 			Tags:     []string{"rotating_light"},
 		})
 	}
 	return nil
+}
+
+// storageProblems counts the drives and arrays with a problem, for an alert:
+// ntfy topics are public, so the alert never names a drive (its model, serial
+// number or device path) or quotes a reason. The app and the log do.
+func storageProblems(r health.Report) string {
+	var parts []string
+	add := func(n int, what, verdict string) {
+		if n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s %s", n, what, verdict))
+		}
+	}
+	count := func(states []health.State, want health.State) int {
+		n := 0
+		for _, s := range states {
+			if s == want {
+				n++
+			}
+		}
+		return n
+	}
+	drives := make([]health.State, 0, len(r.Drives))
+	for _, d := range r.Drives {
+		drives = append(drives, d.State)
+	}
+	arrays := make([]health.State, 0, len(r.Arrays))
+	for _, a := range r.Arrays {
+		arrays = append(arrays, a.State)
+	}
+	add(count(drives, health.StateFailing), "drive(s)", "failing")
+	add(count(arrays, health.StateFailing), "RAID array(s)", "failing")
+	add(count(drives, health.StateWarning), "drive(s)", "with a warning")
+	add(count(arrays, health.StateWarning), "RAID array(s)", "with a warning")
+	if len(parts) == 0 {
+		return ""
+	}
+	return ": " + strings.Join(parts, ", ")
 }
 
 // hideHiddenFolder keeps the folder holding iCloud's Hidden photos hidden on

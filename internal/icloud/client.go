@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -177,7 +178,7 @@ type response struct {
 
 // send performs one request with a JSON body (nil for none) and reads the
 // whole response. Statuses are the caller's to judge.
-func (c *Client) send(ctx context.Context, method, url string, header http.Header, body any) (response, error) {
+func (c *Client) send(ctx context.Context, method, endpoint string, header http.Header, body any) (response, error) {
 	var r io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -186,31 +187,54 @@ func (c *Client) send(ctx context.Context, method, url string, header http.Heade
 		}
 		r = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, r)
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, r)
 	if err != nil {
-		return response{}, fmt.Errorf("build request: %w", err)
+		return response{}, fmt.Errorf("build %s request: %w", endpointName(endpoint), withoutURL(err))
 	}
 	req.Header = header
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return response{}, fmt.Errorf("%s %s: %w", method, endpointName(url), err)
+		return response{}, fmt.Errorf("%s %s: %w", method, endpointName(endpoint), withoutURL(err))
 	}
 	defer resp.Body.Close() //nolint:errcheck // fully read below
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 	if err != nil {
-		return response{}, fmt.Errorf("read %s: %w", endpointName(url), err)
+		return response{}, fmt.Errorf("read %s: %w", endpointName(endpoint), err)
 	}
 	if len(data) > maxBody {
-		return response{}, fmt.Errorf("%s: response larger than %d bytes", endpointName(url), maxBody)
+		return response{}, fmt.Errorf("%s: response larger than %d bytes", endpointName(endpoint), maxBody)
 	}
 	return response{status: resp.StatusCode, header: resp.Header, body: data}, nil
 }
 
-// endpointName is a URL without its query, for messages: queries may carry
-// tokens.
-func endpointName(url string) string {
-	name, _, _ := strings.Cut(url, "?")
+// endpointName is an API URL without its query, for messages: queries may
+// carry tokens.
+func endpointName(endpoint string) string {
+	name, _, _ := strings.Cut(endpoint, "?")
 	return name
+}
+
+// contentHost names a signed content URL (a download) by its host alone: the
+// rest of the URL is the signature.
+func contentHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "the content server"
+	}
+	return u.Host
+}
+
+// withoutURL drops the URL that net/http and net/url attach to their errors:
+// a *url.Error prints the whole URL, query included, and Apple's URLs carry
+// tokens, while these errors reach logs, run reports and the app.
+func withoutURL(err error) error {
+	for {
+		ue, ok := errors.AsType[*url.Error](err)
+		if !ok {
+			return err
+		}
+		err = ue.Err
+	}
 }
 
 // statusError describes an unexpected status without echoing the body, which
@@ -317,9 +341,10 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, stall time.Duration) 
 		}
 		return nil, err
 	}
+	host := contentHost(rawURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return fail(fmt.Errorf("build download request: %w", err))
+		return fail(fmt.Errorf("build download request for %s: %w", host, withoutURL(err)))
 	}
 	req.Header = c.webHeaders()
 	req.Header.Del("Content-Type")
@@ -330,11 +355,11 @@ func (c *Client) Fetch(ctx context.Context, rawURL string, stall time.Duration) 
 	download.CheckRedirect = nil
 	resp, err := download.Do(req)
 	if err != nil {
-		return fail(fmt.Errorf("GET %s: %w", endpointName(rawURL), err))
+		return fail(fmt.Errorf("GET %s: %w", host, withoutURL(err)))
 	}
 	if resp.StatusCode != http.StatusOK {
 		resp.Body.Close() //nolint:errcheck,gosec // the status is the error
-		return fail(fmt.Errorf("GET %s: unexpected status %d", endpointName(rawURL), resp.StatusCode))
+		return fail(fmt.Errorf("GET %s: unexpected status %d", host, resp.StatusCode))
 	}
 	return &watchedBody{body: resp.Body, ctx: ctx, cancel: cancel, watchdog: watchdog, stall: stall}, nil
 }
@@ -370,15 +395,15 @@ func (b *watchedBody) Close() error {
 // out. An expired session is refreshed once; a session that cannot be
 // refreshed, or a service that needs Advanced Data Protection approval again,
 // is ErrSignInRequired.
-func (c *Client) Call(ctx context.Context, method, url string, body, out any) error {
+func (c *Client) Call(ctx context.Context, method, endpoint string, body, out any) error {
 	for attempt := 0; ; attempt++ {
-		r, err := c.send(ctx, method, url, c.webHeaders(), body)
+		r, err := c.send(ctx, method, endpoint, c.webHeaders(), body)
 		if err != nil {
 			return err
 		}
 		switch {
 		case r.status == http.StatusOK:
-			return decode(endpointName(url), r, out)
+			return decode(endpointName(endpoint), r, out)
 		case r.status == http.StatusLocked:
 			return fmt.Errorf("%w: Advanced Data Protection approval expired", ErrSignInRequired)
 		case (r.status == http.StatusUnauthorized || r.status == http.StatusMisdirectedRequest) && attempt == 0:
@@ -386,7 +411,7 @@ func (c *Client) Call(ctx context.Context, method, url string, body, out any) er
 				return err
 			}
 		default:
-			return statusError(endpointName(url), r)
+			return statusError(endpointName(endpoint), r)
 		}
 	}
 }

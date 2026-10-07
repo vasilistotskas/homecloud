@@ -313,6 +313,10 @@ func TestCycleAlertsOnceWhenDriveFails(t *testing.T) {
 	if got := notes.titles(); len(got) != 1 || !strings.Contains(got[0], "archive storage") {
 		t.Fatalf("alerts = %v, want one storage alert", got)
 	}
+	// ntfy topics are public: the alert counts, it never names the drive.
+	if body := notes.msgs[0].Body; strings.Contains(body, "nvme0n1") || !strings.Contains(body, "1 drive(s) failing") {
+		t.Fatalf("storage alert body = %q", body)
+	}
 	if st, _ := agent.Hub().Snapshot(); st.Storage.State != health.StateFailing || len(st.Storage.Drives) != 1 || st.Storage.Drives[0].Health == nil {
 		t.Fatalf("status storage = %+v", st.Storage)
 	}

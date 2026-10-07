@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -50,7 +51,7 @@ func (a *Agent) openCopies(ctx context.Context) (*copies, error) {
 	}
 	c := &copies{a: a, archive: archive}
 	if err := c.recover(ctx); err != nil {
-		return nil, fmt.Errorf("%w (%w)", err, archive.Close())
+		return nil, errors.Join(err, archive.Close())
 	}
 	return c, nil
 }

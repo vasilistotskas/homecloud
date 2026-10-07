@@ -102,10 +102,10 @@ func Verify(ctx context.Context, cfg *config.Config, db *ledger.DB, log *slog.Lo
 				s.Passed++
 			case errors.Is(outcome, verify.ErrMismatch):
 				s.Mismatched++
-				log.Warn("verification mismatch; asset quarantined", "asset", p.AssetID, "version", p.Version, "err", outcome)
+				log.Warn("verification mismatch; asset quarantined", "library", p.Library, "asset", p.AssetID, "version", p.Version, "err", outcome)
 			default:
 				s.Errored++
-				log.Error("verification error; will retry", "asset", p.AssetID, "version", p.Version, "err", outcome)
+				log.Error("verification error; will retry", "library", p.Library, "asset", p.AssetID, "version", p.Version, "err", outcome)
 			}
 		})
 		progress()
@@ -117,7 +117,9 @@ func Verify(ctx context.Context, cfg *config.Config, db *ledger.DB, log *slog.Lo
 }
 
 // verifyOne runs the outstanding tiers for p in order. It returns nil when all
-// passed, an ErrMismatch-wrapping error after quarantining, or a transient error.
+// passed, an ErrMismatch-wrapping error once the asset is quarantined, or a
+// transient error: a mismatch whose quarantine could not be recorded is one, so
+// it is retried rather than reported as quarantined.
 func verifyOne(ctx context.Context, cfg *config.Config, db *ledger.DB, p ledger.PendingResource, now func() time.Time) error {
 	type step struct {
 		need bool
@@ -136,7 +138,7 @@ func verifyOne(ctx context.Context, cfg *config.Config, db *ledger.DB, p ledger.
 		if err := s.run(); err != nil {
 			if errors.Is(err, verify.ErrMismatch) {
 				if recErr := db.RecordMismatch(ctx, p.Key, s.tier, err.Error(), now()); recErr != nil {
-					return errors.Join(err, recErr)
+					return fmt.Errorf("record %s mismatch (%v): %w", s.tier, err, recErr) //nolint:errorlint // the mismatch must not match ErrMismatch: nothing was quarantined
 				}
 			}
 			return err
