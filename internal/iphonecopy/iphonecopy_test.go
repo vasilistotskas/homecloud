@@ -378,3 +378,29 @@ func TestHashTreeRefusesUnexpectedEntries(t *testing.T) {
 		t.Fatal("a file Apple's tools do not write was accepted")
 	}
 }
+
+// TestWriteFileNeverWritesThroughALink: a hard link planted at the name of a
+// file about to be written (incoming is shared with another computer) must
+// not let the write reach the file it links to.
+func TestWriteFileNeverWritesThroughALink(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
+	if err := root.WriteFile("copy", []byte("archived"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Link("copy", "receipt.tmp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFile(root, "receipt.tmp", []byte("receipt")); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"copy": "archived", "receipt.tmp": "receipt"} {
+		if got, err := root.ReadFile(name); err != nil || string(got) != want {
+			t.Errorf("%s = %q, %v; want %q", name, got, err, want)
+		}
+	}
+}

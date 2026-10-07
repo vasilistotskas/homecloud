@@ -50,14 +50,13 @@ func checkSignature(apple string, h hash.Hash) (string, error) {
 // ErrBadPackage means a package download is not an intact ZIP archive.
 var ErrBadPackage = errors.New("package download is not an intact ZIP archive")
 
-// checkPackage reads every entry of the ZIP at file, which makes the ZIP
-// reader verify each entry's CRC-32 and size.
-func checkPackage(file string) error {
-	r, err := zip.OpenReader(file)
+// checkPackage reads every entry of the ZIP in file (size bytes), which makes
+// the ZIP reader verify each entry's CRC-32 and size.
+func checkPackage(file io.ReaderAt, size int64) error {
+	r, err := zip.NewReader(file, size)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrBadPackage, err)
 	}
-	defer r.Close() //nolint:errcheck // read-only
 	for _, f := range r.File {
 		if err := readEntry(f); err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrBadPackage, f.Name, err)

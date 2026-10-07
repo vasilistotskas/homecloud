@@ -420,10 +420,15 @@ func (a *Archive) verifyFile(rel string, want Digest, checked map[platform.FileI
 	return true, nil
 }
 
-// writeFile writes data to name in root and flushes it to disk; name must
-// not exist.
+// writeFile writes data to a new file name in root and flushes it to disk.
+// Whatever is at name, the leftover of an interrupted write, is removed first:
+// the file is never written through an existing name, which could be a link
+// (a hard link to a copy, made by another computer that writes to incoming).
 func writeFile(root *os.Root, name string, data []byte) error {
-	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, fileMode)
+	if err := root.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove the leftover %s: %w", name, err)
+	}
+	f, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
 	if err != nil {
 		return fmt.Errorf("create %s: %w", name, err)
 	}

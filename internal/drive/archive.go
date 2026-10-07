@@ -42,7 +42,10 @@ const maxFailures = 20
 // Archive keeps a local folder as a never-deleting copy of iCloud Drive.
 type Archive struct {
 	// Root is the archive's Drive folder.
-	Root    string
+	Root string
+	// dir is Root, open for the length of a sync (open): every file
+	// operation goes through it, so names from iCloud never reach outside it.
+	dir     *os.Root
 	DB      *ledger.DB
 	Client  *icloud.Client
 	Now     func() time.Time
@@ -103,9 +106,13 @@ type job struct {
 // Sync lists iCloud Drive and brings the archive up to date. An error means
 // the sync could not run or had to stop (listing failed, sign-in needed);
 // single files that fail are counted in the report and retried next time.
-func (a *Archive) Sync(ctx context.Context) (Report, error) {
-	var rep Report
-	if err := a.clearPartial(); err != nil {
+func (a *Archive) Sync(ctx context.Context) (rep Report, err error) {
+	closeDir, err := a.open()
+	if err != nil {
+		return rep, err
+	}
+	defer func() { err = errors.Join(err, closeDir()) }()
+	if err = a.clearPartial(); err != nil {
 		return rep, err
 	}
 	listing, err := Walk(ctx, a.Client)
@@ -280,7 +287,7 @@ func (a *Archive) archive(ctx context.Context, j job, rep *Report, mu *sync.Mute
 	if err != nil {
 		return err
 	}
-	defer os.Remove(partial) //nolint:errcheck // gone after a successful rename; a temp file otherwise
+	defer a.dir.Remove(partial) //nolint:errcheck // gone after a successful rename; a temp file otherwise
 
 	if j.prev != nil && !j.repair && j.prev.SHA256 == sum {
 		// Only metadata changed: the archived copy already has these bytes.
@@ -332,18 +339,18 @@ func partialName(drivewsid string) string {
 
 // fetch downloads a file into the partial folder and verifies it: a plain
 // file against its listed size and Apple's signature, a package as an intact
-// ZIP. It returns the partial file, its SHA-256, Apple's signature (hex, plain
-// files) and its size.
+// ZIP. It returns the partial file (its name in the Drive folder), its
+// SHA-256, Apple's signature (hex, plain files) and its size.
 func (a *Archive) fetch(ctx context.Context, f File) (partial, sum, sig string, pkg bool, n int64, err error) {
-	tmp := filepath.Join(a.Root, partialDir, partialName(f.DriveWSID))
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // inside the archive
+	tmp := filepath.Join(partialDir, partialName(f.DriveWSID))
+	out, err := a.dir.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if err != nil {
 		return "", "", "", false, 0, fmt.Errorf("create download file: %w", err)
 	}
 	defer func() {
 		// Results are cleared on error, so remove by the local name.
 		if err != nil {
-			err = errors.Join(err, os.Remove(tmp))
+			err = errors.Join(err, a.dir.Remove(tmp))
 		}
 	}()
 	contentHash := sha256.New()
@@ -368,14 +375,17 @@ func (a *Archive) fetch(ctx context.Context, f File) (partial, sum, sig string, 
 			return "", "", "", false, 0, errors.Join(fmt.Errorf("download: %w", err), out.Close())
 		}
 	}
-	if err = errors.Join(out.Sync(), out.Close()); err != nil {
-		return "", "", "", false, 0, fmt.Errorf("write download file: %w", err)
+	if err = out.Sync(); err != nil {
+		return "", "", "", false, 0, errors.Join(fmt.Errorf("write download file: %w", err), out.Close())
+	}
+	if pkg {
+		err = checkPackage(out, n)
+	}
+	if err = errors.Join(err, out.Close()); err != nil {
+		return "", "", "", false, 0, err
 	}
 	switch {
 	case pkg:
-		if err = checkPackage(tmp); err != nil {
-			return "", "", "", false, 0, err
-		}
 	case f.Size != n:
 		return "", "", "", false, 0, fmt.Errorf("downloaded %d bytes, iCloud lists %d", n, f.Size)
 	case f.Size > 0:
@@ -389,15 +399,15 @@ func (a *Archive) fetch(ctx context.Context, f File) (partial, sum, sig string, 
 // place moves a verified download to local. A file already there is moved
 // under .versions first; keptAs names it (archive-relative, '/').
 func (a *Archive) place(partial, local string) (keptAs string, err error) {
-	dest := a.abs(local)
+	dest := name(local)
 	keptAs, err = a.keep(local)
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { //nolint:gosec // archive folders are the owner's to read
+	if err := a.dir.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return "", fmt.Errorf("create folder for %s: %w", local, err)
 	}
-	if err := os.Rename(partial, dest); err != nil {
+	if err := a.dir.Rename(partial, dest); err != nil {
 		return "", fmt.Errorf("place %s: %w", local, err)
 	}
 	return keptAs, nil
@@ -410,8 +420,8 @@ const maxVersionSuffix = 1000
 // "-2", "-3", ... to the time folder when that name is taken). It never moves
 // a folder: a folder where a file belongs is an error to look into.
 func (a *Archive) keep(local string) (string, error) {
-	src := a.abs(local)
-	info, err := os.Lstat(src)
+	src := name(local)
+	info, err := a.dir.Lstat(src)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return "", nil
@@ -427,16 +437,16 @@ func (a *Archive) keep(local string) (string, error) {
 			folder = fmt.Sprintf("%s-%d", stamp, n)
 		}
 		kept := path.Join(VersionsDir, folder, local)
-		dest := a.abs(kept)
-		if _, err := os.Lstat(dest); err == nil {
+		dest := name(kept)
+		if _, err := a.dir.Lstat(dest); err == nil {
 			continue
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return "", fmt.Errorf("check %s: %w", kept, err)
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { //nolint:gosec // archive folders are the owner's to read
+		if err := a.dir.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			return "", fmt.Errorf("create version folder: %w", err)
 		}
-		if err := os.Rename(src, dest); err != nil {
+		if err := a.dir.Rename(src, dest); err != nil {
 			return "", fmt.Errorf("keep previous %s: %w", local, err)
 		}
 		return kept, nil
@@ -449,12 +459,12 @@ func (a *Archive) keep(local string) (string, error) {
 // safe to repeat after a crash at any point. present reports whether the copy
 // exists at target afterwards; a missing copy is downloaded again.
 func (a *Archive) move(from, target string) (present bool, err error) {
-	src, dest := a.abs(from), a.abs(target)
-	srcInfo, srcExists, err := stat(src)
+	src, dest := name(from), name(target)
+	srcInfo, srcExists, err := a.lstat(src)
 	if err != nil {
 		return false, err
 	}
-	destInfo, destExists, err := stat(dest)
+	destInfo, destExists, err := a.lstat(dest)
 	if err != nil {
 		return false, err
 	}
@@ -464,7 +474,7 @@ func (a *Archive) move(from, target string) (present bool, err error) {
 		return destExists, nil
 	case destExists && os.SameFile(srcInfo, destInfo):
 		// The same file under another case: a rename in place.
-		if err := os.Rename(src, dest); err != nil {
+		if err := a.dir.Rename(src, dest); err != nil {
 			return false, fmt.Errorf("rename %s to %s: %w", from, target, err)
 		}
 		return true, nil
@@ -474,19 +484,20 @@ func (a *Archive) move(from, target string) (present bool, err error) {
 			return false, err
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil { //nolint:gosec // archive folders are the owner's to read
+	if err := a.dir.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return false, fmt.Errorf("create folder for %s: %w", target, err)
 	}
-	if err := os.Rename(src, dest); err != nil {
+	if err := a.dir.Rename(src, dest); err != nil {
 		return false, fmt.Errorf("move %s to %s: %w", from, target, err)
 	}
 	a.removeEmptyParents(filepath.Dir(src))
 	return true, nil
 }
 
-// stat reports whether a path exists; any error but "not there" is returned.
-func stat(file string) (fs.FileInfo, bool, error) {
-	info, err := os.Lstat(file)
+// lstat reports whether a name exists in the Drive folder; any error but
+// "not there" is returned.
+func (a *Archive) lstat(file string) (fs.FileInfo, bool, error) {
+	info, err := a.dir.Lstat(file)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil, false, nil
@@ -496,12 +507,12 @@ func stat(file string) (fs.FileInfo, bool, error) {
 	return info, true, nil
 }
 
-// removeEmptyParents removes dir and its parents while they are empty, up to
-// the archive's Drive folder. Only empty folders are ever removed.
+// removeEmptyParents removes dir (a folder in the Drive folder) and its
+// parents while they are empty, up to the Drive folder itself. Only empty
+// folders are ever removed.
 func (a *Archive) removeEmptyParents(dir string) {
-	root := filepath.Clean(a.Root)
-	for dir = filepath.Clean(dir); dir != root && strings.HasPrefix(dir, root+string(filepath.Separator)); dir = filepath.Dir(dir) {
-		if os.Remove(dir) != nil { // fails unless empty
+	for dir = filepath.Clean(dir); filepath.IsLocal(dir); dir = filepath.Dir(dir) {
+		if a.dir.Remove(dir) != nil { // fails unless empty
 			return
 		}
 	}
@@ -509,16 +520,38 @@ func (a *Archive) removeEmptyParents(dir string) {
 
 // clearPartial removes downloads an interrupted sync left behind.
 func (a *Archive) clearPartial() error {
-	dir := filepath.Join(a.Root, partialDir)
-	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("clear %s: %w", dir, err)
+	if err := a.dir.RemoveAll(partialDir); err != nil {
+		return fmt.Errorf("clear %s: %w", partialDir, err)
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
+	if err := a.dir.MkdirAll(partialDir, 0o700); err != nil {
+		return fmt.Errorf("create %s: %w", partialDir, err)
 	}
 	return nil
 }
 
-func (a *Archive) abs(local string) string {
-	return filepath.Join(a.Root, filepath.FromSlash(local))
+// open opens Root (creating it) as the folder every file operation of a sync
+// goes through: os.Root refuses names, links and junctions that lead outside
+// it, so neither a name from iCloud nor a link planted in the archive can make
+// a sync write elsewhere. The returned func closes it.
+func (a *Archive) open() (func() error, error) {
+	if err := os.MkdirAll(a.Root, 0o700); err != nil {
+		return nil, fmt.Errorf("create %s: %w", a.Root, err)
+	}
+	root, err := os.OpenRoot(a.Root)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", a.Root, err)
+	}
+	a.dir = root
+	return func() error {
+		a.dir = nil
+		if err := root.Close(); err != nil {
+			return fmt.Errorf("close %s: %w", a.Root, err)
+		}
+		return nil
+	}, nil
+}
+
+// name is the Drive folder name of an archive-relative local path ('/').
+func name(local string) string {
+	return filepath.FromSlash(local)
 }

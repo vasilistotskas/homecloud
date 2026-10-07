@@ -16,6 +16,7 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/tool"
 )
 
 // TestRendersRealSamples renders every file in a folder of real library
@@ -60,19 +61,19 @@ func TestRendersRealSamples(t *testing.T) {
 }
 
 func TestRenderArgs(t *testing.T) {
-	got := renderArgs(fileInput("in.HEIC"), "out.webp", "scale=1", true)
+	got := renderArgs(tool.FFmpegFile("in.HEIC"), "out.webp", "scale=1", true)
 	want := []string{
-		"-nostdin", "-v", "error", "-y", "-i", "in.HEIC",
+		"-nostdin", "-v", "error", "-y", "-protocol_whitelist", "file", "-i", "file:in.HEIC",
 		"-filter_complex", "[0:g:0]scale=1[o]", "-map", "[o]",
 		"-frames:v", "1", "-c:v", "libwebp", "-quality", "75", "-f", "webp", "out.webp",
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("tiled args (-want +got):\n%s", diff)
 	}
-	if got := renderArgs(fileInput("in.MOV"), "out.webp", "scale=1", false); !strings.Contains(strings.Join(got, " "), "-i in.MOV -vf scale=1") {
+	if got := renderArgs(tool.FFmpegFile("in.MOV"), "out.webp", "scale=1", false); !strings.Contains(strings.Join(got, " "), "-protocol_whitelist file -i file:in.MOV -vf scale=1") {
 		t.Fatalf("plain args = %v", got)
 	}
-	if got := renderArgs(stdinJPEG, "out.webp", "scale=1", false); !strings.Contains(strings.Join(got, " "), "-f jpeg_pipe -i pipe:0 -vf scale=1") {
+	if got := renderArgs(tool.FFmpegStdin("jpeg_pipe"), "out.webp", "scale=1", false); !strings.Contains(strings.Join(got, " "), "-protocol_whitelist pipe -f jpeg_pipe -i pipe:0 -vf scale=1") {
 		t.Fatalf("raw preview args = %v", got)
 	}
 }

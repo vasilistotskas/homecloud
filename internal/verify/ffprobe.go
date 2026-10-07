@@ -50,11 +50,9 @@ func Probe(ctx context.Context, cfg config.FFmpeg, path string) error {
 	ctx, cancel := context.WithTimeout(ctx, cfg.ProbeTimeout.Std())
 	defer cancel()
 	var stdout, stderr bytes.Buffer
-	cmd := platform.Command(ctx, cfg.FFprobe,
-		"-v", "error",
-		"-show_entries", "format=duration:stream=codec_type,duration",
-		"-of", "json",
-		path)
+	args := append([]string{"-v", "error", "-show_entries", "format=duration:stream=codec_type,duration", "-of", "json"},
+		tool.FFmpegFile(path)...)
+	cmd := platform.Command(ctx, cfg.FFprobe, args...)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {

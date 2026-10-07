@@ -84,6 +84,15 @@ func run() (err error) {
 		log.Info("kei configuration written", "path", cfg.Kei.Config)
 	}
 
+	// The archive holds the only copy of the library: nobody but this account
+	// (with SYSTEM and Administrators) may read or change it.
+	if changed, privErr := platform.MakePrivate(cfg.Storage.Root); privErr != nil {
+		log.Error("making the archive private failed; not starting", "path", cfg.Storage.Root, "err", privErr)
+		return privErr
+	} else if changed {
+		log.Info("archive made private to this account", "path", cfg.Storage.Root)
+	}
+
 	if doctorErr := doctor.Err(doctor.Run(ctx, cfg)); doctorErr != nil {
 		log.Error("environment checks failed; not starting", "err", doctorErr)
 		return fmt.Errorf("doctor: %w", doctorErr)

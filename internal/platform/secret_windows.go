@@ -21,14 +21,23 @@ func StateDir() (string, error) {
 	return filepath.Join(dir, "homecloud"), nil
 }
 
+// userSID is the SID of the account the process runs as.
+func userSID() (*windows.SID, error) {
+	u, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		return nil, fmt.Errorf("read token user: %w", err)
+	}
+	return u.User.Sid, nil
+}
+
 // ownerOnlySDDL grants the current user full control and nobody else anything;
 // "P" protects the DACL from inheriting the parent folder's entries.
 func ownerOnlySDDL() (string, error) {
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	user, err := userSID()
 	if err != nil {
-		return "", fmt.Errorf("current user: %w", err)
+		return "", err
 	}
-	return "D:P(A;;FA;;;" + user.User.Sid.String() + ")", nil
+	return "D:P(A;;FA;;;" + user.String() + ")", nil
 }
 
 // WriteSecretFile atomically replaces path with data. The file is created with

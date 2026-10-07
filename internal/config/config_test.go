@@ -226,6 +226,12 @@ func TestValidate(t *testing.T) {
 		{"incoming without copies", func(c *Config) {
 			c.IPhoneBackup.Incoming, c.IPhoneBackup.Keep = filepath.Join(testTools, "incoming"), 0
 		}, "iphone_backup.keep must be at least 1"},
+		{"incoming is the archive", func(c *Config) { c.IPhoneBackup.Incoming = testRoot }, "apart from storage.root"},
+		{"incoming inside the archive", func(c *Config) {
+			c.IPhoneBackup.Incoming = filepath.Join(testRoot, "iPhone backups")
+		}, "apart from storage.root"},
+		{"incoming holds the ledger backups", func(c *Config) { c.IPhoneBackup.Incoming = filepath.Dir(testBackupDir) }, "apart from backup.dir"},
+		{"incoming is Apple's backup folder", func(c *Config) { c.IPhoneBackup.Incoming = testIPhoneDir }, "apart from iphone_backup.dirs entry"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

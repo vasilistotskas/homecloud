@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"time"
 
@@ -62,7 +63,9 @@ var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // Validate checks invariants homecloud relies on. Unknown enum values are
 // rejected: a new status or media type changes semantics and must be reviewed.
-func (r *ManifestRow) Validate() error {
+// A downloaded file must lie in dir, kei's download folder (DownloadDir):
+// homecloud reads, renders and serves the file at that path.
+func (r *ManifestRow) Validate(dir string) error {
 	var errs []error
 	if r.Library == "" || r.AssetID == "" || r.Version == "" {
 		errs = append(errs, errors.New("library, asset_id and version are required"))
@@ -78,8 +81,11 @@ func (r *ManifestRow) Validate() error {
 		errs = append(errs, fmt.Errorf("unknown media_type %q", r.MediaType))
 	}
 	if r.Status == StatusDownloaded {
-		if r.LocalPath == nil || *r.LocalPath == "" {
+		switch {
+		case r.LocalPath == nil || *r.LocalPath == "":
 			errs = append(errs, errors.New("downloaded row has no local_path"))
+		case !within(dir, *r.LocalPath):
+			errs = append(errs, fmt.Errorf("local_path %s is not inside kei's download folder %s", *r.LocalPath, dir))
 		}
 		if r.DownloadChecksum == nil || !sha256Hex.MatchString(*r.DownloadChecksum) {
 			errs = append(errs, errors.New("downloaded row has no lowercase hex SHA-256 download_checksum"))
@@ -91,15 +97,25 @@ func (r *ManifestRow) Validate() error {
 	return nil
 }
 
-// ParseManifest decodes and validates a JSON manifest.
-func ParseManifest(r io.Reader) ([]ManifestRow, error) {
+// within reports whether path is an absolute path inside dir.
+func within(dir, path string) bool {
+	if !filepath.IsAbs(path) {
+		return false
+	}
+	rel, err := filepath.Rel(dir, path)
+	return err == nil && filepath.IsLocal(rel)
+}
+
+// ParseManifest decodes and validates a JSON manifest of the library kei
+// downloads into dir.
+func ParseManifest(r io.Reader, dir string) ([]ManifestRow, error) {
 	var rows []ManifestRow
 	if err := json.UnmarshalRead(r, &rows); err != nil {
 		return nil, fmt.Errorf("decode kei manifest: %w", err)
 	}
 	var errs []error
 	for i := range rows {
-		if err := rows[i].Validate(); err != nil {
+		if err := rows[i].Validate(dir); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -109,13 +125,14 @@ func ParseManifest(r io.Reader) ([]ManifestRow, error) {
 	return rows, nil
 }
 
-// Manifest runs `kei manifest --format json` (read-only; does not contact iCloud).
-func Manifest(ctx context.Context, cfg config.Kei) ([]ManifestRow, error) {
+// Manifest runs `kei manifest --format json` (read-only; does not contact
+// iCloud) for the library kei downloads into dir.
+func Manifest(ctx context.Context, cfg config.Kei, dir string) ([]ManifestRow, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := platform.Command(ctx, cfg.Binary, "manifest", "--format", "json", "--config", cfg.Config)
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("kei manifest: %w: %s", err, bytes.TrimSpace(stderr.Bytes()))
 	}
-	return ParseManifest(&stdout)
+	return ParseManifest(&stdout, dir)
 }

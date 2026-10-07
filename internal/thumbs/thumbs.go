@@ -195,9 +195,9 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 	if err != nil {
 		return err
 	}
-	input, tiled := fileInput(src.Path), false
+	input, tiled := tool.FFmpegFile(src.Path), false
 	if isRaw {
-		input = stdinJPEG
+		input = tool.FFmpegStdin("jpeg_pipe")
 	} else if tiled, err = r.isTiled(ctx, src.Path); err != nil {
 		return err
 	}
@@ -227,15 +227,9 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 	return nil
 }
 
-// stdinJPEG reads one JPEG from standard input: a raw's embedded preview.
-// (-nostdin only disables interactive keyboard control.)
-var stdinJPEG = []string{"-f", "jpeg_pipe", "-i", "pipe:0"}
-
-// fileInput reads the source file itself.
-func fileInput(path string) []string { return []string{"-i", path} }
-
-// renderArgs builds the ffmpeg command line for input (fileInput or
-// stdinJPEG). Tiled HEIF images (iPhone HEIC) expose their picture as stream
+// renderArgs builds the ffmpeg command line for input: the source file
+// (tool.FFmpegFile) or a raw's embedded JPEG preview on standard input
+// (tool.FFmpegStdin; -nostdin only disables interactive keyboard control). Tiled HEIF images (iPhone HEIC) expose their picture as stream
 // group 0, which the filter graph must stitch; everything else is a plain
 // video stream, of which the first frame is used. ffmpeg applies EXIF and
 // container rotation itself (autorotate).
@@ -251,8 +245,8 @@ func renderArgs(input []string, dest, filter string, tiled bool) []string {
 
 // isTiled reports whether src is a tiled (grid) HEIF image.
 func (r *Renderer) isTiled(ctx context.Context, src string) (bool, error) {
-	out, err := platform.Command(ctx, r.cfg.FFprobe,
-		"-v", "error", "-show_entries", "stream_group=index", "-of", "csv=p=0", src).Output()
+	args := append([]string{"-v", "error", "-show_entries", "stream_group=index", "-of", "csv=p=0"}, tool.FFmpegFile(src)...)
+	out, err := platform.Command(ctx, r.cfg.FFprobe, args...).Output()
 	if err != nil {
 		return false, fmt.Errorf("ffprobe %s: %w", src, err)
 	}

@@ -535,6 +535,15 @@ func TestArchiveAbandonsAStalledDownload(t *testing.T) {
 
 func TestArchiveKeepsTwoVersionsInOneSecond(t *testing.T) {
 	h := newHarness(t)
+	closeDir, err := h.a.open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := closeDir(); err != nil {
+			t.Error(err)
+		}
+	})
 	for _, body := range []string{"one", "two"} {
 		if err := os.MkdirAll(filepath.Join(h.a.Root, "iCloud Drive"), 0o700); err != nil {
 			t.Fatal(err)
@@ -564,5 +573,32 @@ func TestArchiveTreatsAVanishedSubfolderAsIncomplete(t *testing.T) {
 	files, _ := h.db.DriveFiles(context.Background())
 	if files["FILE::com.apple.CloudDocs::A"].DeletedAt != nil {
 		t.Fatal("files of a vanished folder were recorded as deleted")
+	}
+}
+
+// TestArchiveNeverWritesThroughALink replaces a folder of the archive with a
+// link (a junction on Windows) to a folder outside it: the sync must refuse
+// to place files through it.
+func TestArchiveNeverWritesThroughALink(t *testing.T) {
+	h := newHarness(t)
+	h.drive.folder("FOLDER::com.apple.CloudDocs::D", "Docs")
+	h.drive.put("FOLDER::com.apple.CloudDocs::D", "A", "a", "txt", []byte("a"), "e1")
+	h.sync()
+	docs, err := filepath.Glob(filepath.Join(h.a.Root, "*", "Docs"))
+	if err != nil || len(docs) != 1 {
+		t.Fatalf("archived Docs folder = %v, %v", docs, err)
+	}
+	if err := os.RemoveAll(docs[0]); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	plantLink(t, docs[0], outside)
+
+	h.drive.put("FOLDER::com.apple.CloudDocs::D", "B", "b", "txt", []byte("b"), "e1")
+	if rep := h.sync(); rep.Failed == 0 {
+		t.Fatalf("a file was placed through a link: %+v", rep)
+	}
+	if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
+		t.Fatalf("the folder outside the archive holds %v, %v", entries, err)
 	}
 }

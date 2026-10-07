@@ -6,10 +6,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/vasilistotskas/homecloud/internal/ledger"
+	"github.com/vasilistotskas/homecloud/internal/verify"
 )
 
 // verifiedAgent returns an agent whose single fixture photo is verified, and
@@ -21,7 +23,7 @@ func verifiedAgent(t *testing.T, clock *time.Time) (*Agent, *recordingNotifier, 
 	if err := agent.Cycle(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	return agent, n, filepath.Join(filepath.Dir(manifest), "IMG_0001_QUFBQTA.HEIC")
+	return agent, n, fixturePhoto(filepath.Dir(manifest))
 }
 
 func lastRun(t *testing.T, a *Agent, kind string) ledger.Run {
@@ -183,5 +185,15 @@ func TestScrubThatCouldNotRunIsRetriedNextCycle(t *testing.T) {
 	retried := lastRun(t, agent, ScrubRunKind)
 	if retried.ID == failed.ID || !*retried.OK {
 		t.Fatalf("scrub after a failed run: id %d (failed %d), ok=%v; want a successful retry next cycle", retried.ID, failed.ID, *retried.OK)
+	}
+}
+
+func TestScrubDriveFileStaysInTheDriveFolder(t *testing.T) {
+	root := t.TempDir()
+	for _, local := range []string{"../homecloud.db", "/etc/passwd", "iCloud Drive/../../homecloud.db"} {
+		err := scrubDriveFile(root, ledger.DriveFile{LocalPath: local, Size: 1, SHA256: "00"})
+		if err == nil || errors.Is(err, verify.ErrMismatch) || !strings.Contains(err.Error(), "not inside") {
+			t.Errorf("%s: %v", local, err)
+		}
 	}
 }

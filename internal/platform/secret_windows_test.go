@@ -48,14 +48,14 @@ func TestWriteSecretFileIsOwnerOnly(t *testing.T) {
 	if aceErr := windows.GetAce(dacl, 0, &ace); aceErr != nil {
 		t.Fatal(aceErr)
 	}
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	user, err := userSID()
 	if err != nil {
 		t.Fatal(err)
 	}
 	sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart)) //nolint:gosec // the SID follows the ACE header in memory
-	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || !sid.Equals(user.User.Sid) || ace.Mask != fileAllAccess {
+	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || !sid.Equals(user) || ace.Mask != fileAllAccess {
 		t.Fatalf("ACE = type %d mask %#x sid %s; want allow FILE_ALL_ACCESS to %s",
-			ace.Header.AceType, ace.Mask, sid, user.User.Sid)
+			ace.Header.AceType, ace.Mask, sid, user)
 	}
 	if left, _ := filepath.Glob(path + ".tmp-*"); len(left) != 0 {
 		t.Fatalf("temp files left behind: %v", left)

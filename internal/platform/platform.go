@@ -13,6 +13,8 @@
 //	NotifyReady() / NotifyStopping()     service-manager readiness protocol
 //	StateDir() (string, error)           per-user runtime state directory
 //	WriteSecretFile(path, data) error    atomic write readable only by the current user
+//	CheckPrivate(dir) error              whether a folder is the current user's alone
+//	MakePrivate(dir) (bool, error)       make it so, for everything inside it too
 //
 // Shared by both: WriteFile (atomic write of a file others may read) and
 // WriteFileIfChanged.

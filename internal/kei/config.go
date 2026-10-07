@@ -78,7 +78,7 @@ type keiConfig struct {
 func RenderConfig(cfg *config.Config) ([]byte, error) {
 	var k keiConfig
 	k.Auth.Username = cfg.ICloud.AppleID
-	k.Download.Directory = filepath.Join(cfg.Storage.Root, PhotosDir)
+	k.Download.Directory = DownloadDir(cfg.Storage.Root)
 	k.Download.FolderStructure = dateFolders
 	k.Download.FolderStructureAlbums = dateFolders
 	k.Download.FolderStructureSmartFolders = HiddenDir + "/" + dateFolders
@@ -110,14 +110,19 @@ func RenderConfig(cfg *config.Config) ([]byte, error) {
 
 // WriteConfig writes kei's configuration to kei.config when it differs from
 // what is there, and reports whether it changed. The file names the Apple
-// Account, so it is readable by the current user only.
+// Account, so it is readable by the current user only, and so is its folder,
+// where kei also writes its report (which names the account too).
 func WriteConfig(cfg *config.Config) (bool, error) {
 	want, err := RenderConfig(cfg)
 	if err != nil {
 		return false, err
 	}
-	if err = os.MkdirAll(filepath.Dir(cfg.Kei.Config), 0o700); err != nil {
+	dir := filepath.Dir(cfg.Kei.Config)
+	if err = os.MkdirAll(dir, 0o700); err != nil {
 		return false, fmt.Errorf("create kei config directory: %w", err)
+	}
+	if _, err = platform.MakePrivate(dir); err != nil {
+		return false, err
 	}
 	changed, err := platform.WriteFileIfChanged(cfg.Kei.Config, want, platform.WriteSecretFile)
 	if err != nil {
@@ -142,7 +147,12 @@ func ConfigCurrent(cfg *config.Config) error {
 	return nil
 }
 
+// DownloadDir is the folder kei downloads the library into, under root.
+func DownloadDir(root string) string {
+	return filepath.Join(root, PhotosDir)
+}
+
 // HiddenPath is the folder holding photos hidden in iCloud under root.
 func HiddenPath(root string) string {
-	return filepath.Join(root, PhotosDir, HiddenDir)
+	return filepath.Join(DownloadDir(root), HiddenDir)
 }

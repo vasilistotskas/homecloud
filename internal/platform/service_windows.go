@@ -12,8 +12,6 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf16"
-
-	"golang.org/x/sys/windows"
 )
 
 // On Windows tasks are Task Scheduler tasks started at the user's logon (a
@@ -150,15 +148,15 @@ func renderTask(task Task, userSID, userName string) ([]byte, error) {
 
 // currentUser returns the SID string and DOMAIN\name of the process owner.
 func currentUser() (sid, name string, err error) {
-	tu, err := windows.GetCurrentProcessToken().GetTokenUser()
+	user, err := userSID()
 	if err != nil {
-		return "", "", fmt.Errorf("read token user: %w", err)
+		return "", "", err
 	}
-	account, domain, _, err := tu.User.Sid.LookupAccount("")
+	account, domain, _, err := user.LookupAccount("")
 	if err != nil {
 		return "", "", fmt.Errorf("lookup account: %w", err)
 	}
-	return tu.User.Sid.String(), domain + `\` + account, nil
+	return user.String(), domain + `\` + account, nil
 }
 
 func registerTask(ctx context.Context, name string, doc []byte) (err error) {

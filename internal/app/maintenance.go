@@ -199,7 +199,7 @@ func (a *Agent) scrubDrive(ctx context.Context, rep *DriveScrub) error {
 	var mu sync.Mutex
 	parallel.ForEach(ctx, batch, a.cfg.Verify.Workers, func(f ledger.DriveFile) {
 		var outcome error
-		switch err := verify.Content(filepath.Join(root, filepath.FromSlash(f.LocalPath)), uint64(f.Size), f.SHA256); { //nolint:gosec // sizes are never negative
+		switch err := scrubDriveFile(root, f); {
 		case err == nil:
 			outcome = a.db.RecordDriveScrub(ctx, f.DriveWSID, a.now())
 		case errors.Is(err, verify.ErrMismatch):
@@ -229,6 +229,16 @@ func (a *Agent) scrubDrive(ctx context.Context, rep *DriveScrub) error {
 		return fmt.Errorf("drive scrub: %w", err)
 	}
 	return nil
+}
+
+// scrubDriveFile checks an archived iCloud Drive file against its record. Its
+// path comes from the ledger, so it must name a file inside the Drive folder.
+func scrubDriveFile(root string, f ledger.DriveFile) error {
+	name := filepath.FromSlash(f.LocalPath)
+	if !filepath.IsLocal(name) {
+		return fmt.Errorf("the ledger names %q, which is not inside the iCloud Drive folder", f.LocalPath)
+	}
+	return verify.Content(filepath.Join(root, name), uint64(f.Size), f.SHA256) //nolint:gosec // sizes are never negative
 }
 
 // scrubOne returns nil when t still matches, an ErrMismatch-wrapping error
@@ -271,6 +281,10 @@ func (a *Agent) writeLedgerBackup(ctx context.Context, rep *LedgerBackupReport) 
 	dir := a.cfg.Backup.Dir
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	// Snapshots hold everything the ledger knows: the current user's alone.
+	if _, err := platform.MakePrivate(dir); err != nil {
+		return err
 	}
 	dest := filepath.Join(dir, "homecloud-"+a.now().UTC().Format(platform.FileTimeLayout)+".db")
 	if err := a.db.Snapshot(ctx, dest); err != nil {

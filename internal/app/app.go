@@ -61,7 +61,7 @@ func Renditions(rows []kei.ManifestRow) []ledger.Rendition {
 
 // Ingest reads kei's manifest and records it in the ledger.
 func Ingest(ctx context.Context, cfg *config.Config, db *ledger.DB, now time.Time) (ledger.IngestStats, error) {
-	rows, err := kei.Manifest(ctx, cfg.Kei)
+	rows, err := kei.Manifest(ctx, cfg.Kei, kei.DownloadDir(cfg.Storage.Root))
 	if err != nil {
 		return ledger.IngestStats{}, fmt.Errorf("ingest: %w", err)
 	}

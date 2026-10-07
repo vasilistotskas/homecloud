@@ -10,6 +10,7 @@ import (
 
 	"github.com/vasilistotskas/homecloud/internal/archive"
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 func TestErr(t *testing.T) {
@@ -111,5 +112,18 @@ func TestCheckIncoming(t *testing.T) {
 	}
 	if r := checkIncoming(filepath.Join(dir, "missing")); r.OK() {
 		t.Fatal("a missing incoming folder passed")
+	}
+}
+
+func TestCheckPrivate(t *testing.T) {
+	dir := t.TempDir()
+	if r := checkPrivate("archive access", filepath.Join(dir, "missing")); !r.OK() || !strings.Contains(r.Detail, "not created yet") {
+		t.Fatalf("a folder not created yet: %+v", r)
+	}
+	if _, err := platform.MakePrivate(dir); err != nil {
+		t.Fatal(err)
+	}
+	if r := checkPrivate("archive access", dir); !r.OK() {
+		t.Fatalf("a private folder: %+v", r)
 	}
 }

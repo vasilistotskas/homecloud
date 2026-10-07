@@ -433,6 +433,20 @@ func (c *Config) Validate() error {
 	if ib.Incoming != "" && !filepath.IsAbs(ib.Incoming) {
 		add("iphone_backup.incoming must be an absolute path, got %q", ib.Incoming)
 	}
+	// The agent removes each push it takes in and writes receipts beside it, so
+	// incoming must hold nothing else: not the archive (its copies would look
+	// like pushes), not the ledger backups, not Apple's own backup folders.
+	if ib.Incoming != "" {
+		apart := map[string]string{"storage.root": c.Storage.Root, "backup.dir": c.Backup.Dir}
+		for _, d := range ib.Dirs {
+			apart["iphone_backup.dirs entry "+d] = d
+		}
+		for key, dir := range apart {
+			if dir != "" && nested(ib.Incoming, dir) {
+				add("iphone_backup.incoming %q must be apart from %s (neither the same folder nor inside the other)", ib.Incoming, key)
+			}
+		}
+	}
 	switch {
 	case ib.Keep < 0 || ib.Keep > maxIPhoneCopies:
 		add("iphone_backup.keep must be between 0 and %d, got %d", maxIPhoneCopies, ib.Keep)
@@ -468,4 +482,14 @@ func (c *Config) Validate() error {
 
 	c.validateDriveHealth(add)
 	return errors.Join(errs...)
+}
+
+// nested reports whether a and b are the same folder or one lies inside the
+// other.
+func nested(a, b string) bool {
+	inside := func(dir, path string) bool {
+		rel, err := filepath.Rel(dir, path)
+		return err == nil && filepath.IsLocal(rel)
+	}
+	return inside(a, b) || inside(b, a)
 }

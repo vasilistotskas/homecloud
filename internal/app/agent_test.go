@@ -83,12 +83,21 @@ func (r *recordingNotifier) titles() []string {
 	return out
 }
 
+// fixturePhoto is where fixture puts its photo for the archive at root: in
+// kei's download folder, by capture month.
+func fixturePhoto(root string) string {
+	return filepath.Join(kei.DownloadDir(root), "2022", "06", "IMG_0001_QUFBQTA.HEIC")
+}
+
 // fixture writes a photo file and a manifest describing it, returning the
 // manifest path; corrupt makes the manifest's checksum disagree with the file.
 func fixture(t *testing.T, corrupt bool) string {
 	t.Helper()
 	dir := t.TempDir()
-	photo := filepath.Join(dir, "IMG_0001_QUFBQTA.HEIC")
+	photo := fixturePhoto(dir)
+	if err := os.MkdirAll(filepath.Dir(photo), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	data := []byte("not really a heic, but content is what tier 1 checks")
 	if err := os.WriteFile(photo, data, 0o600); err != nil {
 		t.Fatal(err)

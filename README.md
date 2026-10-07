@@ -272,7 +272,9 @@ docker run --rm -v /srv/archive:/archive --entrypoint homecloud homecloud archiv
 
 Tools: `kei.binary = '/opt/kei/kei'`, `ffmpeg.ffmpeg = '/opt/ffmpeg/bin/ffmpeg'`,
 `ffmpeg.ffprobe = '/opt/ffmpeg/bin/ffprobe'`. Run it as the user that owns the folders
-(`--user UID:GID`). Logs go to stdout (`docker logs`).
+(`--user UID:GID`): the agent makes `/archive` that user's alone (mode 0700) when it starts,
+and `/backups` and kei's folder when it writes to them, so browse the archive as that user.
+Logs go to stdout (`docker logs`).
 
 **Drive health in the container:** set `drive_health.source = "smartctl"` and
 `[smartctl] binary = '/usr/sbin/smartctl'`, `version = "7.5"`. The agent follows the archive's
@@ -342,7 +344,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[schedule]` | `sync_interval`, `scrub_interval`, `scrub_fraction` |
 | `[backup]` | `dir` (must be on another drive than `storage.root`), `interval`, `keep` |
 | `[drive]` | `sync_interval` (≥ 15m), `workers` (parallel downloads, 1–16), `stall_timeout` (a download receiving nothing this long is retried next sync, 30s–10m) |
-| `[iphone_backup]` | `dirs` (absolute paths, written out: Apple Devices uses `C:\Users\<you>\Apple\MobileSync\Backup`, desktop iTunes `C:\Users\<you>\AppData\Roaming\Apple Computer\MobileSync\Backup`; may be empty with `incoming`), `incoming` (a folder another computer pushes finished backups to; `""` for none), `keep` (copies of each device's backups kept under `<storage.root>/iPhone backups`, newest first, 0–100; 0 keeps none; ≥ 1 with `incoming`), `max_age`, `check_interval` (≤ `max_age`), `read_interval` (how often every backup file is read in full, ≥ `check_interval`), `stalled_after` (a backup still running this long counts as unfinished), `max_shrink_percent` |
+| `[iphone_backup]` | `dirs` (absolute paths, written out: Apple Devices uses `C:\Users\<you>\Apple\MobileSync\Backup`, desktop iTunes `C:\Users\<you>\AppData\Roaming\Apple Computer\MobileSync\Backup`; may be empty with `incoming`), `incoming` (a folder another computer pushes finished backups to, apart from `storage.root`, `backup.dir` and every `dirs` entry; `""` for none), `keep` (copies of each device's backups kept under `<storage.root>/iPhone backups`, newest first, 0–100; 0 keeps none; ≥ 1 with `incoming`), `max_age`, `check_interval` (≤ `max_age`), `read_interval` (how often every backup file is read in full, ≥ `check_interval`), `stalled_after` (a backup still running this long counts as unfinished), `max_shrink_percent` |
 | `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files under `<storage.root>\logs` on Windows (Linux logs to journald) |
 | `[drive_health]` | Linux only: `source`, where the SMART data of the drives under the archive comes from: `"udisks"` (a desktop's udisks2, no rights needed) or `"smartctl"` (a server or the container). Windows reads NVMe health itself and has no such section |
 | `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m) |
@@ -352,7 +354,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | Command | Purpose |
 |---|---|
 | `homecloud archive init --root R` | Mark `R` as a new archive (writes `homecloud-archive.json`, never replaces one) and print its id for `storage.archive_id` |
-| `homecloud doctor` | Read-only checks: archive root and identity, free space, backup dir on another drive, generated kei config, pinned tool versions, the health of every drive and RAID array under the archive, iPhone backup folders and the incoming folder |
+| `homecloud doctor` | Read-only checks: archive root and identity, that the archive, the ledger backups and kei's folder are this account's alone, free space, backup dir on another drive, generated kei config, pinned tool versions, the health of every drive and RAID array under the archive, iPhone backup folders and the incoming folder |
 | `homecloud open [--print]` | Open the web app in the browser, signed in through a one-time code; `--print` prints the link instead (another device, or a NAS) |
 | `homecloud status` | Asset counts by state |
 | `homecloud quarantine list` | Files that failed a check, with the reason |

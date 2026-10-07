@@ -36,9 +36,12 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 	results := []Result{
 		checkDir("archive root", cfg.Storage.Root),
 		checkArchive(cfg.Storage),
+		checkPrivate("archive access", cfg.Storage.Root),
 		checkSpace(cfg.Storage),
 		checkBackupVolume(cfg),
+		checkPrivate("ledger backup access", cfg.Backup.Dir),
 		checkKeiConfig(cfg),
+		checkPrivate("kei folder access", filepath.Dir(cfg.Kei.Config)),
 		checkPin(ctx, "kei version", kei.Pin(cfg.Kei).Check),
 		checkPin(ctx, "ffprobe version", verify.FFprobePin(cfg.FFmpeg).Check),
 		checkPin(ctx, "ffmpeg version", thumbs.FFmpegPin(cfg.FFmpeg).Check),
@@ -80,6 +83,20 @@ func checkArchive(s config.Storage) Result {
 		return Result{Name: "archive", Err: err}
 	}
 	return Result{Name: "archive", Detail: s.ArchiveID}
+}
+
+// checkPrivate reports whether a folder holding the library or its records is
+// the current user's alone (platform.CheckPrivate). The agent makes it so when
+// it starts, or when it creates the folder; doctor only reports.
+func checkPrivate(name, dir string) Result {
+	err := platform.CheckPrivate(dir)
+	if err == nil {
+		return Result{Name: name, Detail: dir + " (this account only)"}
+	}
+	if _, statErr := os.Stat(dir); errors.Is(statErr, fs.ErrNotExist) {
+		return Result{Name: name, Detail: dir + " (not created yet)"}
+	}
+	return Result{Name: name, Err: fmt.Errorf("%w; the agent restricts it when it starts", err)}
 }
 
 func checkSpace(s config.Storage) Result {

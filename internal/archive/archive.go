@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"time"
 	"uuid"
+
+	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
 // MarkerFile is the file at the archive root that names the archive.
@@ -42,7 +44,9 @@ func ValidateID(id string) error {
 }
 
 // Init marks root, an existing folder, as a new archive and returns its id.
-// It never replaces a marker: an archive keeps its identity for life.
+// It never replaces a marker: an archive keeps its identity for life. The
+// folder is made the current user's alone first (platform.MakePrivate): it
+// will hold the only copy of the library, Hidden photos included.
 func Init(root string, now time.Time) (string, error) {
 	info, err := os.Stat(root)
 	if err != nil {
@@ -50,6 +54,9 @@ func Init(root string, now time.Time) (string, error) {
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf("archive root %s is not a folder", root)
+	}
+	if _, err = platform.MakePrivate(root); err != nil {
+		return "", err
 	}
 	id := uuid.NewV4().String()
 	data, err := json.MarshalIndent(marker{ID: id, CreatedAt: now.UTC()}, "", "  ")
