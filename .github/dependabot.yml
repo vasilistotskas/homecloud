@@ -1,8 +1,12 @@
 # Dependabot proposes updates of what the repository pins: one pull request
-# per ecosystem a month (CI minutes are limited), and never a release younger
-# than a week, so a bad release has time to be found and withdrawn first.
+# per ecosystem a month (CI minutes are limited), and none for a release
+# younger than a week, so a bad release has time to be found and withdrawn
+# first. The cooldown needs the release's publication date, which container
+# registries such as ghcr.io do not give: check an image update's age before
+# merging it.
 # Not covered: the JavaScript of the web app and the desktop shell (pnpm 12;
-# Dependabot supports pnpm 7 to 10), which CI checks with pnpm audit.
+# Dependabot supports pnpm 7 to 10), which CI checks with pnpm audit, and
+# pnpm itself (see the docker entry).
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -44,6 +48,11 @@ updates:
     groups:
       images:
         patterns: ["*"]
+    # pnpm's image carries the pnpm that ui/package.json's packageManager and
+    # ui/pnpm-lock.yaml pin, so it moves with them (pnpm self-update), never
+    # on its own.
+    ignore:
+      - dependency-name: "pnpm/pnpm"
 
   - package-ecosystem: docker-compose
     directory: /deploy

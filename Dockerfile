@@ -11,8 +11,9 @@
 # Deployment: deploy/compose.yaml and the README.
 
 # The web app, embedded in the agent. Built once, on the build machine, with
-# pnpm's own image (the version ui/package.json's packageManager names), which
-# installs the Node.js that ui/package.json's devEngines.runtime pins.
+# pnpm's own image at the version ui/package.json's packageManager names (bump
+# both together, with pnpm self-update; Dependabot leaves this image alone),
+# which installs the Node.js that ui/package.json's devEngines.runtime pins.
 FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.9.1@sha256:77123fd40a39db0eb8be6bddfcf0cea15e000122b9221ccce2e4415be29050f2 AS ui
 WORKDIR /src/ui
 COPY ui/package.json ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
