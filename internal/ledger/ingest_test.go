@@ -25,7 +25,7 @@ func rendition(asset, version, media string, downloaded bool) Rendition {
 		CreatedAt: t0.Add(-72 * time.Hour), AddedAt: &added, SeenAt: t0,
 	}
 	if downloaded {
-		r.LocalPath = `E:\HomeCloud\Photos\` + asset + "_" + version
+		r.LocalPath = `D:\Archive\Photos\` + asset + "_" + version
 		r.SizeBytes = 100
 		r.SHA256 = strings.Repeat("a", 64)
 	}

@@ -34,7 +34,7 @@ function failingStream<T>(err: Error): AsyncIterable<T> {
 
 const settings = create(SettingsSchema, {
   syncIntervalSeconds: 3600n,
-  storageRoot: "E:\\HomeCloud",
+  storageRoot: "D:\\Archive",
   scrubIntervalSeconds: 604_800n,
   scrubFraction: 0.05,
 });
@@ -49,7 +49,7 @@ describe("App", () => {
               assets: { verified: 3661n },
               archive: { files: 5687n, bytes: 285_942_383_675n },
               storage: {
-                root: "E:\\HomeCloud",
+                root: "D:\\Archive",
                 totalBytes: 999_286_689_792n,
                 freeBytes: 518_929_182_720n,
                 minFreePercent: 15,

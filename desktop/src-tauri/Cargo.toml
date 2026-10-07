@@ -24,9 +24,14 @@ tauri-plugin-log = "=2.10.0"
 keyring-core = "=1.0.0"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.151"
+# The WHATWG URL parser, as the webview reads addresses (already Tauri's).
+url = "=2.5.8"
 
 [target.'cfg(windows)'.dependencies]
 windows-native-keyring-store = "=1.1.0"
+# GetSystemDirectoryW, to start schtasks.exe from the system directory
+# (already Tauri's, through dirs).
+windows-sys = { version = "=0.61.2", features = ["Win32_System_SystemInformation"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus-secret-service-keyring-store = { version = "=1.0.1", features = ["crypto-rust"] }

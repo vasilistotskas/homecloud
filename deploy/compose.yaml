@@ -1,14 +1,21 @@
 # homecloud on a NAS: the agent next to its files, used from your own devices
 # at https://<TS_HOSTNAME>.<your tailnet>.ts.net through Tailscale. The agent
-# listens on 127.0.0.1 inside the shared network namespace, so only the
-# Tailscale container can reach it; nothing is published on the LAN.
+# listens on 127.0.0.1 inside the shared network namespace; nothing is
+# published on the LAN.
 #
 #   cp homecloud.env.example .env   # then fill it in
 #   docker compose up -d
 #   docker compose exec homecloud homecloud open --print
 #
-# Set web.public_origin = "https://<TS_HOSTNAME>.<your tailnet>.ts.net" in
-# config.toml. The tailnet needs MagicDNS and HTTPS certificates enabled.
+# Set web.public_origin = "https://<TS_HOSTNAME>.<your tailnet>.ts.net" and
+# smartctl.socket = '/run/homecloud-smartctl/smartctl.sock' in config.toml.
+# The tailnet needs MagicDNS and HTTPS certificates enabled.
+#
+# Allow your devices only port 443 of this node in the tailnet policy (a
+# grant with "ip": ["tcp:443"]). In userspace networking, Tailscale hands a
+# tailnet connection to any port of the node to 127.0.0.1 at that port, so
+# without the grant your devices can also reach the agent's plain-HTTP port,
+# where requests still need a sign-in.
 
 services:
   tailscale:
@@ -28,6 +35,9 @@ services:
       - ./serve.json:/serve/serve.json:ro
     restart: unless-stopped
 
+  # The agent parses media downloaded from iCloud, so it gets nothing it does
+  # not need: no capabilities, no devices, a read-only system. Drive health
+  # comes from the smartctl sidecar below.
   homecloud:
     image: ${HOMECLOUD_IMAGE}
     network_mode: service:tailscale
@@ -35,23 +45,55 @@ services:
     environment:
       # Times the CLI prints (a sign-in code's expiry) are local times.
       TZ: ${TZ}
-    # Drive health (drive_health.source = "smartctl"): every drive holding
-    # the archive, read-only, by its stable /dev/disk/by-id/ name. smartctl
-    # in the image carries the capabilities that query drives; the container
-    # must allow them (and must not set no-new-privileges), or smartctl does
-    # not start. The agent itself holds none and cannot read the drives.
-    devices:
-      - ${HOMECLOUD_DRIVE_1}:${HOMECLOUD_DRIVE_1}:r
-      - ${HOMECLOUD_DRIVE_2}:${HOMECLOUD_DRIVE_2}:r
-    cap_add:
-      - SYS_RAWIO # ATA SMART commands
-      - SYS_ADMIN # NVMe admin commands
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,nodev
     volumes:
       - ${HOMECLOUD_ARCHIVE}:/archive
       - ${HOMECLOUD_DATA}/config:/config:ro
       - ${HOMECLOUD_DATA}/state:/state
       - ${HOMECLOUD_BACKUPS}:/backups
       - ${HOMECLOUD_IPHONE_INCOMING}:/iphone
+      - smartctl:/run/homecloud-smartctl
     depends_on:
       - tailscale
+      - smartctl
     restart: unless-stopped
+
+  # Drive health (drive_health.source = "smartctl"): the only container with
+  # the drives and the capabilities that query them, and no network. It
+  # answers the agent on a socket in the shared smartctl volume. Pass every
+  # drive holding the archive, read-only, by its stable /dev/disk/by-id/ name.
+  # smartctl in the image carries the capabilities as file capabilities, so
+  # they are allowed here and no-new-privileges is not set.
+  smartctl:
+    image: ${HOMECLOUD_IMAGE}
+    entrypoint: ["homecloud", "smartctl", "serve"]
+    network_mode: none
+    user: "${PUID}:${PGID}"
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_RAWIO # ATA SMART commands
+      - SYS_ADMIN # NVMe admin commands
+      - DAC_OVERRIDE # open the drives' nodes, root's alone
+    read_only: true
+    devices:
+      - ${HOMECLOUD_DRIVE_1}:${HOMECLOUD_DRIVE_1}:r
+      - ${HOMECLOUD_DRIVE_2}:${HOMECLOUD_DRIVE_2}:r
+    volumes:
+      - ${HOMECLOUD_DATA}/config:/config:ro
+      - smartctl:/run/homecloud-smartctl
+    restart: unless-stopped
+
+volumes:
+  # The sidecar's socket: in memory, the NAS user's alone.
+  smartctl:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: uid=${PUID},gid=${PGID},mode=0700

@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	testRoot  = `E:\HomeCloud`
+	testRoot  = `D:\Archive`
 	testTools = `C:\Tools`
 	// Windows has no drive-health sections.
 	testDriveHealthTOML = ""

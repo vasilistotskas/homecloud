@@ -3,19 +3,17 @@
 # homecloud for a NAS or any Linux host: the agent, the CLI, kei and FFmpeg in
 # one image, for linux/amd64 and linux/arm64. Build with
 #   docker buildx build --platform linux/amd64,linux/arm64 -t homecloud .
-# Every build input is pinned: base images by digest, kei by its release
+# Every build input is pinned: base images by digest, Node.js and the web
+# app's packages by the checksums in ui/pnpm-lock.yaml, kei by its release
 # checksums, FFmpeg by its signed release tarball's checksum, smartmontools by
-# its Debian package version. Deployment: deploy/compose.yaml and the README.
+# its Debian package version. Base images are named in full in each FROM, so
+# Dependabot can keep their digests current (.github/dependabot.yml).
+# Deployment: deploy/compose.yaml and the README.
 
-ARG NODE_IMAGE=node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
-ARG GO_IMAGE=golang:1.27.1-trixie@sha256:8f58fd67ea075142d947a60e0caa4317746a55118d312f027793d382c7741734
-ARG DEBIAN_IMAGE=debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
-
-# The web app, embedded in the agent. Built once, on the build machine.
-FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS ui
-# The version ui/package.json's packageManager names.
-ARG PNPM_VERSION=12.9.1
-RUN npm install --global pnpm@${PNPM_VERSION}
+# The web app, embedded in the agent. Built once, on the build machine, with
+# pnpm's own image (the version ui/package.json's packageManager names), which
+# installs the Node.js that ui/package.json's devEngines.runtime pins.
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.9.1@sha256:77123fd40a39db0eb8be6bddfcf0cea15e000122b9221ccce2e4415be29050f2 AS ui
 WORKDIR /src/ui
 COPY ui/package.json ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
@@ -23,7 +21,7 @@ COPY ui/ ./
 RUN pnpm build
 
 # homecloud and homecloud-agent: pure Go, cross-compiled for the target.
-FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS go
+FROM --platform=$BUILDPLATFORM golang:1.27.1-trixie@sha256:8f58fd67ea075142d947a60e0caa4317746a55118d312f027793d382c7741734 AS go
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
@@ -37,7 +35,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 
 # kei, the iCloud Photos downloader: its release binary, checked against the
 # release's published SHA-256 (kei v0.24.1 SHA256SUMS.txt).
-FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS kei
+FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS kei
 ARG TARGETARCH
 ARG KEI_VERSION=0.24.1
 ARG KEI_SHA256_AMD64=d88a51e29c3dcf4ee32ee4daf1435f0e2ea40606197a64c5bee306103e710c2d
@@ -58,7 +56,7 @@ RUN set -eu; \
 # verified tarball), compiled for the target with libwebp (thumbnails) and
 # zlib (PNG); autodetection is off so nothing else slips in. Only ffmpeg and
 # ffprobe are built, without network support.
-FROM --platform=$BUILDPLATFORM ${DEBIAN_IMAGE} AS ffmpeg
+FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS ffmpeg
 ARG BUILDARCH
 ARG TARGETARCH
 ARG FFMPEG_VERSION=9.0.2
@@ -99,19 +97,24 @@ RUN set -eu; \
     make install
 
 # The runtime: Debian 13 (kei needs glibc 2.39 or newer).
-FROM ${DEBIAN_IMAGE}
-# smartctl reads the archive drives' health (drive_health.source = "smartctl"):
-# smartmontools 7.5 from Debian's official backports (trixie has 7.4). Docker
-# gives a non-root container user no capabilities of its own, so smartctl
-# carries the ones it needs as file capabilities: CAP_SYS_RAWIO (ATA) and
-# CAP_SYS_ADMIN (NVMe) to send SMART commands, CAP_DAC_OVERRIDE to open the
-# drives' nodes. Only smartctl has them; the agent cannot read the drives.
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+# smartctl reads the archive drives' health (drive_health.source = "smartctl")
+# in the smartctl sidecar, a container of its own (`homecloud smartctl serve`,
+# deploy/compose.yaml); the agent's container has neither the drives nor any
+# capability. smartmontools 7.5 comes from Debian's official backports
+# (trixie has 7.4). Docker gives a non-root container user no capabilities of
+# its own, so smartctl carries the ones it needs as file capabilities:
+# CAP_SYS_RAWIO (ATA) and CAP_SYS_ADMIN (NVMe) to send SMART commands,
+# CAP_DAC_OVERRIDE to open the drives' nodes. Nothing else in the image is
+# setuid or setgid: those bits are stripped before smartctl gets its
+# capabilities.
 ARG SMARTMONTOOLS_VERSION=7.5-2~bpo13+1
 RUN printf 'Types: deb\nURIs: http://deb.debian.org/debian\nSuites: trixie-backports\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' \
         > /etc/apt/sources.list.d/backports.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata libdbus-1-3 libwebp7 libwebpmux3 libsharpyuv0 zlib1g libcap2-bin \
     && apt-get install -y --no-install-recommends -t trixie-backports "smartmontools=${SMARTMONTOOLS_VERSION}" \
+    && find / -xdev -type f -perm /6000 -exec chmod a-s {} + \
     && setcap cap_dac_override,cap_sys_rawio,cap_sys_admin+ep /usr/sbin/smartctl \
     && apt-get purge -y libcap2-bin \
     && apt-get autoremove -y \
@@ -128,4 +131,7 @@ ENV PATH=/opt/homecloud/bin:$PATH \
     KEI_DATA_DIR=/state/kei \
     HOME=/state/home \
     XDG_RUNTIME_DIR=/tmp/homecloud-run
+# Never root by default: compose runs it as the NAS user that owns the
+# folders (user: PUID:PGID), and `docker run` takes --user UID:GID.
+USER 65532:65532
 ENTRYPOINT ["homecloud-agent"]

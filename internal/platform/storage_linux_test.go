@@ -302,3 +302,35 @@ func TestBlockNodes(t *testing.T) {
 		t.Fatal("the node named after the drive must win")
 	}
 }
+
+// TestDriveNode needs mknod, which only root has (the Docker test run): the
+// node of a drive passed in by its stable name is found by its device
+// number, a drive not passed in has none, and nothing outside /sys/block is
+// read.
+func TestDriveNode(t *testing.T) {
+	sys := fakeSysfs(t, map[string]string{
+		"block/sdb/dev": "8:16",
+		"block/sdc/dev": "8:32",
+	})
+	dev := t.TempDir()
+	node := filepath.Join(dev, "disk", "by-id", "ata-TEST")
+	if err := os.MkdirAll(filepath.Dir(node), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Mknod(node, unix.S_IFBLK|0o600, int(unix.Mkdev(8, 16))); errors.Is(err, unix.EPERM) { //nolint:gosec // device 8:16 fits an int
+		t.Skip("mknod needs root")
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := driveNode(sys, dev, "sdb"); err != nil || got != node {
+		t.Fatalf("sdb = %q, %v; want %s", got, err, node)
+	}
+	if got, err := driveNode(sys, dev, "sdc"); err != nil || got != "" {
+		t.Fatalf("a drive not passed in = %q, %v", got, err)
+	}
+	for _, name := range []string{"", "..", "../block/sdb", "sdb/..", ".hidden", "sdz"} {
+		if got, err := driveNode(sys, dev, name); err == nil {
+			t.Fatalf("drive %q = %q, want an error", name, got)
+		}
+	}
+}

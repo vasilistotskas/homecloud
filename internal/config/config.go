@@ -42,7 +42,8 @@ type Config struct {
 
 // Storage describes the archive.
 type Storage struct {
-	// Root is the archive root directory (for example E:\HomeCloud).
+	// Root is the archive root directory, for example D:\Archive (Windows) or
+	// /srv/homecloud (Linux).
 	Root string `toml:"root"`
 	// ArchiveID names the archive at Root (archive.MarkerFile); the agent works
 	// only on that archive, so a missing drive or another disk never counts.
@@ -166,6 +167,10 @@ type Smartctl struct {
 	Version string `toml:"version"`
 	// Timeout bounds one smartctl run on one drive.
 	Timeout Duration `toml:"timeout"`
+	// Socket is where the container's smartctl sidecar (`homecloud smartctl
+	// serve`) answers: the agent asks it instead of running smartctl itself.
+	// Empty runs smartctl in the agent (a server without containers).
+	Socket string `toml:"socket"`
 }
 
 // Logs configures the agent's rotating log files in %LOCALAPPDATA%\homecloud\logs

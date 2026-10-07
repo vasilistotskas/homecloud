@@ -76,15 +76,22 @@ type ArrayReport struct {
 type DriveReader func(context.Context, platform.Drive) (platform.DriveHealth, error)
 
 // ReaderFor returns the configured way of reading drive health: smartctl
-// when drive_health.source says so, otherwise what the operating system
-// reports (Windows: NVMe health log; Linux: udisks).
+// when drive_health.source says so (through the container's smartctl
+// sidecar when smartctl.socket names one), otherwise what the operating
+// system reports (Windows: NVMe health log; Linux: udisks).
 func ReaderFor(cfg *config.Config) DriveReader {
-	if cfg.DriveHealth.Source == config.DriveHealthSmartctl {
+	switch {
+	case cfg.DriveHealth.Source != config.DriveHealthSmartctl:
+		return platform.ReadDriveHealth
+	case cfg.Smartctl.Socket != "":
+		return func(ctx context.Context, d platform.Drive) (platform.DriveHealth, error) {
+			return smartctl.RemoteRead(ctx, cfg.Smartctl, d)
+		}
+	default:
 		return func(ctx context.Context, d platform.Drive) (platform.DriveHealth, error) {
 			return smartctl.Read(ctx, cfg.Smartctl, d)
 		}
 	}
-	return platform.ReadDriveHealth
 }
 
 // Check finds the storage under the archive (normally platform.StorageOf on

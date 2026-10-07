@@ -37,6 +37,29 @@ func StorageOf(path string) (Storage, error) {
 	return storageOf(sysfsRoot, devRoot, m)
 }
 
+// DriveNode is the node under /dev of the drive the kernel names name (sda,
+// nvme0n1), found by its device number in sysfs: "" when this environment
+// has none (a drive not passed to the container). Drives are the entries of
+// /sys/block, so a partition's name is not one.
+func DriveNode(name string) (string, error) { return driveNode(sysfsRoot, devRoot, name) }
+
+func driveNode(sys, dev, name string) (string, error) {
+	// A kernel block device name is one path element; anything else could
+	// leave /sys/block.
+	if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+		return "", fmt.Errorf("%q is not a drive name", name)
+	}
+	rdev, err := deviceNumber(filepath.Join(sys, "block", name))
+	if err != nil {
+		return "", err
+	}
+	nodes, err := blockNodes(dev)
+	if err != nil {
+		return "", err
+	}
+	return bestNode(nodes[rdev], name), nil
+}
+
 func storageOf(sys, dev string, m mount) (Storage, error) {
 	starts, err := fileSystemDevices(sys, m)
 	if err != nil {

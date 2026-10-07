@@ -16,6 +16,13 @@ describe("shellCommand", () => {
     );
   });
 
+  it("doubles the typographic single quotes PowerShell also ends a string at", () => {
+    // A lone one would end the quoted word (checked in PowerShell 7.6 and 5.1).
+    expect(shellCommand("windows", String.raw`C:\a\b.exe`, ["John\u2019s \u2018x\u2019 \u201A\u201B"])).toBe(
+      String.raw`& 'C:\a\b.exe' ` + "'John\u2019\u2019s \u2018\u2018x\u2019\u2019 \u201A\u201A\u201B\u201B'",
+    );
+  });
+
   it("keeps PowerShell's special characters literal", () => {
     expect(shellCommand("windows", String.raw`C:\a\b.exe`, ["$env:HOME `n ; & (x)"])).toBe(
       String.raw`& 'C:\a\b.exe' '$env:HOME ` + "`n ; & (x)'",

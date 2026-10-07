@@ -28,6 +28,9 @@ func (c *Config) validateDriveHealth(add func(format string, args ...any)) {
 		if t := s.Timeout.Std(); t < 10*time.Second || t > 10*time.Minute {
 			add("smartctl.timeout must be between 10s and 10m, got %s", t)
 		}
+		if s.Socket != "" && !filepath.IsAbs(s.Socket) {
+			add("smartctl.socket must be an absolute path or empty, got %q", s.Socket)
+		}
 	default:
 		add("drive_health.source must be %q (a desktop with udisks2) or %q (a server or container), got %q",
 			DriveHealthUdisks, DriveHealthSmartctl, c.DriveHealth.Source)

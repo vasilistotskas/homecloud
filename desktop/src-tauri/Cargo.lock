@@ -1603,7 +1603,9 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
+ "url",
  "windows-native-keyring-store",
+ "windows-sys 0.61.2",
  "zbus-secret-service-keyring-store",
 ]
 

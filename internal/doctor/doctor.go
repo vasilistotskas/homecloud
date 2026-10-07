@@ -49,6 +49,9 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 	}
 	if cfg.DriveHealth.Source == config.DriveHealthSmartctl {
 		results = append(results, checkPin(ctx, "smartctl version", func(ctx context.Context) error {
+			if cfg.Smartctl.Socket != "" {
+				return smartctl.RemoteCheckVersion(ctx, cfg.Smartctl)
+			}
 			return smartctl.CheckVersion(ctx, cfg.Smartctl)
 		}))
 	}

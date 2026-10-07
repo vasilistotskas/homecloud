@@ -42,3 +42,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
 });
+
+// The desktop app freezes Object.prototype before the page runs
+// (tauri.conf.json security.freezePrototype); so do the tests.
+Object.freeze(Object.prototype);

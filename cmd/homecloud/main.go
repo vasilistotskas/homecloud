@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"connectrpc.com/connect"
@@ -103,7 +104,7 @@ func newApp() *program {
 			leaf("notify-test", "send a test push notification through ntfy", runNotifyTest),
 			leaf("install", "start homecloud-agent (next to this binary) at logon and now (Task Scheduler / systemd user unit)", runInstall),
 			leaf("uninstall", "stop starting homecloud-agent at logon", runUninstall),
-		}, append(icloudCommands(), iphoneCommands()...)...),
+		}, slices.Concat(icloudCommands(), iphoneCommands(), smartctlCommands())...),
 	}
 }
 

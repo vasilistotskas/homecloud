@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use tauri_plugin_log::{RotationStrategy, WEBVIEW_TARGET, log};
 use tauri_plugin_opener::OpenerExt;
+use url::{Host, Url};
 
 /// The agent's discovery file inside its state directory (internal/auth).
 const ENDPOINT_FILE: &str = "agent.json";
@@ -165,6 +166,25 @@ fn entry_modifiers(url: &str) -> HashMap<&'static str, String> {
     HashMap::from([("label", format!("homecloud device token for {url}"))])
 }
 
+/// The Windows system directory (System32). A program named without a path
+/// would be looked up next to this app first, in a folder the user can write.
+#[cfg(windows)]
+fn system_dir() -> Result<PathBuf, String> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+    const MAX_PATH: usize = 260;
+    let mut buf = [0u16; MAX_PATH];
+    // SAFETY: buf is a writable buffer of MAX_PATH UTF-16 units, as passed.
+    let n = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), MAX_PATH as u32) } as usize;
+    if n == 0 || n >= MAX_PATH {
+        return Err(format!(
+            "locate the system directory: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(PathBuf::from(std::ffi::OsString::from_wide(&buf[..n])))
+}
+
 /// Runs blocking work off the main thread.
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, String> + Send + 'static,
@@ -181,21 +201,28 @@ fn connection_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("locate the app's config directory: {e}"))
 }
 
-/// Accepts the address of a homecloud on another device: https on a Tailscale
-/// name, lowercase, nothing after the host (as web.public_origin).
+/// Accepts the address of a homecloud on another device: an https origin on a
+/// Tailscale name, with nothing after the host (as web.public_origin). It is
+/// read with the WHATWG URL parser, as the webview reads it, and must come
+/// back unchanged: anything the parser would rewrite (a backslash, capitals,
+/// a user, a path) or add (a port) is refused.
 fn validate_remote_url(url: &str) -> Result<(), String> {
-    let host = url
-        .strip_prefix("https://")
-        .ok_or_else(|| format!("{url} is not an https address"))?;
-    if host.is_empty()
-        || !host.ends_with(REMOTE_DOMAIN)
-        || host.len() == REMOTE_DOMAIN.len()
-        || host != host.to_lowercase()
-        || host.contains(['/', '?', '#', '@', ':'])
-    {
-        return Err(format!(
+    let refused = || {
+        format!(
             "{url} is not a homecloud address on your tailnet, like https://homecloud.example{REMOTE_DOMAIN}"
-        ));
+        )
+    };
+    let parsed = Url::parse(url).map_err(|_| refused())?;
+    let Some(Host::Domain(host)) = parsed.host() else {
+        return Err(refused());
+    };
+    if parsed.scheme() != "https"
+        || parsed.port().is_some()
+        || parsed.origin().ascii_serialization() != url
+        || host.len() <= REMOTE_DOMAIN.len()
+        || !host.ends_with(REMOTE_DOMAIN)
+    {
+        return Err(refused());
     }
     Ok(())
 }
@@ -335,7 +362,7 @@ async fn start_agent() -> Result<(), String> {
             use std::os::windows::process::CommandExt;
             // CREATE_NO_WINDOW: no console flashes up for schtasks.
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            let mut cmd = Command::new("schtasks");
+            let mut cmd = Command::new(system_dir()?.join("schtasks.exe"));
             cmd.args(["/Run", "/TN", AGENT_NAME])
                 .creation_flags(CREATE_NO_WINDOW);
             cmd
@@ -361,14 +388,30 @@ async fn start_agent() -> Result<(), String> {
     logged("start_agent", done)
 }
 
+/// Whether p names a place on this computer's own drives. On Windows that is
+/// a drive letter path: a UNC path (\\server\share, \\?\UNC\…) would make
+/// the file manager, or even a check that the file exists, contact another
+/// computer with this user's credentials.
+#[cfg(windows)]
+fn on_local_drive(p: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    matches!(p.components().next(), Some(Component::Prefix(pre)) if matches!(pre.kind(), Prefix::Disk(_)))
+        && p.is_absolute()
+}
+
+#[cfg(target_os = "linux")]
+fn on_local_drive(p: &Path) -> bool {
+    p.is_absolute()
+}
+
 /// Shows an archived file in the system file manager. Only revealing is
 /// offered: nothing is opened or executed.
 #[tauri::command]
 async fn reveal_in_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let done = blocking(move || {
         let p = Path::new(&path);
-        if !p.is_absolute() || !p.is_file() {
-            return Err(format!("not an existing file: {path}"));
+        if !on_local_drive(p) || !p.is_file() {
+            return Err(format!("not an existing file on this computer: {path}"));
         }
         app.opener()
             .reveal_item_in_dir(p)
@@ -423,6 +466,46 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    /// A real file path on whatever drive this machine keeps its temporary
+    /// files, and the other forms naming the same file, which go through the
+    /// network or a device instead of the drive.
+    #[cfg(windows)]
+    #[test]
+    fn local_drives_only() {
+        use std::path::{Component, Prefix};
+        let local = std::env::temp_dir().join("photo.jpg");
+        let Some(Component::Prefix(prefix)) = local.components().next() else {
+            panic!("{} has no prefix", local.display());
+        };
+        let Prefix::Disk(letter) = prefix.kind() else {
+            panic!("{} is not on a drive letter", local.display());
+        };
+        let drive = char::from(letter);
+        let path = local.to_str().expect("a UTF-8 temporary folder");
+        let rest = &path[prefix.as_os_str().len()..]; // \…\photo.jpg
+        assert!(on_local_drive(&local), "{path} refused");
+        for other in [
+            format!(r"\\localhost\{drive}${rest}"),
+            format!(r"\\?\UNC\localhost\{drive}${rest}"),
+            format!(r"\\.\{drive}:"),
+            format!("{drive}:photo.jpg"),
+            rest.to_owned(),
+        ] {
+            assert!(!on_local_drive(Path::new(&other)), "{other} accepted");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn schtasks_from_the_system_directory() {
+        let dir = system_dir().expect("system directory");
+        assert!(
+            dir.join("schtasks.exe").is_file(),
+            "{} has no schtasks.exe",
+            dir.display()
+        );
+    }
+
     #[test]
     fn remote_urls() {
         for ok in [
@@ -439,6 +522,12 @@ mod tests {
             "https://example.com",
             "https://.ts.net",
             "https://evil.com#.ts.net",
+            "https://evil.com\\.ts.net",
+            "https://homecloud.tail1234.ts.net:443",
+            "https://user@homecloud.tail1234.ts.net",
+            "https://homecloud.tail1234.ts.net?x",
+            "https://hömecloud.tail1234.ts.net",
+            "https://100.64.0.1",
             "homecloud.tail1234.ts.net",
         ] {
             assert!(validate_remote_url(bad).is_err(), "{bad} accepted");

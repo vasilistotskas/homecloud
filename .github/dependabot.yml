@@ -1,0 +1,56 @@
+# Dependabot proposes updates of what the repository pins: one pull request
+# per ecosystem a month (CI minutes are limited), and never a release younger
+# than a week, so a bad release has time to be found and withdrawn first.
+# Not covered: the JavaScript of the web app and the desktop shell (pnpm 12;
+# Dependabot supports pnpm 7 to 10), which CI checks with pnpm audit.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      go:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /desktop/src-tauri
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      desktop:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      images:
+        patterns: ["*"]
+
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      compose:
+        patterns: ["*"]

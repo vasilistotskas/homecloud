@@ -172,7 +172,7 @@ describe("Activity", () => {
           yield { overview: create(OverviewSchema, {}) };
           await never();
         },
-        getSettings: () => ({ settings: create(SettingsSchema, { driveDir: "E:/HomeCloud/Drive" }) }),
+        getSettings: () => ({ settings: create(SettingsSchema, { driveDir: "D:/Archive/Drive" }) }),
         listRuns: () => create(ListRunsResponseSchema),
         listEvents: (req) =>
           create(ListEventsResponseSchema, {
@@ -216,7 +216,7 @@ describe("Activity", () => {
     expect(screen.getByText("Repaired")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "iCloud Drive/c.pdf; the previous copy is kept at E:/HomeCloud/Drive/.versions/20261006T120000Z/iCloud Drive/c.pdf",
+        "iCloud Drive/c.pdf; the previous copy is kept at D:/Archive/Drive/.versions/20261006T120000Z/iCloud Drive/c.pdf",
       ),
     ).toBeInTheDocument();
   });

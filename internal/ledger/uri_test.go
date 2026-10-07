@@ -50,8 +50,8 @@ func TestFileURI(t *testing.T) {
 	}
 	if runtime.GOOS == "windows" {
 		cases = map[string]string{
-			`E:\HomeCloud\homecloud.db`: "file:///E:/HomeCloud/homecloud.db?mode=ro",
-			`C:\Home#Cloud 1%\x.db`:     "file:///C:/Home%23Cloud%201%25/x.db?mode=ro",
+			`D:\Archive\homecloud.db`: "file:///D:/Archive/homecloud.db?mode=ro",
+			`C:\Home#Cloud 1%\x.db`:   "file:///C:/Home%23Cloud%201%25/x.db?mode=ro",
 		}
 	}
 	for in, want := range cases {

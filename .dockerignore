@@ -7,5 +7,6 @@ desktop
 *.test
 *.out
 coverage.*
-.env
 *.local.toml
+# Secrets never go into the build context, wherever they sit.
+**/.env

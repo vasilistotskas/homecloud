@@ -40,7 +40,7 @@ flowchart TB
 
     kei["kei (pinned downloader)"]
     ffmpeg["ffprobe / ffmpeg (pinned)"]
-    smart["Drive health: NVMe log (Windows) ·<br/>udisks or pinned smartctl (Linux)"]
+    smart["Drive health: NVMe log (Windows) ·<br/>udisks, pinned smartctl or the<br/>container's smartctl sidecar (Linux)"]
 
     subgraph archive["Archive storage · storage.root<br/>(one drive, or a RAID of several)"]
         photos[("Photos/ + *.xmp")]
@@ -55,6 +55,7 @@ flowchart TB
         iphone[("iphone_backup.dirs<br/>MobileSync\Backup")]
         incoming[("iphone_backup.incoming<br/>(a NAS shared folder)")]
         backups[("backup.dir · ledger snapshots<br/>(another drive)")]
+        logs[("Logs · state dir (Windows),<br/>journald or docker logs (Linux)")]
     end
     phone["Phone (ntfy app)"]
 
@@ -83,6 +84,7 @@ flowchart TB
     cli -- "icloud login · drive ls<br/>(read only)" --> drivesvc
     cli --> session[("icloud-session.json<br/>state dir, owner only")]
     agent -. "alerts" .-> phone
+    agent -- "JSON lines, one run each" --> logs
 ```
 
 A cycle never touches a drive it cannot confirm, and quarantine is the only reaction to a file
@@ -137,22 +139,25 @@ every time the agent starts. Browsers sign in with a one-time code from `homeclo
 
 ```mermaid
 flowchart LR
-    subgraph pc["Mode 1 · this PC (today)"]
+    subgraph pc["Mode 1 · one computer"]
         direction TB
         pcagent["homecloud-agent<br/>(logon task)"]
         pcdesk["Desktop app"]
         pcdevices["Apple Devices app"]
-        pcdisk[("E: · the archive")]
+        pcdisk[("A local drive · the archive")]
         pcdesk -- "127.0.0.1 + token" --> pcagent
         pcagent --> pcdisk
-        pcdevices -- "iPhone backups on C:" --> pcagent
+        pcdevices -- "iPhone backups" --> pcagent
     end
-    subgraph nas["Mode 2 · NAS (DXP2800, RAID 1)"]
+    subgraph nas["Mode 2 · a NAS or Linux server"]
         direction TB
         ts["Tailscale container<br/>(Serve: HTTPS)"]
-        nasagent["homecloud-agent container<br/>(listens on 127.0.0.1 only)"]
-        pool[("RAID 1 pool · the archive")]
+        nasagent["homecloud-agent container<br/>(127.0.0.1 only; no capabilities,<br/>no devices, read-only system)"]
+        smartsc["smartctl sidecar container<br/>(no network; the drives only)"]
+        pool[("Storage pool · the archive")]
         ts -- "shared network namespace" --> nasagent
+        nasagent -- "drive health · Unix socket" --> smartsc
+        smartsc -- "SMART, read only" --> pool
         nasagent --> pool
     end
     subgraph pc2["The PC, with a NAS"]
@@ -273,18 +278,25 @@ docker run --rm -v /srv/archive:/archive --entrypoint homecloud homecloud archiv
 
 Tools: `kei.binary = '/opt/kei/kei'`, `ffmpeg.ffmpeg = '/opt/ffmpeg/bin/ffmpeg'`,
 `ffmpeg.ffprobe = '/opt/ffmpeg/bin/ffprobe'`. Run it as the user that owns the folders
-(`--user UID:GID`): the agent makes `/archive` that user's alone (mode 0700) when it starts,
-and `/backups` and kei's folder when it writes to them, so browse the archive as that user.
-Logs go to the container's output (`docker logs`).
+(`--user UID:GID`; the image never runs as root by default): the agent makes `/archive` that
+user's alone (mode 0700) when it starts, and `/backups` and kei's folder when it writes to
+them, so browse the archive as that user. The agent needs no capability, no device and no
+writable system: run it with `--cap-drop ALL --security-opt no-new-privileges:true --read-only
+--tmpfs /tmp`, as `deploy/compose.yaml` does. Logs go to the container's output (`docker logs`).
 
 **Drive health in the container:** set `drive_health.source = "smartctl"` and
-`[smartctl] binary = '/usr/sbin/smartctl'`, `version = "7.5"`. The agent follows the archive's
-file system down through LVM and md RAID to every drive under it and reads each drive with
-smartctl (smartmontools 7.5 from Debian's backports), plus each md array's state. Pass every
-such drive read-only by its stable name (`--device /dev/disk/by-id/ata-…:/dev/disk/by-id/ata-…:r`)
-and allow `--cap-add SYS_RAWIO --cap-add SYS_ADMIN`: only the image's `smartctl` carries those
-capabilities (Docker gives a non-root user none), so the agent itself cannot read the drives.
-`homecloud doctor` lists the drives and arrays it found and names a drive it could not read.
+`[smartctl] binary = '/usr/sbin/smartctl'`, `version = "7.5"`,
+`socket = '/run/homecloud-smartctl/smartctl.sock'`. The agent follows the archive's file system
+down through LVM and md RAID to every drive under it, plus each md array's state, and asks the
+**smartctl sidecar** for each drive's health: a second container from the same image running
+`homecloud smartctl serve`, the only one with the drives and the capabilities that query them
+(smartmontools 7.5 from Debian's backports). It has no network and answers on a Unix socket in a
+volume both containers share; the agent, which parses media downloaded from iCloud, keeps
+neither. Pass every drive under the archive to the sidecar read-only by its stable name
+(`/dev/disk/by-id/ata-…:/dev/disk/by-id/ata-…:r`) and allow it `SYS_RAWIO`, `SYS_ADMIN` and
+`DAC_OVERRIDE`, which only the image's `smartctl` carries (Docker gives a non-root user none).
+`deploy/compose.yaml` sets both containers up. `homecloud doctor` lists the drives and arrays it
+found and names a drive it could not read.
 
 **On a NAS, with the app on your other devices:** `deploy/compose.yaml` runs the image next to
 a [Tailscale](https://tailscale.com) container that shares its network: the agent still listens
@@ -292,9 +304,12 @@ only on `127.0.0.1`, and Tailscale Serve (`deploy/serve.json`) publishes it to y
 and nowhere else, at `https://<TS_HOSTNAME>.<tailnet>.ts.net` with a real certificate. Enable
 MagicDNS and HTTPS certificates for the tailnet, copy `deploy/homecloud.env.example` to
 `deploy/.env` and fill it in (including the archive's drives, `HOMECLOUD_DRIVE_1`/`_2`), set
-`web.public_origin` to that address, then
+`web.public_origin` to that address and `smartctl.socket` as above, then
 `docker compose up -d` and sign in with the link `docker compose exec homecloud homecloud open
---print` prints.
+--print` prints. In the tailnet policy, allow your devices only port 443 of the node (a grant
+with `"ip": ["tcp:443"]`): in userspace networking Tailscale hands a connection to any port of
+the node to `127.0.0.1` at that port, so without it your devices also reach the agent's
+plain-HTTP port (where requests still need a sign-in).
 
 **iPhone backups on a NAS:** Apple's Devices app keeps backing up to the PC, and the PC sends
 each finished backup to the NAS. Create a shared folder in UGOS (say `homecloud-iphone`, the
@@ -351,7 +366,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[iphone_backup]` | `dirs` (absolute paths, written out: Apple Devices uses `C:\Users\<you>\Apple\MobileSync\Backup`, desktop iTunes `C:\Users\<you>\AppData\Roaming\Apple Computer\MobileSync\Backup`; may be empty with `incoming`), `incoming` (a folder another computer pushes finished backups to, apart from `storage.root`, `backup.dir` and every `dirs` entry; `""` for none), `keep` (copies of each device's backups kept under `<storage.root>/iPhone backups`, newest first, 0–100; 0 keeps none; ≥ 1 with `incoming`), `max_age`, `check_interval` (≤ `max_age`), `read_interval` (how often every backup file is read in full, ≥ `check_interval`), `stalled_after` (a backup still running this long counts as unfinished), `max_shrink_percent` |
 | `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files in `%LOCALAPPDATA%\homecloud\logs` on Windows, and how many crash reports are kept (Linux logs to journald) |
 | `[drive_health]` | Linux only: `source`, where the SMART data of the drives under the archive comes from: `"udisks"` (a desktop's udisks2, no rights needed) or `"smartctl"` (a server or the container). Windows reads NVMe health itself and has no such section |
-| `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m) |
+| `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m), `socket` (where the container's smartctl sidecar answers; empty runs smartctl in the agent) |
 
 ## Operating
 
@@ -373,6 +388,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud iphone push --from DIR --to DIR` | Send each device's finished backup in `DIR` (repeatable) to another device's `iphone_backup.incoming`: only files that differ from its newest copy, with the backup's manifest; a backup in progress or changing meanwhile waits for the next push |
 | `homecloud iphone install-push --from … --to … --every 1h` / `uninstall-push` | Push on a schedule while you are logged on (a Task Scheduler task, or a systemd user timer) |
 | `homecloud iphone push-key` / `push-key --set` | Show this computer's key for pushed backups, creating it (run where the archive is); `--set` saves that key on the computer that pushes (pasted, or on standard input) |
+| `homecloud smartctl serve` | Linux: answer the agent's drive health requests on `smartctl.socket`, the container's smartctl sidecar (`deploy/compose.yaml`) |
 
 `verify` and `quarantine release` write the ledger, which the running agent owns: while it runs
 they refuse, and the same actions are in the app (Sync now, Quarantine → Release).
