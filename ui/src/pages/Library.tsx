@@ -11,6 +11,13 @@ import {
   DialogTitle,
   DialogTrigger,
   makeStyles,
+  Menu,
+  MenuGroup,
+  MenuGroupHeader,
+  MenuItemRadio,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   mergeClasses,
   MessageBar,
   MessageBarBody,
@@ -29,8 +36,10 @@ import {
   EyeOffRegular,
   FolderOpenRegular,
   ImageOffRegular,
+  InfoRegular,
   LiveRegular,
   MaximizeRegular,
+  MoreHorizontalRegular,
   VideoClipRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useRef, useState } from "react";
@@ -46,16 +55,35 @@ import { formatBytes, formatCount, formatWhen, toDate } from "../format";
 import { AgentService, AssetKind, AssetState, type LibraryItem } from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
+  filtersRow: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: tokens.spacingHorizontalS,
+    flexWrap: "wrap",
+  },
   filters: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.spacingHorizontalS },
-  densityGroup: {
+  viewOptions: {
     marginLeft: "auto",
     display: "flex",
     alignItems: "center",
     gap: tokens.spacingHorizontalXS,
   },
   actionsRow: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
-  split: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalL, alignItems: "flex-start" },
-  grid: { flex: "999 1 520px", minWidth: 0, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXL },
+  split: {
+    display: "flex",
+    gap: tokens.spacingHorizontalL,
+    alignItems: "flex-start",
+    position: "relative",
+    width: "100%",
+  },
+  grid: {
+    flex: "1 1 0",
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalXL,
+  },
   month: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
   tiles: {
     display: "grid",
@@ -95,7 +123,38 @@ const useStyles = makeStyles({
     color: "#ffffff",
     fontSize: tokens.fontSizeBase100,
   },
-  detail: { flex: "1 1 300px", gap: tokens.spacingVerticalM, position: "sticky", top: tokens.spacingVerticalL },
+  detail: {
+    width: "320px",
+    flexShrink: 0,
+    position: "sticky",
+    top: tokens.spacingVerticalL,
+    maxHeight: "calc(100vh - 120px)",
+    overflowY: "auto",
+    gap: tokens.spacingVerticalM,
+    boxSizing: "border-box",
+    "@media (max-width: 767px)": {
+      position: "fixed",
+      top: "auto",
+      bottom: 0,
+      right: 0,
+      left: 0,
+      width: "auto",
+      maxHeight: "70vh",
+      zIndex: 100,
+      boxShadow: tokens.shadow28,
+      borderRadius: `${tokens.borderRadiusXLarge} ${tokens.borderRadiusXLarge} 0 0`,
+    },
+  },
+  detailHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: tokens.spacingHorizontalS,
+  },
+  detailTitle: {
+    minWidth: 0,
+    overflowWrap: "anywhere",
+  },
   preview: {
     width: "100%",
     aspectRatio: "4 / 3",
@@ -225,6 +284,7 @@ export function LibraryPage() {
     },
   );
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [detailVisible, setDetailVisible] = useState(true);
   const [density, setDensity] = useState<GridDensity>(() => {
     const saved = localStorage.getItem("homecloud.gridDensity");
     return saved === "compact" || saved === "spacious" ? saved : "normal";
@@ -313,42 +373,75 @@ export function LibraryPage() {
         )
       }
     >
-      <div className={styles.filters} role="group" aria-label="Show">
-        {kinds.map((k) => (
+      <div className={styles.filtersRow}>
+        <div className={styles.filters} role="group" aria-label="Show">
+          {kinds.map((k) => (
+            <ToggleButton
+              key={k.kind}
+              checked={kind === k.kind}
+              onClick={() => {
+                setKind(k.kind);
+                setSelected(undefined);
+              }}
+            >
+              {k.label}
+            </ToggleButton>
+          ))}
           <ToggleButton
-            key={k.kind}
-            checked={kind === k.kind}
+            icon={<EyeOffRegular />}
+            checked={hidden}
             onClick={() => {
-              setKind(k.kind);
+              setHidden((h) => !h);
               setSelected(undefined);
             }}
           >
-            {k.label}
+            Hidden
           </ToggleButton>
-        ))}
-        <ToggleButton
-          icon={<EyeOffRegular />}
-          checked={hidden}
-          onClick={() => {
-            setHidden((h) => !h);
-            setSelected(undefined);
-          }}
-        >
-          Hidden
-        </ToggleButton>
-        <div className={styles.densityGroup} role="group" aria-label="Grid density">
-          {densities.map((d) => (
-            <ToggleButton
-              key={d.id}
-              size="small"
-              checked={density === d.id}
-              onClick={() => {
-                onSelectDensity(d.id);
-              }}
-            >
-              {d.label}
-            </ToggleButton>
-          ))}
+        </div>
+        <div className={styles.viewOptions}>
+          <ToggleButton
+            appearance="subtle"
+            icon={<InfoRegular />}
+            checked={detailVisible}
+            onClick={() => {
+              setDetailVisible((v) => !v);
+            }}
+            aria-label="Toggle details panel"
+            title={detailVisible ? "Hide details panel" : "Show details panel"}
+          />
+          <Menu
+            checkedValues={{ density: [density] }}
+            onCheckedValueChange={(_, { name, checkedItems }) => {
+              if (name === "density" && checkedItems[0]) {
+                onSelectDensity(checkedItems[0] as GridDensity);
+              }
+            }}
+          >
+            <MenuTrigger disableButtonEnhancement>
+              <Button
+                appearance="subtle"
+                icon={<MoreHorizontalRegular />}
+                aria-label="Library view options"
+                title="View options"
+              />
+            </MenuTrigger>
+            <MenuPopover>
+              <MenuList>
+                <MenuGroup>
+                  <MenuGroupHeader>Grid density</MenuGroupHeader>
+                  <MenuItemRadio name="density" value="compact">
+                    Compact
+                  </MenuItemRadio>
+                  <MenuItemRadio name="density" value="normal">
+                    Normal
+                  </MenuItemRadio>
+                  <MenuItemRadio name="density" value="spacious">
+                    Spacious
+                  </MenuItemRadio>
+                </MenuGroup>
+              </MenuList>
+            </MenuPopover>
+          </Menu>
         </div>
       </div>
       {q.isPending && <Spinner label="Loading the library…" />}
@@ -379,6 +472,11 @@ export function LibraryPage() {
                       aria-pressed={item === current}
                       onClick={() => {
                         setSelected(itemKey(item));
+                        setDetailVisible(true);
+                      }}
+                      onDoubleClick={() => {
+                        setSelected(itemKey(item));
+                        setLightboxOpen(true);
                       }}
                     >
                       {item.thumbnailUrl === "" ? (
@@ -406,12 +504,17 @@ export function LibraryPage() {
             <div ref={sentinel} className={styles.sentinel} />
             {isFetchingNextPage && <Spinner size="tiny" />}
           </div>
-          <Detail
-            item={current}
-            onOpenLightbox={() => {
-              setLightboxOpen(true);
-            }}
-          />
+          {detailVisible && (
+            <Detail
+              item={current}
+              onOpenLightbox={() => {
+                setLightboxOpen(true);
+              }}
+              onClose={() => {
+                setDetailVisible(false);
+              }}
+            />
+          )}
         </div>
       )}
       {lightboxOpen && current !== undefined && (
@@ -503,7 +606,15 @@ const stateBadge: Record<AssetState, { label: string; color: "success" | "warnin
   [AssetState.QUARANTINED]: { label: "Quarantined", color: "danger" },
 };
 
-function Detail({ item, onOpenLightbox }: { item: LibraryItem; onOpenLightbox: () => void }) {
+function Detail({
+  item,
+  onOpenLightbox,
+  onClose,
+}: {
+  item: LibraryItem;
+  onOpenLightbox: () => void;
+  onClose?: () => void;
+}) {
   const styles = useStyles();
   const platform = usePlatform();
   const notify = useNotify();
@@ -515,6 +626,24 @@ function Detail({ item, onOpenLightbox }: { item: LibraryItem; onOpenLightbox: (
   const display = renditions.find((r) => r.version === item.displayVersion);
   return (
     <Card className={styles.detail} aria-label="Details">
+      <div className={styles.detailHeader}>
+        <div className={styles.detailTitle}>
+          <Subtitle1 as="h2">{ref?.filename}</Subtitle1>
+          <Caption1 block className={styles.muted}>
+            {kindLabel[item.kind]}
+            {taken !== undefined && ` · ${formatWhen(taken)}`}
+          </Caption1>
+        </div>
+        {onClose !== undefined && (
+          <Button
+            appearance="subtle"
+            size="small"
+            icon={<DismissRegular />}
+            aria-label="Close details"
+            onClick={onClose}
+          />
+        )}
+      </div>
       {item.previewUrl === "" ? (
         <Text className={styles.muted}>No picture yet: this item&apos;s photo hasn&apos;t been downloaded.</Text>
       ) : (
@@ -525,13 +654,6 @@ function Detail({ item, onOpenLightbox }: { item: LibraryItem; onOpenLightbox: (
           </span>
         </button>
       )}
-      <div>
-        <Subtitle1 as="h2">{ref?.filename}</Subtitle1>
-        <Caption1 block className={styles.muted}>
-          {kindLabel[item.kind]}
-          {taken !== undefined && ` · ${formatWhen(taken)}`}
-        </Caption1>
-      </div>
       <div>
         <Badge appearance="tint" color={stateBadge[item.state].color}>
           {stateBadge[item.state].label}
