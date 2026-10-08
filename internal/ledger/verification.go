@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -229,89 +227,6 @@ func (db *DB) ReleaseQuarantine(ctx context.Context, library, assetID, reason st
 	}
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("release quarantine: commit: %w", err)
-	}
-	return nil
-}
-
-// RepairQuarantine moves the failing renditions' files of a quarantined asset to
-// a .corrupted directory under archiveRoot, clears their failures and resets the
-// asset to downloaded state, so the next sync cycle re-downloads clean copies from iCloud.
-// The corrupted copies are kept in .corrupted, preserving forensic evidence.
-func (db *DB) RepairQuarantine(ctx context.Context, library, assetID, archiveRoot string, now time.Time) (err error) {
-	ts := formatTime(now)
-	tx, err := db.w.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("repair quarantine: begin: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			err = errors.Join(err, tx.Rollback())
-		}
-	}()
-
-	rows, err := tx.QueryContext(ctx, `
-		SELECT r.version, r.local_path, r.failure
-		FROM resources r JOIN assets a USING (library, asset_id)
-		WHERE library = ? AND asset_id = ? AND a.state = ? AND r.failure IS NOT NULL`,
-		library, assetID, StateQuarantined)
-	if err != nil {
-		return fmt.Errorf("read failing renditions: %w", err)
-	}
-	defer func() { err = errors.Join(err, rows.Close()) }()
-
-	type failingRendition struct {
-		version, localPath, failure string
-	}
-	var failing []failingRendition
-	for rows.Next() {
-		var f failingRendition
-		if scanErr := rows.Scan(&f.version, &f.localPath, &f.failure); scanErr != nil {
-			return fmt.Errorf("scan failing rendition: %w", scanErr)
-		}
-		failing = append(failing, f)
-	}
-	if rErr := rows.Err(); rErr != nil {
-		return fmt.Errorf("iterate failing renditions: %w", rErr)
-	}
-	if len(failing) == 0 {
-		return fmt.Errorf("repair quarantine %s/%s: %w", library, assetID, ErrNotQuarantined)
-	}
-
-	corruptedDir := filepath.Join(archiveRoot, ".corrupted", now.UTC().Format("20060102T150405Z"))
-	if mkErr := os.MkdirAll(corruptedDir, 0o700); mkErr != nil {
-		return fmt.Errorf("create corrupted directory %s: %w", corruptedDir, mkErr)
-	}
-	var movedFiles []string
-	for _, f := range failing {
-		if _, statErr := os.Stat(f.localPath); statErr == nil {
-			dest := filepath.Join(corruptedDir, filepath.Base(f.localPath))
-			if renErr := os.Rename(f.localPath, dest); renErr != nil {
-				return fmt.Errorf("move corrupted file %s to %s: %w", f.localPath, dest, renErr)
-			}
-			movedFiles = append(movedFiles, dest)
-		}
-	}
-
-	res, err := tx.ExecContext(ctx, `UPDATE assets SET state = ?, state_changed_at = ?
-		WHERE library = ? AND asset_id = ? AND state = ?`, StateDownloaded, ts, library, assetID, StateQuarantined)
-	if err != nil {
-		return fmt.Errorf("repair quarantine update %s/%s: %w", library, assetID, err)
-	}
-	if n, nerr := res.RowsAffected(); nerr != nil || n != 1 {
-		return errors.Join(fmt.Errorf("repair quarantine %s/%s: %w", library, assetID, ErrNotQuarantined), nerr)
-	}
-	if _, err = tx.ExecContext(ctx, `UPDATE resources SET failure = NULL, verified_content_at = NULL, verified_structure_at = NULL, verified_probe_at = NULL WHERE library = ? AND asset_id = ?`,
-		library, assetID); err != nil {
-		return fmt.Errorf("clear failures %s/%s: %w", library, assetID, err)
-	}
-	if err = appendEvent(ctx, tx, ts, library, assetID, EventQuarantineRepaired, map[string]any{
-		"corrupted_dir": corruptedDir,
-		"moved_files":   movedFiles,
-	}); err != nil {
-		return err
-	}
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("repair quarantine: commit: %w", err)
 	}
 	return nil
 }

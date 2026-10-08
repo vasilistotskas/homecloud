@@ -236,7 +236,8 @@ else.
   Linux ≥ 5.8
 - Go 1.27.1; Node.js 24 with pnpm (version pinned in `ui/package.json`)
 - [kei](https://github.com/rhoopr/kei) 0.24.1 and FFmpeg 9.0.2 (`ffprobe` and `ffmpeg`), pinned
-  in the config and checked by `homecloud doctor`
+  in the config and checked by `homecloud doctor`. FFmpeg needs libwebp (thumbnails) and libjxl
+  (JPEG XL previews in DNG 1.7 files); on Windows the Gyan `full_build` has both
 - The desktop app additionally needs Rust (pinned in `desktop/src-tauri/rust-toolchain.toml`)
   and, on Linux, the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)
 
@@ -261,7 +262,7 @@ unit (`loginctl enable-linger` keeps it running on a headless host).
 
 `Dockerfile` builds one image for `linux/amd64` and `linux/arm64` with the agent, the CLI, kei
 and FFmpeg, every input pinned (base images by digest, kei by its release checksums, FFmpeg 9.0.2
-from its signed release tarball, with libwebp, libjxl and zlib). The agent is the entrypoint.
+from its signed release tarball, with libwebp, libjxl and zlib only). The agent is the entrypoint.
 
 ```sh
 docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(git rev-parse --short HEAD) -t homecloud .
@@ -406,7 +407,6 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud status` | Asset counts by state |
 | `homecloud quarantine list` | Files that failed a check, with the reason |
 | `homecloud quarantine release --library L --asset A --reason R` | Lift a quarantine (audited); the asset's files are checked again |
-| `homecloud quarantine repair --library L --asset A` | Move corrupted renditions to `<storage.root>/.corrupted/<timestamp>/` and reset the asset to `downloaded` for re-download on next sync |
 | `homecloud verify` | Ingest kei's manifest and run all outstanding verification, without iCloud |
 | `homecloud notify-test` | Send a test push notification |
 | `homecloud install` / `uninstall` | Register / remove the logon task (Windows) or systemd user unit (Linux) |

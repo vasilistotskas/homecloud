@@ -55,9 +55,9 @@ RUN set -eu; \
 # FFmpeg from its release tarball (signed with FFmpeg's release key
 # FCF986EA15E6E293A5644F10B4322F04D67658D8; the checksum below is of the
 # verified tarball), compiled for the target with libwebp (thumbnails),
-# libjxl (JPEG XL / iOS 18 ProRAW) and zlib (PNG); autodetection is off so
-# nothing else slips in. Only ffmpeg and
-# ffprobe are built, without network support.
+# libjxl (JPEG XL previews in DNG 1.7 files) and zlib (PNG); autodetection is
+# off so nothing else slips in. Only ffmpeg and ffprobe are built, without
+# network support.
 FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS ffmpeg
 ARG BUILDARCH
 ARG TARGETARCH

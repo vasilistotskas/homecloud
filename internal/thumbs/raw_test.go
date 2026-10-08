@@ -75,36 +75,27 @@ func TestRawPreview(t *testing.T) {
 	if err != nil || !isRaw {
 		t.Fatalf("DNG: isRaw=%v err=%v, want the embedded preview", isRaw, err)
 	}
-	if format != "jpeg_pipe" {
-		t.Fatalf("DNG format = %s, want jpeg_pipe", format)
+	if format != demuxerJPEG {
+		t.Fatalf("DNG demuxer = %s, want %s", format, demuxerJPEG)
 	}
 	if !bytes.Equal(got, preview) {
 		t.Fatalf("DNG preview = %d bytes, want the embedded %d-byte JPEG", len(got), len(preview))
 	}
 
-	// JPEG XL preview in DNG
 	jxl := []byte{0xff, 0x0a, 1, 2, 3, 4}
-	jxlFields := append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"),
-		long(tagImageWidth, 64),
-		long(tagImageLength, 48),
-		dngVersion(),
-	)
-	jxlBuilder := &tiffBuilder{order: binary.LittleEndian}
-	jxlBuilder.ifd("ifd0", "", jxlFields...)
-	jxlBuilder.data("jxl", jxl)
 	jxlPath := filepath.Join(dir, "IMG_JXL.DNG")
-	if writeErr := os.WriteFile(jxlPath, jxlBuilder.bytes(), 0o600); writeErr != nil {
+	if writeErr := os.WriteFile(jxlPath, jxlDNG(jxl, long(tagImageWidth, 64), long(tagImageLength, 48)), 0o600); writeErr != nil {
 		t.Fatal(writeErr)
 	}
 	gotJXL, jxlFormat, isRawJXL, jxlErr := rawPreview(jxlPath)
 	if jxlErr != nil || !isRawJXL {
 		t.Fatalf("JPEG XL DNG: isRaw=%v err=%v", isRawJXL, jxlErr)
 	}
-	if jxlFormat != "jpegxl_pipe" {
-		t.Fatalf("JPEG XL format = %s, want jpegxl_pipe", jxlFormat)
+	if jxlFormat != demuxerJPEGXL {
+		t.Fatalf("JPEG XL demuxer = %s, want %s", jxlFormat, demuxerJPEGXL)
 	}
 	if !bytes.Equal(gotJXL, jxl) {
-		t.Fatalf("JPEG XL preview mismatch")
+		t.Fatalf("JPEG XL preview = %x, want %x", gotJXL, jxl)
 	}
 
 	if _, _, isRaw, err := rawPreview(writeTIFF(t, dir, preview, 64, 48, false)); err != nil || isRaw {

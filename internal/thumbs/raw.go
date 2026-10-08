@@ -5,16 +5,16 @@ import (
 	"os"
 )
 
-// rawPreview returns the largest JPEG or JPEG XL preview embedded in path when path is a
-// DNG (including Apple ProRAW); isRaw is false, with no error, for every
-// other file.
+// rawPreview returns the largest preview embedded in path, and the demuxer
+// that reads it, when path is a DNG (including Apple ProRAW); isRaw is false,
+// with no error, for every other file.
 //
 // FFmpeg cannot develop raw sensor data, and its TIFF decoder renders a
 // ProRAW's JPEG-compressed preview as a blank frame. A DNG carries the
-// camera's own rendering as an embedded JPEG or JPEG XL (ProRAW keeps a full-size one in
-// IFD0), so that preview is what the library shows. The preview keeps its
-// EXIF orientation, which FFmpeg applies when rendering it.
-func rawPreview(path string) (preview []byte, format string, isRaw bool, err error) {
+// camera's own rendering as an embedded JPEG or JPEG XL (ProRAW keeps a
+// full-size one in IFD0), so that preview is what the library shows. The
+// preview keeps its EXIF orientation, which FFmpeg applies when rendering it.
+func rawPreview(path string) (preview []byte, in demuxer, isRaw bool, err error) {
 	f, err := os.Open(path) //nolint:gosec // path comes from the ledger
 	if err != nil {
 		return nil, "", false, fmt.Errorf("open %s: %w", path, err)
@@ -36,5 +36,5 @@ func rawPreview(path string) (preview []byte, format string, isRaw bool, err err
 	if _, err := f.ReadAt(preview, ref.offset); err != nil {
 		return nil, "", true, fmt.Errorf("extract the preview of %s: %w", path, err)
 	}
-	return preview, ref.format, true, nil
+	return preview, ref.demuxer, true, nil
 }

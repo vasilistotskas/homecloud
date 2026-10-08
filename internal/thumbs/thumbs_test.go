@@ -159,6 +159,30 @@ func TestEnsureWithFFmpeg(t *testing.T) {
 	if out, err := probe.Output(); err != nil || strings.TrimSpace(string(out)) != "webp,64,48" {
 		t.Fatalf("rendered DNG = %q, %v", out, err)
 	}
+
+	// A DNG 1.7 JPEG XL preview renders in both forms DNG allows. It needs an
+	// FFmpeg with libjxl, which also encodes the test picture.
+	encode := platform.Command(t.Context(), ffmpeg, //nolint:gosec // test tool from PATH
+		"-v", "error", "-f", "lavfi", "-i", "color=blue:s=96x64", "-frames:v", "1", "-c:v", "libjxl", "-f", "image2pipe", "-")
+	codestream, encodeErr := encode.Output()
+	if encodeErr != nil {
+		t.Skipf("this ffmpeg cannot encode JPEG XL (no libjxl): %v", encodeErr)
+	}
+	for name, jxl := range map[string][]byte{"bare": codestream, "container": jxlContainerOf(codestream)} {
+		file := filepath.Join(dir, name+".dng")
+		if writeErr := os.WriteFile(file, jxlDNG(jxl, long(tagImageWidth, 96), long(tagImageLength, 64)), 0o600); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		got, ensureErr := r.Ensure(t.Context(), Source{Path: file, SHA256: fmt.Sprintf("%064x", len(name))}, Preview)
+		if ensureErr != nil {
+			t.Fatalf("%s JPEG XL DNG: %v", name, ensureErr)
+		}
+		probe = platform.Command(t.Context(), ffprobe, //nolint:gosec // test tool from PATH
+			"-v", "error", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", got)
+		if out, probeErr := probe.Output(); probeErr != nil || strings.TrimSpace(string(out)) != "webp,96,64" {
+			t.Fatalf("rendered %s JPEG XL DNG = %q, %v", name, out, probeErr)
+		}
+	}
 }
 
 func TestPruneKeepsOnlyCurrentSpecs(t *testing.T) {

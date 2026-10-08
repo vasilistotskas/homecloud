@@ -295,21 +295,6 @@ func (a *Agent) writeLedgerBackup(ctx context.Context, rep *LedgerBackupReport) 
 	}
 	rep.File, rep.SizeBytes = dest, info.Size()
 	rep.Pruned, err = pruneLedgerBackups(dir, a.cfg.Backup.Keep)
-
-	// Preserve configuration and push key beside snapshots for disaster recovery.
-	if a.configPath != "" {
-		if data, readErr := os.ReadFile(a.configPath); readErr == nil { //nolint:gosec // a.configPath is the validated config path
-			_ = platform.WriteSecretFile(filepath.Join(dir, "config.toml.bak"), data)
-		}
-	}
-	if a.pushKey != nil {
-		if keyPath, keyErr := a.pushKey(); keyErr == nil {
-			if keyData, readErr := os.ReadFile(keyPath); readErr == nil { //nolint:gosec // keyPath is the state push key path
-				_ = platform.WriteSecretFile(filepath.Join(dir, "iphone-push.key.bak"), keyData)
-			}
-		}
-	}
-
 	return err
 }
 

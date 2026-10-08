@@ -244,48 +244,66 @@ func TestDNGPreviewInOneTile(t *testing.T) {
 	}
 }
 
-// DNG 1.7 allows JPEG XL previews (Compression 52546). Both JPEG and JPEG XL
-// previews are supported and extracted.
+// jxlContainerOf wraps a bare JPEG XL codestream in the ISOBMFF container
+// (ISO/IEC 18181-2): the signature box, ftyp and one jxlc box.
+func jxlContainerOf(codestream []byte) []byte {
+	box := func(kind string, payload []byte) []byte {
+		size := binary.BigEndian.AppendUint32(nil, uint32(8+len(payload))) //nolint:gosec // small test files
+		return append(size, append([]byte(kind), payload...)...)
+	}
+	out := slices.Clone(jxlContainer)
+	out = append(out, box("ftyp", []byte{'j', 'x', 'l', ' ', 0, 0, 0, 0, 'j', 'x', 'l', ' '})...)
+	return append(out, box("jxlc", codestream)...)
+}
+
+// jxlDNG is a DNG whose only primary preview is the JPEG XL stream jxl,
+// with the given ImageWidth and ImageLength fields.
+func jxlDNG(jxl []byte, size ...tiffField) []byte {
+	b := &tiffBuilder{order: binary.LittleEndian}
+	b.ifd("ifd0", "", append(append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"), size...), dngVersion())...)
+	b.data("jxl", jxl)
+	return b.bytes()
+}
+
+// DNG 1.7 allows JPEG XL previews (Compression 52546), as a bare codestream
+// or in the container; both are extracted for FFmpeg's jpegxl_pipe.
 func TestDNGPreviewJPEGXL(t *testing.T) {
-	jxl := []byte{0xff, 0x0a, 1, 2, 3, 4} // a bare JPEG XL codestream signature
-	only := &tiffBuilder{order: binary.LittleEndian}
-	only.ifd("ifd0", "", append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"), dngVersion())...)
-	only.data("jxl", jxl)
-	ref, isDNG, err := preview(t, only.bytes())
-	if !isDNG || err != nil {
-		t.Fatalf("JPEG XL only: isDNG=%v err=%v, want valid preview", isDNG, err)
-	}
-	if ref.format != "jpegxl_pipe" {
-		t.Fatalf("JPEG XL format = %s, want jpegxl_pipe", ref.format)
-	}
-	if got := previewBytes(t, only.bytes()); !bytes.Equal(got, jxl) {
-		t.Fatalf("JPEG XL only: got %x, want %x", got, jxl)
+	bare := []byte{0xff, 0x0a, 1, 2, 3, 4}
+	for name, jxl := range map[string][]byte{"bare codestream": bare, "container": jxlContainerOf(bare)} {
+		file := jxlDNG(jxl, long(tagImageWidth, 64), long(tagImageLength, 48))
+		ref, isDNG, err := preview(t, file)
+		if !isDNG || err != nil || ref.demuxer != demuxerJPEGXL {
+			t.Fatalf("%s: isDNG=%v err=%v demuxer=%q, want a JPEG XL preview", name, isDNG, err, ref.demuxer)
+		}
+		if got := previewBytes(t, file); !bytes.Equal(got, jxl) {
+			t.Fatalf("%s: got %x, want %x", name, got, jxl)
+		}
 	}
 
+	// A TIFF image must have its size; a JPEG XL preview without it is malformed.
+	if _, isDNG, err := preview(t, jxlDNG(bare)); !isDNG || !errors.Is(err, errMalformed) {
+		t.Fatalf("no ImageWidth/ImageLength: isDNG=%v err=%v, want errMalformed", isDNG, err)
+	}
+	// Data that is not JPEG XL is not a JPEG XL preview.
+	if _, isDNG, err := preview(t, jxlDNG([]byte{0xff, 0xd8, 0xff}, long(tagImageWidth, 64), long(tagImageLength, 48))); !isDNG || !errors.Is(err, errNoPreview) {
+		t.Fatalf("not JPEG XL: isDNG=%v err=%v, want errNoPreview", isDNG, err)
+	}
+
+	// The larger picture wins, whichever its format.
 	jpg := testJPEG(t, 16, 12)
-	both := &tiffBuilder{order: binary.LittleEndian}
-	both.ifd("ifd0", "", append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"), subIFDs("thumb"), dngVersion())...)
-	both.ifd("thumb", "", stripImage(subfilePrimaryPreview, compressionJPEG, "jpg")...)
-	both.data("jxl", jxl)
-	both.data("jpg", jpg)
-	if got := previewBytes(t, both.bytes()); !bytes.Equal(got, jpg) {
-		t.Fatalf("JPEG XL and JPEG: picked %d bytes, want the JPEG (larger area)", len(got))
-	}
-
-	// Larger JPEG XL preview wins over smaller JPEG thumbnail
-	jxlLargeFields := append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"),
-		long(tagImageWidth, 64),
-		long(tagImageLength, 48),
-		subIFDs("thumb"),
-		dngVersion(),
-	)
-	jxlWins := &tiffBuilder{order: binary.LittleEndian}
-	jxlWins.ifd("ifd0", "", jxlLargeFields...)
-	jxlWins.ifd("thumb", "", stripImage(subfilePrimaryPreview, compressionJPEG, "jpg")...)
-	jxlWins.data("jxl", jxl)
-	jxlWins.data("jpg", jpg)
-	if got := previewBytes(t, jxlWins.bytes()); !bytes.Equal(got, jxl) {
-		t.Fatalf("larger JPEG XL preview: got %d bytes, want JXL (%d bytes)", len(got), len(jxl))
+	for name, c := range map[string]struct {
+		w, h uint32
+		want []byte
+	}{"smaller JPEG XL": {8, 6, jpg}, "larger JPEG XL": {64, 48, bare}} {
+		b := &tiffBuilder{order: binary.LittleEndian}
+		b.ifd("ifd0", "", append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"),
+			long(tagImageWidth, c.w), long(tagImageLength, c.h), subIFDs("thumb"), dngVersion())...)
+		b.ifd("thumb", "", stripImage(subfilePrimaryPreview, compressionJPEG, "jpg")...)
+		b.data("jxl", bare)
+		b.data("jpg", jpg)
+		if got := previewBytes(t, b.bytes()); !bytes.Equal(got, c.want) {
+			t.Fatalf("%s: picked %d bytes, want %d", name, len(got), len(c.want))
+		}
 	}
 }
 

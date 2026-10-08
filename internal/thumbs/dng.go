@@ -70,6 +70,14 @@ var fieldSize = map[uint16]int64{
 	1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4,
 }
 
+// JPEG XL signatures (ISO/IEC 18181-1 and -2): a bare codestream starts with
+// the first, the ISOBMFF container with the second (its signature box). DNG
+// 1.7.1.0 allows both and recommends the container for previews.
+var (
+	jxlCodestream = []byte{0xff, 0x0a}
+	jxlContainer  = []byte{0, 0, 0, 0x0c, 'J', 'X', 'L', ' ', 0x0d, 0x0a, 0x87, 0x0a}
+)
+
 var (
 	// errMalformed marks a TIFF whose structure is broken.
 	errMalformed = errors.New("malformed TIFF")
@@ -77,10 +85,18 @@ var (
 	errNoPreview = errors.New("no JPEG or JPEG XL preview")
 )
 
-// imageRef is a stream inside the file.
+// demuxer is the FFmpeg demuxer that reads a preview from standard input.
+type demuxer string
+
+const (
+	demuxerJPEG   demuxer = "jpeg_pipe"
+	demuxerJPEGXL demuxer = "jpegxl_pipe"
+)
+
+// imageRef is a stream inside the file and the demuxer that reads it.
 type imageRef struct {
 	offset, length int64
-	format         string
+	demuxer        demuxer
 }
 
 // tiff reads a classic TIFF's directories through bounds-checked reads.
@@ -253,33 +269,23 @@ func (t tiff) image(d directory) (imageRef, bool) {
 	return imageRef{}, false
 }
 
-// isJXL reports whether data at off begins with a JPEG XL bare codestream
-// (0xFF, 0x0A) or ISOBMFF container (0x00, 0x00, 0x00, 0x0C, 'J', 'X', 'L', ' ', 0x0D, 0x0A, 0x87, 0x0A).
-func isJXL(r io.ReaderAt, off, n int64) bool {
-	if n < 2 {
-		return false
+// isJXL reports whether the stream ref starts with a JPEG XL signature.
+func (t tiff) isJXL(ref imageRef) (bool, error) {
+	head, err := t.read(ref.offset, min(ref.length, int64(len(jxlContainer))))
+	if err != nil {
+		return false, err
 	}
-	var head [12]byte
-	toRead := min(n, int64(len(head)))
-	if _, err := r.ReadAt(head[:toRead], off); err != nil {
-		return false
-	}
-	if head[0] == 0xff && head[1] == 0x0a {
-		return true
-	}
-	if toRead >= 12 && bytes.Equal(head[:12], []byte{0, 0, 0, 0x0c, 'J', 'X', 'L', ' ', 0x0d, 0x0a, 0x87, 0x0a}) {
-		return true
-	}
-	return false
+	return bytes.HasPrefix(head, jxlCodestream) || bytes.Equal(head, jxlContainer), nil
 }
 
-// dngPreview finds a DNG's primary preview as a JPEG or JPEG XL stream: the IFD in the
-// SubIFD tree with NewSubFileType 1, stored as one baseline JPEG or JPEG XL strip or
-// tile, the largest picture if there are several (a thumbnail and a
-// full-size rendering). Each candidate must decode as baseline or
-// progressive JPEG or match the JPEG XL signature, so lossless JPEG (the raw image's encoding) is never
-// picked. A DNG is a classic TIFF whose IFD0 has DNGVersion; isDNG is false,
-// without error, for anything else.
+// dngPreview finds a DNG's primary preview: the IFD in the SubIFD tree with
+// NewSubFileType 1, stored as one JPEG or JPEG XL strip or tile, the largest
+// picture if there are several (a thumbnail and a full-size rendering). A
+// JPEG candidate must decode as baseline or progressive JPEG, so lossless JPEG
+// (the raw image's encoding) is never picked; a JPEG XL candidate must start
+// with a JPEG XL signature, and its size is the IFD's ImageWidth and
+// ImageLength, which a TIFF image must have. A DNG is a classic TIFF whose
+// IFD0 has DNGVersion; isDNG is false, without error, for anything else.
 func dngPreview(r io.ReaderAt, size int64) (preview imageRef, isDNG bool, err error) {
 	head := make([]byte, 8)
 	if _, err = r.ReadAt(head, 0); err != nil {
@@ -317,7 +323,7 @@ func dngPreview(r io.ReaderAt, size int64) (preview imageRef, isDNG bool, err er
 
 	type candidate struct {
 		imageRef
-		area int
+		area int64
 	}
 	var candidates []candidate
 	for d, err := range t.tree(int64(h.IFD0), ifd0) {
@@ -338,16 +344,24 @@ func dngPreview(r io.ReaderAt, size int64) (preview imageRef, isDNG bool, err er
 		case compressionJPEG:
 			cfg, err := jpeg.DecodeConfig(io.NewSectionReader(r, ref.offset, ref.length))
 			if err == nil {
-				ref.format = "jpeg_pipe"
-				candidates = append(candidates, candidate{ref, cfg.Width * cfg.Height})
+				ref.demuxer = demuxerJPEG
+				candidates = append(candidates, candidate{ref, int64(cfg.Width) * int64(cfg.Height)})
 			}
 		case compressionJPEGXL:
-			if isJXL(r, ref.offset, ref.length) {
-				ref.format = "jpegxl_pipe"
-				w, _ := t.uint(d, tagImageWidth)
-				h, _ := t.uint(d, tagImageLength)
-				candidates = append(candidates, candidate{ref, int(w * h)})
+			jxl, err := t.isJXL(ref)
+			if err != nil {
+				return imageRef{}, true, err
 			}
+			if !jxl {
+				continue
+			}
+			w, okW := t.uint(d, tagImageWidth)
+			h, okH := t.uint(d, tagImageLength)
+			if !okW || !okH {
+				return imageRef{}, true, fmt.Errorf("%w: a JPEG XL preview without ImageWidth and ImageLength", errMalformed)
+			}
+			ref.demuxer = demuxerJPEGXL
+			candidates = append(candidates, candidate{ref, w * h})
 		}
 	}
 	if len(candidates) == 0 {
