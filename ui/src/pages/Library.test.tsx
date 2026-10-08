@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { createRouterTransport } from "@connectrpc/connect";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -74,107 +74,89 @@ describe("Library", () => {
     expect(hiddenRequests).toContain(true);
   });
 
-  it("navigates photos with arrow keys and opens lightbox preview", async () => {
-    const transport = createRouterTransport(({ service }) => {
-      service(AgentService, {
-        async *watchOverview() {
-          yield { overview: create(OverviewSchema, { archive: { files: 3n, bytes: 1024n } }) };
-          await new Promise(() => undefined);
-        },
-        listAssets: () => ({
-          items: [
-            item("A1", new Date(2026, 9, 3), AssetKind.PHOTO),
-            item("A2", new Date(2026, 9, 2), AssetKind.PHOTO),
-            item("A3", new Date(2026, 9, 1), AssetKind.PHOTO),
-          ],
-        }),
-        getAsset: () => create(GetAssetResponseSchema),
-      });
-    });
+  it("selects the focused tile, in a grid the arrow keys move through", async () => {
     window.location.hash = "#/library";
-    render(<App transport={transport} platform={desktopLike} />);
-
-    // Initially A1 is selected
+    render(<App transport={library([["A1", "A2", "A3"]])} platform={desktopLike} />);
     expect(await screen.findByRole("heading", { level: 2, name: "A1.HEIC" })).toBeInTheDocument();
 
-    // ArrowRight navigates to next item (A2)
-    await userEvent.keyboard("{ArrowRight}");
+    // Tabster moves the focus between tiles; jsdom has no layout for it to
+    // move through, so the test checks the grid is a mover and focuses a tile.
+    const grid = screen.getByRole("region", { name: /October 2026/ }).parentElement;
+    expect(grid?.getAttribute("data-tabster")).toContain("mover");
+    fireEvent.focus(screen.getByRole("button", { name: /A2.HEIC/ }));
     expect(await screen.findByRole("heading", { level: 2, name: "A2.HEIC" })).toBeInTheDocument();
-
-    // ArrowLeft navigates back to A1
-    await userEvent.keyboard("{ArrowLeft}");
-    expect(await screen.findByRole("heading", { level: 2, name: "A1.HEIC" })).toBeInTheDocument();
-
-    // Open lightbox
-    const enlargeBtn = screen.getByRole("button", { name: "Enlarge photo" });
-    await userEvent.setup().click(enlargeBtn);
-
-    // Lightbox dialog should open with title, image, and navigation buttons
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next photo" })).toBeInTheDocument();
-    expect(screen.getByText(/1 of 3/)).toBeInTheDocument();
-
-    // Click next photo in lightbox
-    await userEvent.setup().click(screen.getByRole("button", { name: "Next photo" }));
-    expect(screen.getByText(/2 of 3/)).toBeInTheDocument();
   });
 
-  it("toggles grid density via view options menu and saves to localStorage", async () => {
-    localStorage.clear();
-    const transport = createRouterTransport(({ service }) => {
-      service(AgentService, {
-        async *watchOverview() {
-          yield { overview: create(OverviewSchema, { archive: { files: 1n, bytes: 1024n } }) };
-          await new Promise(() => undefined);
-        },
-        listAssets: () => ({
-          items: [item("A1", new Date(2026, 9, 3), AssetKind.PHOTO)],
-        }),
-        getAsset: () => create(GetAssetResponseSchema),
-      });
-    });
+  it("steps through the library in the lightbox, loading the next page at the end of the loaded one", async () => {
     window.location.hash = "#/library";
-    render(<App transport={transport} platform={desktopLike} />);
-
+    render(<App transport={library([["A1", "A2"], ["B1"]])} platform={desktopLike} />);
     const user = userEvent.setup();
-    const optionsBtn = await screen.findByRole("button", { name: "Library view options" });
-    await user.click(optionsBtn);
+    await user.click(await screen.findByRole("button", { name: "Enlarge photo" }));
 
-    const compactItem = await screen.findByRole("menuitemradio", { name: "Compact" });
-    await user.click(compactItem);
-    expect(localStorage.getItem("homecloud.gridDensity")).toBe("compact");
+    const dialog = await screen.findByRole("dialog");
+    const title = () => within(dialog).getByRole("heading", { level: 2 });
+    expect(title()).toHaveTextContent("A1.HEIC");
+    expect(within(dialog).getByRole("img")).toHaveAttribute(
+      "src",
+      "http://agent/media/preview/PrimarySync/A1/original?sig=x",
+    );
+    expect(within(dialog).getByRole("button", { name: "Previous" })).toHaveAttribute("aria-disabled", "true");
 
-    await user.click(optionsBtn);
-    const spaciousItem = await screen.findByRole("menuitemradio", { name: "Spacious" });
-    await user.click(spaciousItem);
-    expect(localStorage.getItem("homecloud.gridDensity")).toBe("spacious");
+    await user.keyboard("{ArrowRight}");
+    expect(title()).toHaveTextContent("A2.HEIC");
+    await user.click(within(dialog).getByRole("button", { name: "Next" }));
+    await waitFor(() => {
+      expect(title()).toHaveTextContent("B1.HEIC");
+    });
+    expect(within(dialog).getByRole("button", { name: "Next" })).toHaveAttribute("aria-disabled", "true");
+    await user.keyboard("{ArrowLeft}");
+    expect(title()).toHaveTextContent("A2.HEIC");
+  });
+
+  it("keeps the grid density chosen in the view options", async () => {
+    localStorage.clear();
+    window.location.hash = "#/library";
+    const { unmount } = render(<App transport={library([["A1"]])} platform={desktopLike} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Library view options" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Compact" }));
+    unmount();
+
+    render(<App transport={library([["A1"]])} platform={desktopLike} />);
+    await user.click(await screen.findByRole("button", { name: "Library view options" }));
+    expect(await screen.findByRole("menuitemradio", { name: "Compact" })).toHaveAttribute("aria-checked", "true");
   });
 
   it("can close and reopen the details panel", async () => {
-    const transport = createRouterTransport(({ service }) => {
-      service(AgentService, {
-        async *watchOverview() {
-          yield { overview: create(OverviewSchema, { archive: { files: 1n, bytes: 1024n } }) };
-          await new Promise(() => undefined);
-        },
-        listAssets: () => ({
-          items: [item("A1", new Date(2026, 9, 3), AssetKind.PHOTO)],
-        }),
-        getAsset: () => create(GetAssetResponseSchema),
-      });
-    });
     window.location.hash = "#/library";
-    render(<App transport={transport} platform={desktopLike} />);
-
+    render(<App transport={library([["A1"]])} platform={desktopLike} />);
     const user = userEvent.setup();
     expect(await screen.findByRole("heading", { level: 2, name: "A1.HEIC" })).toBeInTheDocument();
 
-    const closeBtn = screen.getByRole("button", { name: "Close details" });
-    await user.click(closeBtn);
+    await user.click(screen.getByRole("button", { name: "Close details" }));
     expect(screen.queryByRole("heading", { level: 2, name: "A1.HEIC" })).not.toBeInTheDocument();
 
-    const toggleBtn = screen.getByRole("button", { name: "Toggle details panel" });
-    await user.click(toggleBtn);
+    await user.click(screen.getByRole("button", { name: "Toggle details panel" }));
     expect(await screen.findByRole("heading", { level: 2, name: "A1.HEIC" })).toBeInTheDocument();
   });
 });
+
+/** An agent whose library has the given pages of items, newest first. */
+function library(pages: string[][]) {
+  return createRouterTransport(({ service }) => {
+    service(AgentService, {
+      async *watchOverview() {
+        yield { overview: create(OverviewSchema, { archive: { files: 3n, bytes: 1024n } }) };
+        await new Promise(() => undefined);
+      },
+      listAssets: (req) => {
+        const page = req.pageToken === "" ? 0 : Number(req.pageToken);
+        return {
+          items: (pages[page] ?? []).map((id, i) => item(id, new Date(2026, 9, 28 - page * 10 - i), AssetKind.PHOTO)),
+          nextPageToken: page + 1 < pages.length ? String(page + 1) : "",
+        };
+      },
+      getAsset: () => create(GetAssetResponseSchema),
+    });
+  });
+}

@@ -33,6 +33,7 @@ const useStyles = makeStyles({
   intro: { color: tokens.colorNeutralForeground3, maxWidth: "720px" },
   split: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalL, alignItems: "flex-start" },
   list: { flex: "1 1 280px", padding: tokens.spacingHorizontalXS, gap: tokens.spacingVerticalXXS },
+  items: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXXS },
   item: {
     display: "flex",
     flexDirection: "column",
@@ -51,6 +52,7 @@ const useStyles = makeStyles({
   },
   dt: { color: tokens.colorNeutralForeground3 },
   dd: { margin: 0, minWidth: 0, overflowWrap: "anywhere" },
+  pathActions: { display: "inline-flex", gap: tokens.spacingHorizontalXS, marginLeft: tokens.spacingHorizontalS },
   mono: { fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase200 },
   head: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.spacingHorizontalM },
   actions: { display: "flex", justifyContent: "flex-end" },
@@ -90,32 +92,35 @@ export function QuarantinePage() {
       )}
       {assets.length > 0 && (
         <div className={styles.split}>
-          <Card className={styles.list} role="list" aria-label="Quarantined items">
+          <Card className={styles.list}>
             <SearchBox
-              placeholder="Filter quarantine…"
+              aria-label="Filter quarantined items"
+              placeholder="Filter by name or check…"
               value={searchQuery}
               onChange={(_, d) => {
                 setSearchQuery(d.value);
               }}
             />
             {filteredAssets.length === 0 ? (
-              <Text className={styles.dt}>No items match your search.</Text>
+              <Text className={styles.dt}>No quarantined item matches.</Text>
             ) : (
-              filteredAssets.map((a) => (
-                <div role="listitem" key={a.asset?.assetId}>
-                  <ToggleButton
-                    appearance="subtle"
-                    className={styles.item}
-                    checked={a === current}
-                    onClick={() => {
-                      setSelected(a.asset?.assetId);
-                    }}
-                  >
-                    <Text weight="semibold">{a.asset?.filename}</Text>
-                    <Caption1>{summary(a)}</Caption1>
-                  </ToggleButton>
-                </div>
-              ))
+              <div className={styles.items} role="list" aria-label="Quarantined items">
+                {filteredAssets.map((a) => (
+                  <div role="listitem" key={a.asset?.assetId}>
+                    <ToggleButton
+                      appearance="subtle"
+                      className={styles.item}
+                      checked={a === current}
+                      onClick={() => {
+                        setSelected(a.asset?.assetId);
+                      }}
+                    >
+                      <Text weight="semibold">{a.asset?.filename}</Text>
+                      <Caption1>{summary(a)}</Caption1>
+                    </ToggleButton>
+                  </div>
+                ))}
+              </div>
             )}
           </Card>
           {current !== undefined && <Detail item={current} />}
@@ -187,9 +192,7 @@ function Detail({ item }: { item: QuarantinedAsset }) {
           <dt className={styles.dt}>On disk</dt>
           <dd className={`${styles.dd} ${styles.mono}`}>
             {r.localPath}
-            <span
-              style={{ display: "inline-flex", gap: tokens.spacingHorizontalXS, marginLeft: tokens.spacingHorizontalS }}
-            >
+            <span className={styles.pathActions}>
               {platform.kind === "desktop" && platform.connection.kind === "this_pc" && (
                 <Button
                   size="small"

@@ -87,7 +87,7 @@ describe("Quarantine", () => {
     expect(screen.getByRole("button", { name: /corrupt_video.MOV/ })).toBeInTheDocument();
 
     // Filter by "corrupt"
-    const searchBox = screen.getByPlaceholderText("Filter quarantine…");
+    const searchBox = screen.getByRole("searchbox", { name: "Filter quarantined items" });
     const user = userEvent.setup();
     await user.type(searchBox, "corrupt");
 
@@ -102,6 +102,6 @@ describe("Quarantine", () => {
     // Filter with no matches
     await user.clear(searchBox);
     await user.type(searchBox, "nonexistent");
-    expect(screen.getByText("No items match your search.")).toBeInTheDocument();
+    expect(screen.getByText("No quarantined item matches.")).toBeInTheDocument();
   });
 });

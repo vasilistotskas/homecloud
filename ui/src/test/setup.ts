@@ -31,9 +31,29 @@ vi.stubGlobal(
   },
 );
 
+// jsdom has no IntersectionObserver (the library loads its next page when the
+// end of the grid scrolls into view); nothing is laid out, so nothing ever
+// comes into view.
+vi.stubGlobal(
+  "IntersectionObserver",
+  class {
+    observe(): void {
+      // No layout in jsdom: nothing intersects.
+    }
+    unobserve(): void {
+      // Nothing was observed.
+    }
+    disconnect(): void {
+      // Nothing was observed.
+    }
+  },
+);
+
 // jsdom does not implement scrolling (the shell scrolls each new page to its
-// top); nothing is laid out, so there is nothing to scroll.
+// top, the command palette its active option into view); nothing is laid
+// out, so there is nothing to scroll.
 vi.stubGlobal("scrollTo", () => undefined);
+Element.prototype.scrollIntoView = () => undefined;
 
 beforeEach(() => {
   window.location.hash = "#/";

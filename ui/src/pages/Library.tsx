@@ -27,6 +27,7 @@ import {
   Text,
   ToggleButton,
   tokens,
+  useArrowNavigationGroup,
 } from "@fluentui/react-components";
 import {
   ChevronLeftRegular,
@@ -42,10 +43,12 @@ import {
   MoreHorizontalRegular,
   VideoClipRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { useOverview } from "../api/overviewContext";
+import { narrowWindow } from "../app/breakpoints";
 import { usePlatform } from "../app/platformContext";
+import { readStored, storageKeys, writeStored } from "../app/storage";
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { mediaLabel } from "../components/labels";
@@ -85,11 +88,10 @@ const useStyles = makeStyles({
     gap: tokens.spacingVerticalXL,
   },
   month: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
-  tiles: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(112px, 1fr))",
-    gap: tokens.spacingHorizontalXS,
-  },
+  tiles: { display: "grid", gap: tokens.spacingHorizontalXS },
+  compact: { gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))" },
+  normal: { gridTemplateColumns: "repeat(auto-fill, minmax(112px, 1fr))" },
+  spacious: { gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" },
   tile: {
     position: "relative",
     aspectRatio: "1",
@@ -132,7 +134,7 @@ const useStyles = makeStyles({
     overflowY: "auto",
     gap: tokens.spacingVerticalM,
     boxSizing: "border-box",
-    "@media (max-width: 767px)": {
+    [narrowWindow]: {
       position: "fixed",
       top: "auto",
       bottom: 0,
@@ -145,6 +147,8 @@ const useStyles = makeStyles({
       borderRadius: `${tokens.borderRadiusXLarge} ${tokens.borderRadiusXLarge} 0 0`,
     },
   },
+  // Until the user picks an item, a narrow window shows no sheet over the grid.
+  detailUnpicked: { [narrowWindow]: { display: "none" } },
   detailHeader: {
     display: "flex",
     alignItems: "flex-start",
@@ -176,11 +180,11 @@ const useStyles = makeStyles({
   previewOverlay: {
     position: "absolute",
     inset: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backgroundColor: tokens.colorBackgroundOverlay,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    color: "#ffffff",
+    color: tokens.colorNeutralForegroundStaticInverted,
     opacity: 0,
     transition: "opacity 0.15s ease-in-out",
     borderRadius: tokens.borderRadiusMedium,
@@ -245,12 +249,12 @@ const kinds = [
 
 const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 
-const densities = [
-  { id: "compact", label: "Compact", size: 84 },
-  { id: "normal", label: "Normal", size: 120 },
-  { id: "spacious", label: "Spacious", size: 200 },
-] as const;
-type GridDensity = (typeof densities)[number]["id"];
+const densities = { compact: "Compact", normal: "Normal", spacious: "Spacious" } as const;
+type GridDensity = keyof typeof densities;
+
+function isDensity(v: unknown): v is GridDensity {
+  return typeof v === "string" && Object.hasOwn(densities, v);
+}
 
 /** Groups consecutive items (newest first) by the month they were taken. */
 function byMonth(items: LibraryItem[]): { title: string; items: LibraryItem[] }[] {
@@ -285,66 +289,35 @@ export function LibraryPage() {
   );
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [detailVisible, setDetailVisible] = useState(true);
-  const [density, setDensity] = useState<GridDensity>(() => {
-    const saved = localStorage.getItem("homecloud.gridDensity");
-    return saved === "compact" || saved === "spacious" ? saved : "normal";
-  });
+  const [density, setDensity] = useState<GridDensity>(() => readStored(storageKeys.gridDensity, isDensity) ?? "normal");
+  // Arrow keys move between tiles (Tab leaves the grid); the focused tile is the selected one.
+  const arrowKeys = useArrowNavigationGroup({ axis: "grid-linear", memorizeCurrent: true });
 
-  const onSelectDensity = (d: GridDensity) => {
-    setDensity(d);
-    localStorage.setItem("homecloud.gridDensity", d);
-  };
-
-  const currentSize = densities.find((d) => d.id === density)?.size ?? 120;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = q;
   const items = (q.data?.pages ?? []).flatMap((p) => p.items);
   const current = items.find((i) => itemKey(i) === selected) ?? items[0];
-  const currentTaken = current === undefined ? undefined : toDate(current.createdAt);
-
-  const currentIndex = current === undefined ? -1 : items.findIndex((i) => itemKey(i) === itemKey(current));
-  const hasPrev = currentIndex > 0;
-  const hasNext = currentIndex >= 0 && currentIndex < items.length - 1;
-
-  const selectPrev = () => {
-    const prev = items[currentIndex - 1];
-    if (hasPrev && prev !== undefined) {
-      setSelected(itemKey(prev));
-    }
-  };
-
-  const selectNext = () => {
-    const next = items[currentIndex + 1];
-    if (hasNext && next !== undefined) {
-      setSelected(itemKey(next));
-    }
-  };
-
-  // Keyboard navigation for photo grid and lightbox
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
-        return;
-      }
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        selectPrev();
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        selectNext();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  });
+  const index = current === undefined ? -1 : items.indexOf(current);
+  const prev = items[index - 1];
+  const next = items[index + 1];
+  // The lightbox steps past the loaded items by loading the next page.
+  const showNext =
+    next !== undefined
+      ? () => {
+          setSelected(itemKey(next));
+        }
+      : hasNextPage
+        ? () => {
+            void fetchNextPage().then((r) => {
+              const loaded = (r.data?.pages ?? []).flatMap((p) => p.items)[index + 1];
+              if (loaded !== undefined) {
+                setSelected(itemKey(loaded));
+              }
+            });
+          }
+        : undefined;
 
   // Load the next page when the end of the grid scrolls into view.
   const sentinel = useRef<HTMLDivElement>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = q;
   useEffect(() => {
     const el = sentinel.current;
     if (el === null) {
@@ -412,8 +385,10 @@ export function LibraryPage() {
           <Menu
             checkedValues={{ density: [density] }}
             onCheckedValueChange={(_, { name, checkedItems }) => {
-              if (name === "density" && checkedItems[0]) {
-                onSelectDensity(checkedItems[0] as GridDensity);
+              const d = checkedItems[0];
+              if (name === "density" && isDensity(d)) {
+                setDensity(d);
+                writeStored(storageKeys.gridDensity, d);
               }
             }}
           >
@@ -429,15 +404,11 @@ export function LibraryPage() {
               <MenuList>
                 <MenuGroup>
                   <MenuGroupHeader>Grid density</MenuGroupHeader>
-                  <MenuItemRadio name="density" value="compact">
-                    Compact
-                  </MenuItemRadio>
-                  <MenuItemRadio name="density" value="normal">
-                    Normal
-                  </MenuItemRadio>
-                  <MenuItemRadio name="density" value="spacious">
-                    Spacious
-                  </MenuItemRadio>
+                  {Object.entries(densities).map(([value, label]) => (
+                    <MenuItemRadio key={value} name="density" value={value}>
+                      {label}
+                    </MenuItemRadio>
+                  ))}
                 </MenuGroup>
               </MenuList>
             </MenuPopover>
@@ -455,14 +426,11 @@ export function LibraryPage() {
       )}
       {current !== undefined && (
         <div className={styles.split}>
-          <div className={styles.grid}>
+          <div className={styles.grid} {...arrowKeys}>
             {byMonth(items).map((group) => (
               <section key={group.title} className={styles.month} aria-label={group.title}>
                 <Subtitle2 as="h2">{group.title}</Subtitle2>
-                <div
-                  className={styles.tiles}
-                  style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${currentSize}px, 1fr))` }}
-                >
+                <div className={mergeClasses(styles.tiles, styles[density])}>
                   {group.items.map((item) => (
                     <button
                       key={item.asset?.assetId}
@@ -470,6 +438,9 @@ export function LibraryPage() {
                       className={mergeClasses(styles.tile, item === current && styles.selected)}
                       aria-label={tileLabel(item)}
                       aria-pressed={item === current}
+                      onFocus={() => {
+                        setSelected(itemKey(item));
+                      }}
                       onClick={() => {
                         setSelected(itemKey(item));
                         setDetailVisible(true);
@@ -507,6 +478,7 @@ export function LibraryPage() {
           {detailVisible && (
             <Detail
               item={current}
+              picked={selected !== undefined}
               onOpenLightbox={() => {
                 setLightboxOpen(true);
               }}
@@ -518,61 +490,20 @@ export function LibraryPage() {
         </div>
       )}
       {lightboxOpen && current !== undefined && (
-        <Dialog
-          open={lightboxOpen}
-          onOpenChange={(_, data) => {
-            setLightboxOpen(data.open);
-          }}
-        >
-          <DialogSurface className={styles.lightboxSurface}>
-            <DialogBody className={styles.lightboxBody}>
-              <DialogTitle
-                action={
-                  <DialogTrigger action="close">
-                    <Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} />
-                  </DialogTrigger>
+        <Lightbox
+          item={current}
+          onPrev={
+            prev === undefined
+              ? undefined
+              : () => {
+                  setSelected(itemKey(prev));
                 }
-              >
-                {current.asset?.filename ?? "Photo"}
-              </DialogTitle>
-              <DialogContent className={styles.lightboxContent}>
-                {current.previewUrl !== "" ? (
-                  <img
-                    className={styles.lightboxImage}
-                    src={platform.mediaUrl(current.previewUrl)}
-                    alt={current.asset?.filename ?? ""}
-                  />
-                ) : (
-                  <Text className={styles.muted}>No preview available.</Text>
-                )}
-                <div className={styles.lightboxFooter}>
-                  <Caption1 className={styles.muted}>
-                    {currentIndex + 1} of {items.length}
-                    {currentTaken !== undefined && ` · ${formatWhen(currentTaken)}`}
-                  </Caption1>
-                  <div className={styles.lightboxNav}>
-                    <Button
-                      icon={<ChevronLeftRegular />}
-                      disabled={!hasPrev}
-                      onClick={selectPrev}
-                      aria-label="Previous photo"
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      icon={<ChevronRightRegular />}
-                      disabled={!hasNext}
-                      onClick={selectNext}
-                      aria-label="Next photo"
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </DialogBody>
-          </DialogSurface>
-        </Dialog>
+          }
+          onNext={showNext}
+          onClose={() => {
+            setLightboxOpen(false);
+          }}
+        />
       )}
     </Page>
   );
@@ -606,14 +537,92 @@ const stateBadge: Record<AssetState, { label: string; color: "success" | "warnin
   [AssetState.QUARANTINED]: { label: "Quarantined", color: "danger" },
 };
 
+/** A picture at the size of the window; arrow keys step through the library. */
+function Lightbox({
+  item,
+  onPrev,
+  onNext,
+  onClose,
+}: {
+  item: LibraryItem;
+  onPrev: (() => void) | undefined;
+  onNext: (() => void) | undefined;
+  onClose: () => void;
+}) {
+  const styles = useStyles();
+  const platform = usePlatform();
+  const taken = toDate(item.createdAt);
+  const onKeyDown = (e: KeyboardEvent) => {
+    const step = { ArrowLeft: onPrev, ArrowRight: onNext }[e.key];
+    if (step !== undefined) {
+      e.preventDefault();
+      step();
+    }
+  };
+  return (
+    <Dialog
+      open
+      onOpenChange={(_, data) => {
+        if (!data.open) {
+          onClose();
+        }
+      }}
+    >
+      <DialogSurface className={styles.lightboxSurface} onKeyDown={onKeyDown}>
+        <DialogBody className={styles.lightboxBody}>
+          <DialogTitle
+            action={
+              <DialogTrigger action="close">
+                <Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} />
+              </DialogTrigger>
+            }
+          >
+            {item.asset?.filename}
+          </DialogTitle>
+          <DialogContent className={styles.lightboxContent}>
+            {item.previewUrl === "" ? (
+              <Text className={styles.muted}>No picture yet: this item&apos;s photo hasn&apos;t been downloaded.</Text>
+            ) : (
+              <img
+                className={styles.lightboxImage}
+                src={platform.mediaUrl(item.previewUrl)}
+                alt={item.asset?.filename ?? ""}
+              />
+            )}
+            <div className={styles.lightboxFooter}>
+              <Caption1 className={styles.muted}>{taken === undefined ? "" : formatWhen(taken)}</Caption1>
+              <div className={styles.lightboxNav}>
+                <Button icon={<ChevronLeftRegular />} disabledFocusable={onPrev === undefined} onClick={onPrev}>
+                  Previous
+                </Button>
+                <Button
+                  icon={<ChevronRightRegular />}
+                  iconPosition="after"
+                  disabledFocusable={onNext === undefined}
+                  onClick={onNext}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </DialogBody>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
 function Detail({
   item,
+  picked,
   onOpenLightbox,
   onClose,
 }: {
   item: LibraryItem;
+  /** Whether the user picked the item, rather than it being the first one. */
+  picked: boolean;
   onOpenLightbox: () => void;
-  onClose?: () => void;
+  onClose: () => void;
 }) {
   const styles = useStyles();
   const platform = usePlatform();
@@ -625,7 +634,7 @@ function Detail({
   const renditions = asset.data?.asset?.renditions ?? [];
   const display = renditions.find((r) => r.version === item.displayVersion);
   return (
-    <Card className={styles.detail} aria-label="Details">
+    <Card className={mergeClasses(styles.detail, !picked && styles.detailUnpicked)} aria-label="Details">
       <div className={styles.detailHeader}>
         <div className={styles.detailTitle}>
           <Subtitle1 as="h2">{ref?.filename}</Subtitle1>
@@ -634,15 +643,13 @@ function Detail({
             {taken !== undefined && ` · ${formatWhen(taken)}`}
           </Caption1>
         </div>
-        {onClose !== undefined && (
-          <Button
-            appearance="subtle"
-            size="small"
-            icon={<DismissRegular />}
-            aria-label="Close details"
-            onClick={onClose}
-          />
-        )}
+        <Button
+          appearance="subtle"
+          size="small"
+          icon={<DismissRegular />}
+          aria-label="Close details"
+          onClick={onClose}
+        />
       </div>
       {item.previewUrl === "" ? (
         <Text className={styles.muted}>No picture yet: this item&apos;s photo hasn&apos;t been downloaded.</Text>

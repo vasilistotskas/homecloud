@@ -6,7 +6,6 @@ import {
   Field,
   makeStyles,
   Option,
-  SearchBox,
   Spinner,
   Tab,
   Table,
@@ -51,29 +50,16 @@ import {
   type Run,
   type IPhoneBackupCopyEvent,
 } from "../gen/homecloud/agent/v3/agent_pb";
+import { activityTabs, isActivityTab, type ActivityTab } from "./activityTabs";
 
 const useStyles = makeStyles({
   filters: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalM },
 });
 
-const tabs = {
-  runs: "Syncs",
-  integrity: "Integrity checks",
-  backups: "Records backups",
-  iphone: "iPhone backups",
-  drive: "iCloud Drive",
-  events: "Events",
-} as const;
-type ActivityTab = keyof typeof tabs;
-
-function isTab(v: unknown): v is ActivityTab {
-  return typeof v === "string" && Object.hasOwn(tabs, v);
-}
-
 export function ActivityPage() {
   const loc = useLocation();
   const tabParam = loc.search.get("tab");
-  const tab: ActivityTab = isTab(tabParam) ? tabParam : "runs";
+  const tab: ActivityTab = isActivityTab(tabParam) ? tabParam : "runs";
 
   const onTabSelect = (selectedTab: ActivityTab) => {
     navigate("/activity", {
@@ -87,12 +73,12 @@ export function ActivityPage() {
       <TabList
         selectedValue={tab}
         onTabSelect={(_, d) => {
-          if (isTab(d.value)) {
+          if (isActivityTab(d.value)) {
             onTabSelect(d.value);
           }
         }}
       >
-        {Object.entries(tabs).map(([value, label]) => (
+        {Object.entries(activityTabs).map(([value, label]) => (
           <Tab key={value} value={value}>
             {label}
           </Tab>
@@ -465,7 +451,6 @@ function Events() {
   const styles = useStyles();
   const table = useTableStyles();
   const [filter, setFilter] = useState<Filter>("all");
-  const [searchQuery, setSearchQuery] = useState("");
   const settings = useQuery(AgentService.method.getSettings, {});
   const q = useInfiniteQuery(
     AgentService.method.listEvents,
@@ -474,20 +459,6 @@ function Events() {
   );
   const events = q.data?.pages.flatMap((p) => p.events) ?? [];
   const driveDir = settings.data?.settings?.driveDir;
-
-  const normalizedQuery = searchQuery.trim().toLowerCase();
-  const filteredEvents =
-    normalizedQuery === ""
-      ? events
-      : events.filter((e) => {
-          const d = describe(e, driveDir);
-          const filename = e.asset?.filename ?? "";
-          return (
-            filename.toLowerCase().includes(normalizedQuery) ||
-            d.text.toLowerCase().includes(normalizedQuery) ||
-            d.kind.toLowerCase().includes(normalizedQuery)
-          );
-        });
 
   return (
     <>
@@ -509,15 +480,6 @@ function Events() {
             ))}
           </Dropdown>
         </Field>
-        <Field label="Search">
-          <SearchBox
-            placeholder="Search events…"
-            value={searchQuery}
-            onChange={(_, d) => {
-              setSearchQuery(d.value);
-            }}
-          />
-        </Field>
       </div>
       {q.isPending ? (
         <Spinner label="Loading events…" />
@@ -535,7 +497,7 @@ function Events() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredEvents.map((e) => {
+              {events.map((e) => {
                 const d = describe(e, driveDir);
                 const at = toDate(e.at);
                 return (
@@ -553,11 +515,7 @@ function Events() {
               })}
             </TableBody>
           </Table>
-          {filteredEvents.length === 0 && (
-            <Text className={table.muted}>
-              {events.length === 0 ? "Nothing recorded yet." : "No events match your search."}
-            </Text>
-          )}
+          {events.length === 0 && <Text className={table.muted}>Nothing recorded yet.</Text>}
         </Card>
       )}
       <MoreButton q={q} />

@@ -1,5 +1,5 @@
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
-import { useMutation, useQuery } from "@connectrpc/connect-query";
+import { useQuery } from "@connectrpc/connect-query";
 import {
   Badge,
   Button,
@@ -39,6 +39,7 @@ import {
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 
 import { useOverview } from "../api/overviewContext";
+import { useStartSync } from "../api/sync";
 import { usePlatform } from "../app/platformContext";
 import { href, navigate } from "../app/router";
 import { CommandDialog, type CommandState } from "../components/CommandDialog";
@@ -55,6 +56,7 @@ import {
 } from "../components/labels";
 import { Page } from "../components/Page";
 import { runRow } from "../components/runs";
+import { useTableStyles } from "../components/tables";
 import { useNotify } from "../components/toast";
 import { formatBytes, formatCount, formatInterval, formatRelative, formatWhen, toDate } from "../format";
 import { icloudLoginCommand, keiLoginCommand, terminalName } from "../shell";
@@ -135,10 +137,6 @@ const useStyles = makeStyles({
     padding: `${tokens.spacingVerticalXXXL} ${tokens.spacingHorizontalXXL}`,
     gap: tokens.spacingVerticalL,
   },
-  tableBox: { overflowX: "auto" },
-  nowrap: { whiteSpace: "nowrap" },
-  num: { textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
-  th: { whiteSpace: "nowrap" },
   cardAction: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS },
   chipsRow: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalS, marginTop: tokens.spacingVerticalXS },
   storageChip: {
@@ -148,8 +146,6 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground2,
     fontSize: tokens.fontSizeBase100,
   },
-  // Fluent tables default to equal fixed-width columns; size columns to their content instead.
-  table: { tableLayout: "auto" },
   offlineActions: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: tokens.spacingHorizontalM },
 });
 
@@ -158,32 +154,11 @@ export function OverviewPage() {
   const { overview, connection, receivedAt, reconnect, problem } = useOverview();
   const settings = useQuery(AgentService.method.getSettings, {});
   const info = useQuery(AgentService.method.getInfo, {});
-  const notify = useNotify();
-  const phase = overview?.activity?.phase ?? Phase.UNSPECIFIED;
-  const syncing = cyclePhases.has(phase);
-  const startSync = useMutation(AgentService.method.startSync, {
-    onSuccess: (res) => {
-      if (!res.started) {
-        notify("info", "A sync is already running or queued");
-      } else if (phase !== Phase.IDLE) {
-        notify("info", "Sync queued: it starts as soon as the current job finishes");
-      }
-    },
-    onError: (err) => {
-      notify("error", "Couldn't start a sync", err.message);
-    },
-  });
+  const sync = useStartSync();
 
   const actions = (
-    <Button
-      appearance="primary"
-      icon={<ArrowSyncRegular />}
-      disabled={connection !== "live" || syncing || startSync.isPending}
-      onClick={() => {
-        startSync.mutate({});
-      }}
-    >
-      {syncing ? "Syncing…" : "Sync now"}
+    <Button appearance="primary" icon={<ArrowSyncRegular />} disabled={!sync.canStart} onClick={sync.start}>
+      {sync.syncing ? "Syncing…" : "Sync now"}
     </Button>
   );
 
@@ -230,14 +205,6 @@ export function OverviewPage() {
     </Page>
   );
 }
-
-/** Phases of a sync cycle; the others are idle time or maintenance jobs. */
-const cyclePhases: ReadonlySet<Phase> = new Set([
-  Phase.DOWNLOADING,
-  Phase.INGESTING,
-  Phase.VERIFYING,
-  Phase.PREPARING_PREVIEWS,
-]);
 
 function ArchiveUnavailable({ problem }: { problem: string | undefined }) {
   return (
@@ -655,7 +622,6 @@ function StorageCard({ overview }: { overview: Overview }) {
   const photosFiles = overview.archive?.files ?? 0n;
   const driveFiles = overview.icloudDrive?.files ?? 0n;
   const driveBytes = overview.icloudDrive?.bytes ?? 0n;
-  const iphoneCopies = overview.lastIphoneBackup?.iphoneBackup?.archived ?? 0n;
 
   return (
     <Card>
@@ -698,11 +664,6 @@ function StorageCard({ overview }: { overview: Overview }) {
         {driveFiles > 0n || driveBytes > 0n ? (
           <span className={styles.storageChip}>
             Drive: {formatBytes(driveBytes)} ({formatCount(driveFiles)})
-          </span>
-        ) : null}
-        {iphoneCopies > 0n ? (
-          <span className={styles.storageChip}>
-            iPhone: {formatCount(iphoneCopies)} {iphoneCopies === 1n ? "copy" : "copies"}
           </span>
         ) : null}
       </div>
@@ -758,7 +719,7 @@ function ScheduleCard({ overview, settings }: { overview: Overview; settings: Se
 }
 
 function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
-  const styles = useStyles();
+  const table = useTableStyles();
   const runs = useQuery(AgentService.method.listRuns, { kind: RunKind.CYCLE, pageSize: 5 });
   const { refetch } = runs;
   useEffect(() => {
@@ -770,34 +731,40 @@ function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
         header={<Subtitle2 as="h2">Recent syncs</Subtitle2>}
         action={<Link href={href("/activity")}>View all activity</Link>}
       />
-      <div className={styles.tableBox}>
-        <Table size="small" aria-label="Recent syncs" className={styles.table}>
+      <div className={table.tableBox}>
+        <Table size="small" aria-label="Recent syncs" className={table.table}>
           <TableHeader>
             <TableRow>
-              <TableHeaderCell className={styles.th}>Started</TableHeaderCell>
-              <TableHeaderCell className={styles.th}>Download</TableHeaderCell>
-              <TableHeaderCell className={styles.th}>New</TableHeaderCell>
-              <TableHeaderCell className={styles.th}>Checked</TableHeaderCell>
-              <TableHeaderCell className={styles.th}>Took</TableHeaderCell>
-              <TableHeaderCell className={styles.th}>Result</TableHeaderCell>
+              <TableHeaderCell className={table.th}>Started</TableHeaderCell>
+              <TableHeaderCell className={table.th}>Download</TableHeaderCell>
+              <TableHeaderCell className={table.th} button={{ className: table.numHead }}>
+                New
+              </TableHeaderCell>
+              <TableHeaderCell className={table.th} button={{ className: table.numHead }}>
+                Checked
+              </TableHeaderCell>
+              <TableHeaderCell className={table.th} button={{ className: table.numHead }}>
+                Took
+              </TableHeaderCell>
+              <TableHeaderCell className={table.th}>Result</TableHeaderCell>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(runs.data?.runs ?? []).map(runRow).map((r) => (
               <TableRow key={r.id}>
-                <TableCell className={styles.nowrap}>{r.started}</TableCell>
-                <TableCell className={styles.nowrap}>{r.download}</TableCell>
-                <TableCell className={styles.num}>{r.added}</TableCell>
-                <TableCell className={styles.num}>{r.checked}</TableCell>
-                <TableCell className={styles.num}>{r.took}</TableCell>
-                <TableCell className={styles.nowrap}>{r.result}</TableCell>
+                <TableCell className={table.nowrap}>{r.started}</TableCell>
+                <TableCell className={table.nowrap}>{r.download}</TableCell>
+                <TableCell className={table.num}>{r.added}</TableCell>
+                <TableCell className={table.num}>{r.checked}</TableCell>
+                <TableCell className={table.num}>{r.took}</TableCell>
+                <TableCell className={table.nowrap}>{r.result}</TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
       {runs.isError && <LoadError what="recent syncs" error={runs.error} onRetry={() => void runs.refetch()} />}
-      {runs.data?.runs.length === 0 && <Text className={styles.muted}>No syncs yet.</Text>}
+      {runs.data?.runs.length === 0 && <Text className={table.muted}>No syncs yet.</Text>}
     </Card>
   );
 }
