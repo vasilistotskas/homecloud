@@ -39,7 +39,7 @@ const (
 )
 
 // ManifestRow is one asset version from `kei manifest --format json`.
-// Nullability mirrors kei's ManifestRow (src/commands/manifest.rs, v0.24.1).
+// Nullability mirrors kei's ManifestRow (src/commands/manifest.rs, v0.25.0).
 // kei documents that the schema may grow, so unknown members are ignored.
 type ManifestRow struct {
 	Library          string     `json:"library"`

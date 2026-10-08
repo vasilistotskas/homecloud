@@ -14,7 +14,7 @@ import (
 )
 
 // reportVersion is the schema of kei's sync report that this package reads
-// (kei src/report.rs, v0.24.1: "Schema v3").
+// (kei src/report.rs, v0.25.0: "Schema v3").
 const reportVersion = "3"
 
 // Report is what kei recorded about one sync in its JSON report: only its

@@ -12,7 +12,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
-// Outcome classifies a completed kei sync by exit code (kei src/lib.rs, v0.24.1).
+// Outcome classifies a completed kei sync by exit code (kei src/lib.rs, v0.25.0).
 type Outcome int
 
 // Sync outcomes.
