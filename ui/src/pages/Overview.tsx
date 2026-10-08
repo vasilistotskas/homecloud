@@ -140,6 +140,14 @@ const useStyles = makeStyles({
   num: { textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   th: { whiteSpace: "nowrap" },
   cardAction: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS },
+  chipsRow: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalS, marginTop: tokens.spacingVerticalXS },
+  storageChip: {
+    padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalS}`,
+    borderRadius: tokens.borderRadiusCircular,
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase100,
+  },
   // Fluent tables default to equal fixed-width columns; size columns to their content instead.
   table: { tableLayout: "auto" },
   offlineActions: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: tokens.spacingHorizontalM },
@@ -643,6 +651,12 @@ function StorageCard({ overview }: { overview: Overview }) {
   const other = Math.max(0, total - free - archive);
   const pct = (v: number) => (total === 0 ? 0 : (v / total) * 100);
   const minFree = s?.minFreePercent ?? 0;
+
+  const photosFiles = overview.archive?.files ?? 0n;
+  const driveFiles = overview.icloudDrive?.files ?? 0n;
+  const driveBytes = overview.icloudDrive?.bytes ?? 0n;
+  const iphoneCopies = overview.lastIphoneBackup?.iphoneBackup?.archived ?? 0n;
+
   return (
     <Card>
       <CardHeader
@@ -676,6 +690,21 @@ function StorageCard({ overview }: { overview: Overview }) {
           <span className={styles.swatch} style={{ width: "2px", backgroundColor: tokens.colorNeutralForeground1 }} />
           Keeps at least {minFree}% free
         </Caption1>
+      </div>
+      <div className={styles.chipsRow} aria-label="Archive breakdown">
+        <span className={styles.storageChip}>
+          Photos: {formatBytes(archive)} ({formatCount(photosFiles)})
+        </span>
+        {driveFiles > 0n || driveBytes > 0n ? (
+          <span className={styles.storageChip}>
+            Drive: {formatBytes(driveBytes)} ({formatCount(driveFiles)})
+          </span>
+        ) : null}
+        {iphoneCopies > 0n ? (
+          <span className={styles.storageChip}>
+            iPhone: {formatCount(iphoneCopies)} {iphoneCopies === 1n ? "copy" : "copies"}
+          </span>
+        ) : null}
       </div>
     </Card>
   );

@@ -8,23 +8,24 @@ import {
   makeStyles,
   MessageBar,
   MessageBarBody,
+  SearchBox,
   Spinner,
   Subtitle1,
   Text,
   ToggleButton,
   tokens,
 } from "@fluentui/react-components";
-import { FolderOpenRegular } from "@fluentui/react-icons";
+import { CopyRegular, FolderOpenRegular } from "@fluentui/react-icons";
 import { useQueryClient } from "@tanstack/react-query";
-
-import { LoadError } from "../components/LoadError";
 import { useState } from "react";
 
 import { usePlatform } from "../app/platformContext";
+import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { ReleaseDialog } from "../components/ReleaseDialog";
 import { mediaLabel, tierLabel } from "../components/labels";
 import { useNotify } from "../components/toast";
+import { useCopy } from "../components/useCopy";
 import { formatBytes, formatWhen, toDate } from "../format";
 import { AgentService, type QuarantinedAsset, type Rendition } from "../gen/homecloud/agent/v3/agent_pb";
 
@@ -59,8 +60,19 @@ export function QuarantinePage() {
   const styles = useStyles();
   const list = useQuery(AgentService.method.listQuarantine, {});
   const [selected, setSelected] = useState<string | undefined>(undefined);
+  const [searchQuery, setSearchQuery] = useState("");
   const assets = list.data?.assets ?? [];
-  const current = assets.find((a) => a.asset?.assetId === selected) ?? assets[0];
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredAssets =
+    normalizedQuery === ""
+      ? assets
+      : assets.filter((a) => {
+          const fn = a.asset?.filename ?? "";
+          const s = summary(a);
+          return fn.toLowerCase().includes(normalizedQuery) || s.toLowerCase().includes(normalizedQuery);
+        });
+  const current = filteredAssets.find((a) => a.asset?.assetId === selected) ?? filteredAssets[0];
 
   return (
     <Page title="Quarantine">
@@ -76,26 +88,37 @@ export function QuarantinePage() {
           <MessageBarBody>Nothing is in quarantine. Every archived file passed its checks.</MessageBarBody>
         </MessageBar>
       )}
-      {current !== undefined && (
+      {assets.length > 0 && (
         <div className={styles.split}>
           <Card className={styles.list} role="list" aria-label="Quarantined items">
-            {assets.map((a) => (
-              <div role="listitem" key={a.asset?.assetId}>
-                <ToggleButton
-                  appearance="subtle"
-                  className={styles.item}
-                  checked={a === current}
-                  onClick={() => {
-                    setSelected(a.asset?.assetId);
-                  }}
-                >
-                  <Text weight="semibold">{a.asset?.filename}</Text>
-                  <Caption1>{summary(a)}</Caption1>
-                </ToggleButton>
-              </div>
-            ))}
+            <SearchBox
+              placeholder="Filter quarantine…"
+              value={searchQuery}
+              onChange={(_, d) => {
+                setSearchQuery(d.value);
+              }}
+            />
+            {filteredAssets.length === 0 ? (
+              <Text className={styles.dt}>No items match your search.</Text>
+            ) : (
+              filteredAssets.map((a) => (
+                <div role="listitem" key={a.asset?.assetId}>
+                  <ToggleButton
+                    appearance="subtle"
+                    className={styles.item}
+                    checked={a === current}
+                    onClick={() => {
+                      setSelected(a.asset?.assetId);
+                    }}
+                  >
+                    <Text weight="semibold">{a.asset?.filename}</Text>
+                    <Caption1>{summary(a)}</Caption1>
+                  </ToggleButton>
+                </div>
+              ))
+            )}
           </Card>
-          <Detail item={current} />
+          {current !== undefined && <Detail item={current} />}
         </div>
       )}
     </Page>
@@ -118,6 +141,7 @@ function checks(r: Rendition): string {
 function Detail({ item }: { item: QuarantinedAsset }) {
   const styles = useStyles();
   const notify = useNotify();
+  const copy = useCopy();
   const platform = usePlatform();
   const queryClient = useQueryClient();
   const ref = item.asset;
@@ -163,20 +187,34 @@ function Detail({ item }: { item: QuarantinedAsset }) {
           <dt className={styles.dt}>On disk</dt>
           <dd className={`${styles.dd} ${styles.mono}`}>
             {r.localPath}
-            {platform.kind === "desktop" && platform.connection.kind === "this_pc" && (
+            <span
+              style={{ display: "inline-flex", gap: tokens.spacingHorizontalXS, marginLeft: tokens.spacingHorizontalS }}
+            >
+              {platform.kind === "desktop" && platform.connection.kind === "this_pc" && (
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<FolderOpenRegular />}
+                  onClick={() => {
+                    platform.revealInFolder(r.localPath).catch((err: unknown) => {
+                      notify("error", "Couldn't show the file", String(err));
+                    });
+                  }}
+                >
+                  Show in folder
+                </Button>
+              )}
               <Button
                 size="small"
                 appearance="subtle"
-                icon={<FolderOpenRegular />}
+                icon={<CopyRegular />}
                 onClick={() => {
-                  platform.revealInFolder(r.localPath).catch((err: unknown) => {
-                    notify("error", "Couldn't show the file", String(err));
-                  });
+                  copy(r.localPath, "Path");
                 }}
               >
-                Show in folder
+                Copy path
               </Button>
-            )}
+            </span>
           </dd>
           <dt className={styles.dt}>Checks</dt>
           <dd className={styles.dd}>{checks(r)}</dd>

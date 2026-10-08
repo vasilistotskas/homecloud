@@ -24,6 +24,7 @@ import {
 import {
   ChevronLeftRegular,
   ChevronRightRegular,
+  CopyRegular,
   DismissRegular,
   EyeOffRegular,
   FolderOpenRegular,
@@ -40,11 +41,19 @@ import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { mediaLabel } from "../components/labels";
 import { useNotify } from "../components/toast";
+import { useCopy } from "../components/useCopy";
 import { formatBytes, formatCount, formatWhen, toDate } from "../format";
 import { AgentService, AssetKind, AssetState, type LibraryItem } from "../gen/homecloud/agent/v3/agent_pb";
 
 const useStyles = makeStyles({
   filters: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: tokens.spacingHorizontalS },
+  densityGroup: {
+    marginLeft: "auto",
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXS,
+  },
+  actionsRow: { display: "flex", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
   split: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalL, alignItems: "flex-start" },
   grid: { flex: "999 1 520px", minWidth: 0, display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXL },
   month: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalS },
@@ -177,6 +186,13 @@ const kinds = [
 
 const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 
+const densities = [
+  { id: "compact", label: "Compact", size: 84 },
+  { id: "normal", label: "Normal", size: 120 },
+  { id: "spacious", label: "Spacious", size: 200 },
+] as const;
+type GridDensity = (typeof densities)[number]["id"];
+
 /** Groups consecutive items (newest first) by the month they were taken. */
 function byMonth(items: LibraryItem[]): { title: string; items: LibraryItem[] }[] {
   const groups: { title: string; items: LibraryItem[] }[] = [];
@@ -209,6 +225,17 @@ export function LibraryPage() {
     },
   );
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [density, setDensity] = useState<GridDensity>(() => {
+    const saved = localStorage.getItem("homecloud.gridDensity");
+    return saved === "compact" || saved === "spacious" ? saved : "normal";
+  });
+
+  const onSelectDensity = (d: GridDensity) => {
+    setDensity(d);
+    localStorage.setItem("homecloud.gridDensity", d);
+  };
+
+  const currentSize = densities.find((d) => d.id === density)?.size ?? 120;
   const items = (q.data?.pages ?? []).flatMap((p) => p.items);
   const current = items.find((i) => itemKey(i) === selected) ?? items[0];
   const currentTaken = current === undefined ? undefined : toDate(current.createdAt);
@@ -309,6 +336,20 @@ export function LibraryPage() {
         >
           Hidden
         </ToggleButton>
+        <div className={styles.densityGroup} role="group" aria-label="Grid density">
+          {densities.map((d) => (
+            <ToggleButton
+              key={d.id}
+              size="small"
+              checked={density === d.id}
+              onClick={() => {
+                onSelectDensity(d.id);
+              }}
+            >
+              {d.label}
+            </ToggleButton>
+          ))}
+        </div>
       </div>
       {q.isPending && <Spinner label="Loading the library…" />}
       {q.isError && <LoadError what="the library" error={q.error} onRetry={() => void q.refetch()} />}
@@ -325,7 +366,10 @@ export function LibraryPage() {
             {byMonth(items).map((group) => (
               <section key={group.title} className={styles.month} aria-label={group.title}>
                 <Subtitle2 as="h2">{group.title}</Subtitle2>
-                <div className={styles.tiles}>
+                <div
+                  className={styles.tiles}
+                  style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${currentSize}px, 1fr))` }}
+                >
                   {group.items.map((item) => (
                     <button
                       key={item.asset?.assetId}
@@ -463,6 +507,7 @@ function Detail({ item, onOpenLightbox }: { item: LibraryItem; onOpenLightbox: (
   const styles = useStyles();
   const platform = usePlatform();
   const notify = useNotify();
+  const copy = useCopy();
   const ref = item.asset;
   const asset = useQuery(AgentService.method.getAsset, { library: ref?.library ?? "", assetId: ref?.assetId ?? "" });
   const taken = toDate(item.createdAt);
@@ -506,17 +551,29 @@ function Detail({ item, onOpenLightbox }: { item: LibraryItem; onOpenLightbox: (
         </div>
       )}
       {display !== undefined && <Text className={styles.path}>{display.localPath}</Text>}
-      {platform.kind === "desktop" && platform.connection.kind === "this_pc" && display !== undefined && (
-        <Button
-          icon={<FolderOpenRegular />}
-          onClick={() => {
-            platform.revealInFolder(display.localPath).catch((err: unknown) => {
-              notify("error", "Couldn't show the file", String(err));
-            });
-          }}
-        >
-          Show in folder
-        </Button>
+      {display !== undefined && (
+        <div className={styles.actionsRow}>
+          {platform.kind === "desktop" && platform.connection.kind === "this_pc" && (
+            <Button
+              icon={<FolderOpenRegular />}
+              onClick={() => {
+                platform.revealInFolder(display.localPath).catch((err: unknown) => {
+                  notify("error", "Couldn't show the file", String(err));
+                });
+              }}
+            >
+              Show in folder
+            </Button>
+          )}
+          <Button
+            icon={<CopyRegular />}
+            onClick={() => {
+              copy(display.localPath, "Path");
+            }}
+          >
+            Copy path
+          </Button>
+        </div>
       )}
     </Card>
   );

@@ -118,4 +118,31 @@ describe("Library", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Next photo" }));
     expect(screen.getByText(/2 of 3/)).toBeInTheDocument();
   });
+
+  it("toggles grid density and saves to localStorage", async () => {
+    localStorage.clear();
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { archive: { files: 1n, bytes: 1024n } }) };
+          await new Promise(() => undefined);
+        },
+        listAssets: () => ({
+          items: [item("A1", new Date(2026, 9, 3), AssetKind.PHOTO)],
+        }),
+        getAsset: () => create(GetAssetResponseSchema),
+      });
+    });
+    window.location.hash = "#/library";
+    render(<App transport={transport} platform={desktopLike} />);
+
+    expect(await screen.findByRole("button", { name: "Compact" })).toBeInTheDocument();
+    const compactBtn = screen.getByRole("button", { name: "Compact" });
+    await userEvent.setup().click(compactBtn);
+    expect(localStorage.getItem("homecloud.gridDensity")).toBe("compact");
+
+    const spaciousBtn = screen.getByRole("button", { name: "Spacious" });
+    await userEvent.setup().click(spaciousBtn);
+    expect(localStorage.getItem("homecloud.gridDensity")).toBe("spacious");
+  });
 });

@@ -6,6 +6,7 @@ import {
   NavDrawerFooter,
   NavDrawerHeader,
   NavItem,
+  Spinner,
   Text,
   Toaster,
   tokens,
@@ -15,13 +16,16 @@ import {
   HistoryRegular,
   HomeRegular,
   ImageMultipleRegular,
+  SearchRegular,
   SettingsRegular,
   ShieldErrorRegular,
 } from "@fluentui/react-icons";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useOverview, type Connection } from "../api/overviewContext";
+import { CommandPalette } from "../components/CommandPalette";
 import { toasterId } from "../components/toast";
+import { Phase } from "../gen/homecloud/agent/v3/agent_pb";
 import { isPath, navigate, useLocation } from "./router";
 
 const useStyles = makeStyles({
@@ -41,6 +45,43 @@ const useStyles = makeStyles({
   },
   brand: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS },
   brandIcon: { fontSize: "24px", color: tokens.colorBrandForeground1 },
+  searchTrigger: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`,
+    marginTop: tokens.spacingVerticalS,
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground3,
+    color: tokens.colorNeutralForeground3,
+    cursor: "pointer",
+    fontSize: tokens.fontSizeBase200,
+    ":hover": {
+      backgroundColor: tokens.colorNeutralBackground3Hover,
+      color: tokens.colorNeutralForeground1,
+    },
+  },
+  searchIconLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalXS,
+  },
+  kbdPill: {
+    padding: "1px 6px",
+    borderRadius: tokens.borderRadiusSmall,
+    backgroundColor: tokens.colorNeutralBackground1,
+    border: `1px solid ${tokens.colorNeutralStroke1}`,
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground2,
+  },
+  syncPill: {
+    marginLeft: "auto",
+    display: "flex",
+    alignItems: "center",
+  },
   main: {
     flex: "999 1 560px",
     minWidth: 0,
@@ -89,6 +130,20 @@ export function Shell({ children }: { children: ReactNode }) {
     window.scrollTo(0, 0);
   }, [path]);
   const { overview, connection } = useOverview();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   // A browser without a session is sent to pair once, when the agent rejects it.
   useEffect(() => {
@@ -99,6 +154,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
   const quarantined = Number(overview?.assets?.quarantined ?? 0n);
   const status = connectionStatus[connection];
+  const phase = overview?.activity?.phase ?? Phase.UNSPECIFIED;
+  const isSyncing =
+    phase === Phase.DOWNLOADING ||
+    phase === Phase.INGESTING ||
+    phase === Phase.VERIFYING ||
+    phase === Phase.PREPARING_PREVIEWS;
 
   return (
     <div className={styles.root}>
@@ -120,11 +181,29 @@ export function Shell({ children }: { children: ReactNode }) {
               homecloud
             </Text>
           </div>
+          <button
+            type="button"
+            className={styles.searchTrigger}
+            onClick={() => {
+              setPaletteOpen(true);
+            }}
+            aria-label="Open command palette"
+          >
+            <span className={styles.searchIconLabel}>
+              <SearchRegular /> Search
+            </span>
+            <kbd className={styles.kbdPill}>Ctrl+K</kbd>
+          </button>
         </NavDrawerHeader>
         <NavDrawerBody>
           {pages.map((p) => (
             <NavItem key={p.path} value={p.path} icon={p.icon}>
               {p.label}
+              {p.path === "/activity" && isSyncing && (
+                <span className={styles.syncPill}>
+                  <Spinner size="extra-tiny" />
+                </span>
+              )}
               {p.path === "/quarantine" && quarantined > 0 && (
                 <CounterBadge
                   className={styles.badge}
@@ -147,6 +226,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <main ref={mainRef} className={styles.main}>
         {children}
       </main>
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <Toaster toasterId={toasterId} position="bottom-end" />
     </div>
   );
