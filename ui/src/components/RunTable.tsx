@@ -110,14 +110,20 @@ export function RunTable({
         <Table size="small" aria-label={noun.charAt(0).toUpperCase() + noun.slice(1)} className={styles.table}>
           <TableHeader>
             <TableRow>
-              <TableHeaderCell>Started</TableHeaderCell>
+              <TableHeaderCell className={styles.th}>Started</TableHeaderCell>
               {columns.map((c) => (
-                <TableHeaderCell key={c.header} button={c.numeric === true ? { className: styles.numHead } : undefined}>
+                <TableHeaderCell
+                  key={c.header}
+                  className={styles.th}
+                  button={c.numeric === true ? { className: styles.numHead } : undefined}
+                >
                   {c.header}
                 </TableHeaderCell>
               ))}
-              <TableHeaderCell button={{ className: styles.numHead }}>Took</TableHeaderCell>
-              <TableHeaderCell>Result</TableHeaderCell>
+              <TableHeaderCell className={styles.th} button={{ className: styles.numHead }}>
+                Took
+              </TableHeaderCell>
+              <TableHeaderCell className={styles.th}>Result</TableHeaderCell>
             </TableRow>
           </TableHeader>
           <TableBody>

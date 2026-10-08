@@ -6,6 +6,7 @@ import {
   Field,
   makeStyles,
   Option,
+  SearchBox,
   Spinner,
   Tab,
   Table,
@@ -20,6 +21,7 @@ import {
 } from "@fluentui/react-components";
 import { useState } from "react";
 
+import { navigate, useLocation } from "../app/router";
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { MoreButton, RunBadge, RunTable } from "../components/RunTable";
@@ -69,14 +71,24 @@ function isTab(v: unknown): v is ActivityTab {
 }
 
 export function ActivityPage() {
-  const [tab, setTab] = useState<ActivityTab>("runs");
+  const loc = useLocation();
+  const tabParam = loc.search.get("tab");
+  const tab: ActivityTab = isTab(tabParam) ? tabParam : "runs";
+
+  const onTabSelect = (selectedTab: ActivityTab) => {
+    navigate("/activity", {
+      replace: true,
+      search: selectedTab === "runs" ? undefined : { tab: selectedTab },
+    });
+  };
+
   return (
     <Page title="Activity">
       <TabList
         selectedValue={tab}
         onTabSelect={(_, d) => {
           if (isTab(d.value)) {
-            setTab(d.value);
+            onTabSelect(d.value);
           }
         }}
       >
@@ -453,6 +465,7 @@ function Events() {
   const styles = useStyles();
   const table = useTableStyles();
   const [filter, setFilter] = useState<Filter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const settings = useQuery(AgentService.method.getSettings, {});
   const q = useInfiniteQuery(
     AgentService.method.listEvents,
@@ -461,6 +474,21 @@ function Events() {
   );
   const events = q.data?.pages.flatMap((p) => p.events) ?? [];
   const driveDir = settings.data?.settings?.driveDir;
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredEvents =
+    normalizedQuery === ""
+      ? events
+      : events.filter((e) => {
+          const d = describe(e, driveDir);
+          const filename = e.asset?.filename ?? "";
+          return (
+            filename.toLowerCase().includes(normalizedQuery) ||
+            d.text.toLowerCase().includes(normalizedQuery) ||
+            d.kind.toLowerCase().includes(normalizedQuery)
+          );
+        });
+
   return (
     <>
       <div className={styles.filters}>
@@ -481,6 +509,15 @@ function Events() {
             ))}
           </Dropdown>
         </Field>
+        <Field label="Search">
+          <SearchBox
+            placeholder="Search events…"
+            value={searchQuery}
+            onChange={(_, d) => {
+              setSearchQuery(d.value);
+            }}
+          />
+        </Field>
       </div>
       {q.isPending ? (
         <Spinner label="Loading events…" />
@@ -491,20 +528,20 @@ function Events() {
           <Table size="small" aria-label="Events" className={table.table}>
             <TableHeader>
               <TableRow>
-                <TableHeaderCell>When</TableHeaderCell>
-                <TableHeaderCell>Event</TableHeaderCell>
-                <TableHeaderCell>Item</TableHeaderCell>
-                <TableHeaderCell>Detail</TableHeaderCell>
+                <TableHeaderCell className={table.th}>When</TableHeaderCell>
+                <TableHeaderCell className={table.th}>Event</TableHeaderCell>
+                <TableHeaderCell className={table.th}>Item</TableHeaderCell>
+                <TableHeaderCell className={table.th}>Detail</TableHeaderCell>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {events.map((e) => {
+              {filteredEvents.map((e) => {
                 const d = describe(e, driveDir);
                 const at = toDate(e.at);
                 return (
                   <TableRow key={e.id.toString()}>
                     <TableCell className={table.nowrap}>{at === undefined ? dash : formatWhen(at)}</TableCell>
-                    <TableCell>
+                    <TableCell className={table.nowrap}>
                       <Badge appearance="tint" color={d.color}>
                         {d.kind}
                       </Badge>
@@ -516,7 +553,11 @@ function Events() {
               })}
             </TableBody>
           </Table>
-          {events.length === 0 && <Text className={table.muted}>Nothing recorded yet.</Text>}
+          {filteredEvents.length === 0 && (
+            <Text className={table.muted}>
+              {events.length === 0 ? "Nothing recorded yet." : "No events match your search."}
+            </Text>
+          )}
         </Card>
       )}
       <MoreButton q={q} />

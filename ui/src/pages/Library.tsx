@@ -4,6 +4,12 @@ import {
   Button,
   Caption1,
   Card,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  DialogTrigger,
   makeStyles,
   mergeClasses,
   MessageBar,
@@ -16,10 +22,14 @@ import {
   tokens,
 } from "@fluentui/react-components";
 import {
+  ChevronLeftRegular,
+  ChevronRightRegular,
+  DismissRegular,
   EyeOffRegular,
   FolderOpenRegular,
   ImageOffRegular,
   LiveRegular,
+  MaximizeRegular,
   VideoClipRegular,
 } from "@fluentui/react-icons";
 import { useEffect, useRef, useState } from "react";
@@ -84,6 +94,70 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     backgroundColor: tokens.colorNeutralBackground3,
   },
+  previewButton: {
+    padding: 0,
+    border: "none",
+    background: "none",
+    cursor: "pointer",
+    borderRadius: tokens.borderRadiusMedium,
+    position: "relative",
+    display: "block",
+    width: "100%",
+    ":focus-visible": { outline: `3px solid ${tokens.colorStrokeFocus2}` },
+  },
+  previewOverlay: {
+    position: "absolute",
+    inset: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#ffffff",
+    opacity: 0,
+    transition: "opacity 0.15s ease-in-out",
+    borderRadius: tokens.borderRadiusMedium,
+    ":hover": { opacity: 1 },
+  },
+  lightboxSurface: {
+    maxWidth: "94vw",
+    width: "fit-content",
+    maxHeight: "94vh",
+    display: "flex",
+    flexDirection: "column",
+    padding: tokens.spacingHorizontalM,
+  },
+  lightboxBody: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: tokens.spacingVerticalM,
+    minHeight: 0,
+  },
+  lightboxContent: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: tokens.spacingVerticalM,
+    minHeight: 0,
+  },
+  lightboxImage: {
+    maxWidth: "88vw",
+    maxHeight: "72vh",
+    objectFit: "contain",
+    borderRadius: tokens.borderRadiusMedium,
+    boxShadow: tokens.shadow16,
+  },
+  lightboxFooter: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    marginTop: tokens.spacingVerticalS,
+  },
+  lightboxNav: {
+    display: "flex",
+    gap: tokens.spacingHorizontalS,
+  },
   facts: {
     display: "grid",
     gridTemplateColumns: "auto 1fr",
@@ -134,8 +208,52 @@ export function LibraryPage() {
       getNextPageParam: (last) => (last.nextPageToken === "" ? undefined : last.nextPageToken),
     },
   );
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const items = (q.data?.pages ?? []).flatMap((p) => p.items);
   const current = items.find((i) => itemKey(i) === selected) ?? items[0];
+  const currentTaken = current === undefined ? undefined : toDate(current.createdAt);
+
+  const currentIndex = current === undefined ? -1 : items.findIndex((i) => itemKey(i) === itemKey(current));
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < items.length - 1;
+
+  const selectPrev = () => {
+    const prev = items[currentIndex - 1];
+    if (hasPrev && prev !== undefined) {
+      setSelected(itemKey(prev));
+    }
+  };
+
+  const selectNext = () => {
+    const next = items[currentIndex + 1];
+    if (hasNext && next !== undefined) {
+      setSelected(itemKey(next));
+    }
+  };
+
+  // Keyboard navigation for photo grid and lightbox
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        selectPrev();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        selectNext();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  });
 
   // Load the next page when the end of the grid scrolls into view.
   const sentinel = useRef<HTMLDivElement>(null);
@@ -244,8 +362,70 @@ export function LibraryPage() {
             <div ref={sentinel} className={styles.sentinel} />
             {isFetchingNextPage && <Spinner size="tiny" />}
           </div>
-          <Detail item={current} />
+          <Detail
+            item={current}
+            onOpenLightbox={() => {
+              setLightboxOpen(true);
+            }}
+          />
         </div>
+      )}
+      {lightboxOpen && current !== undefined && (
+        <Dialog
+          open={lightboxOpen}
+          onOpenChange={(_, data) => {
+            setLightboxOpen(data.open);
+          }}
+        >
+          <DialogSurface className={styles.lightboxSurface}>
+            <DialogBody className={styles.lightboxBody}>
+              <DialogTitle
+                action={
+                  <DialogTrigger action="close">
+                    <Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} />
+                  </DialogTrigger>
+                }
+              >
+                {current.asset?.filename ?? "Photo"}
+              </DialogTitle>
+              <DialogContent className={styles.lightboxContent}>
+                {current.previewUrl !== "" ? (
+                  <img
+                    className={styles.lightboxImage}
+                    src={platform.mediaUrl(current.previewUrl)}
+                    alt={current.asset?.filename ?? ""}
+                  />
+                ) : (
+                  <Text className={styles.muted}>No preview available.</Text>
+                )}
+                <div className={styles.lightboxFooter}>
+                  <Caption1 className={styles.muted}>
+                    {currentIndex + 1} of {items.length}
+                    {currentTaken !== undefined && ` · ${formatWhen(currentTaken)}`}
+                  </Caption1>
+                  <div className={styles.lightboxNav}>
+                    <Button
+                      icon={<ChevronLeftRegular />}
+                      disabled={!hasPrev}
+                      onClick={selectPrev}
+                      aria-label="Previous photo"
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      icon={<ChevronRightRegular />}
+                      disabled={!hasNext}
+                      onClick={selectNext}
+                      aria-label="Next photo"
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
       )}
     </Page>
   );
@@ -279,7 +459,7 @@ const stateBadge: Record<AssetState, { label: string; color: "success" | "warnin
   [AssetState.QUARANTINED]: { label: "Quarantined", color: "danger" },
 };
 
-function Detail({ item }: { item: LibraryItem }) {
+function Detail({ item, onOpenLightbox }: { item: LibraryItem; onOpenLightbox: () => void }) {
   const styles = useStyles();
   const platform = usePlatform();
   const notify = useNotify();
@@ -293,7 +473,12 @@ function Detail({ item }: { item: LibraryItem }) {
       {item.previewUrl === "" ? (
         <Text className={styles.muted}>No picture yet: this item&apos;s photo hasn&apos;t been downloaded.</Text>
       ) : (
-        <img className={styles.preview} src={platform.mediaUrl(item.previewUrl)} alt={ref?.filename ?? ""} />
+        <button type="button" className={styles.previewButton} onClick={onOpenLightbox} aria-label="Enlarge photo">
+          <img className={styles.preview} src={platform.mediaUrl(item.previewUrl)} alt={ref?.filename ?? ""} />
+          <span className={styles.previewOverlay}>
+            <MaximizeRegular fontSize={24} />
+          </span>
+        </button>
       )}
       <div>
         <Subtitle1 as="h2">{ref?.filename}</Subtitle1>

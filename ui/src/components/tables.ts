@@ -5,9 +5,10 @@ import type { Run } from "../gen/homecloud/agent/v3/agent_pb";
 
 export const useTableStyles = makeStyles({
   tableBox: { overflowX: "auto" },
-  num: { textAlign: "right", fontVariantNumeric: "tabular-nums" },
+  num: { textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   // Header cells wrap their label in a flex container (the `button` slot); align it like the values.
-  numHead: { justifyContent: "flex-end" },
+  numHead: { justifyContent: "flex-end", whiteSpace: "nowrap" },
+  th: { whiteSpace: "nowrap" },
   // Fluent tables default to equal fixed-width columns; size columns to their content instead.
   table: { tableLayout: "auto" },
   nowrap: { whiteSpace: "nowrap" },

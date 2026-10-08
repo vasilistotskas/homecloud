@@ -18,6 +18,7 @@ import {
   RunKind,
   RunResult,
   SettingsSchema,
+  Tier,
 } from "../gen/homecloud/agent/v3/agent_pb";
 
 const browser: Platform = { kind: "browser", mediaUrl: (path) => path, logError: (m) => expect.unreachable(m) };
@@ -219,5 +220,85 @@ describe("Activity", () => {
         "iCloud Drive/c.pdf; the previous copy is kept at D:/Archive/Drive/.versions/20261006T120000Z/iCloud Drive/c.pdf",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("deep-links directly to integrity tab from hash query param", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, {}) };
+          await never();
+        },
+        getSettings: () => ({ settings: create(SettingsSchema, {}) }),
+        listRuns: (req) =>
+          create(ListRunsResponseSchema, {
+            runs:
+              req.kind === RunKind.SCRUB
+                ? [
+                    {
+                      id: 7n,
+                      kind: "scrub",
+                      result: RunResult.FAILED,
+                      startedAt: { seconds: 1_790_000_000n },
+                      finishedAt: { seconds: 1_790_000_060n },
+                      scrub: { eligible: 6040n, checked: 302n, passed: 301n, mismatched: 1n },
+                    },
+                  ]
+                : [],
+          }),
+      });
+    });
+    window.location.hash = "#/activity?tab=integrity";
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("302 of 6,040")).toBeInTheDocument();
+  });
+
+  it("filters events by search query", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, {}) };
+          await never();
+        },
+        getSettings: () => ({ settings: create(SettingsSchema, {}) }),
+        listEvents: () =>
+          create(ListEventsResponseSchema, {
+            events: [
+              {
+                id: 10n,
+                at: { seconds: 1_790_000_000n },
+                asset: { library: "icloud_drive", assetId: "FILE::z::X", filename: "invoice.pdf" },
+                detail: {
+                  case: "driveFile",
+                  value: {
+                    change: DriveFileChange.ARCHIVED,
+                    path: "iCloud Drive/invoice.pdf",
+                    sizeBytes: 2048n,
+                  },
+                },
+              },
+              {
+                id: 11n,
+                at: { seconds: 1_790_000_100n },
+                asset: { library: "photos", assetId: "PHOTO::z::Y", filename: "vacation.heic" },
+                detail: {
+                  case: "quarantined",
+                  value: { tier: Tier.CONTENT, reason: "corrupted stream" },
+                },
+              },
+            ],
+          }),
+      });
+    });
+    window.location.hash = "#/activity?tab=events";
+    render(<App transport={transport} platform={browser} />);
+    expect(await screen.findByText("invoice.pdf")).toBeInTheDocument();
+    expect(screen.getByText("vacation.heic")).toBeInTheDocument();
+
+    const searchInput = screen.getByPlaceholderText("Search events…");
+    await userEvent.setup().type(searchInput, "invoice");
+
+    expect(screen.getByText("invoice.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("vacation.heic")).not.toBeInTheDocument();
   });
 });

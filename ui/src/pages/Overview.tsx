@@ -137,6 +137,9 @@ const useStyles = makeStyles({
   },
   tableBox: { overflowX: "auto" },
   nowrap: { whiteSpace: "nowrap" },
+  num: { textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
+  th: { whiteSpace: "nowrap" },
+  cardAction: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS },
   // Fluent tables default to equal fixed-width columns; size columns to their content instead.
   table: { tableLayout: "auto" },
   offlineActions: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: tokens.spacingHorizontalM },
@@ -742,23 +745,23 @@ function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
         <Table size="small" aria-label="Recent syncs" className={styles.table}>
           <TableHeader>
             <TableRow>
-              <TableHeaderCell>Started</TableHeaderCell>
-              <TableHeaderCell>Download</TableHeaderCell>
-              <TableHeaderCell>New</TableHeaderCell>
-              <TableHeaderCell>Checked</TableHeaderCell>
-              <TableHeaderCell>Took</TableHeaderCell>
-              <TableHeaderCell>Result</TableHeaderCell>
+              <TableHeaderCell className={styles.th}>Started</TableHeaderCell>
+              <TableHeaderCell className={styles.th}>Download</TableHeaderCell>
+              <TableHeaderCell className={styles.th}>New</TableHeaderCell>
+              <TableHeaderCell className={styles.th}>Checked</TableHeaderCell>
+              <TableHeaderCell className={styles.th}>Took</TableHeaderCell>
+              <TableHeaderCell className={styles.th}>Result</TableHeaderCell>
             </TableRow>
           </TableHeader>
           <TableBody>
             {(runs.data?.runs ?? []).map(runRow).map((r) => (
               <TableRow key={r.id}>
                 <TableCell className={styles.nowrap}>{r.started}</TableCell>
-                <TableCell>{r.download}</TableCell>
-                <TableCell>{r.added}</TableCell>
-                <TableCell>{r.checked}</TableCell>
-                <TableCell>{r.took}</TableCell>
-                <TableCell>{r.result}</TableCell>
+                <TableCell className={styles.nowrap}>{r.download}</TableCell>
+                <TableCell className={styles.num}>{r.added}</TableCell>
+                <TableCell className={styles.num}>{r.checked}</TableCell>
+                <TableCell className={styles.num}>{r.took}</TableCell>
+                <TableCell className={styles.nowrap}>{r.result}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -1005,9 +1008,12 @@ function IPhoneBackupCard({ overview, settings }: { overview: Overview; settings
         image={<PhoneRegular fontSize={20} />}
         header={<Subtitle2 as="h2">iPhone backups</Subtitle2>}
         action={
-          <Badge appearance="tint" color={summary.color}>
-            {summary.label}
-          </Badge>
+          <div className={styles.cardAction}>
+            <Badge appearance="tint" color={summary.color}>
+              {summary.label}
+            </Badge>
+            <Link href={href("/activity", { tab: "iphone" })}>History</Link>
+          </div>
         }
       />
       {devices.length === 0 && summary.detail !== "" && <Text>{summary.detail}</Text>}
@@ -1109,9 +1115,12 @@ function ICloudDriveCard({ overview, env }: { overview: Overview; env: Env }) {
         image={<CloudArchiveRegular fontSize={20} />}
         header={<Subtitle2 as="h2">iCloud Drive</Subtitle2>}
         action={
-          <Badge appearance="tint" color={outcome.color}>
-            {outcome.label}
-          </Badge>
+          <div className={styles.cardAction}>
+            <Badge appearance="tint" color={outcome.color}>
+              {outcome.label}
+            </Badge>
+            <Link href={href("/activity", { tab: "drive" })}>History</Link>
+          </div>
         }
       />
       <Facts facts={facts} />
@@ -1197,9 +1206,12 @@ function IntegrityCard({ overview, settings }: { overview: Overview; settings: S
         image={<ShieldCheckmarkRegular fontSize={20} />}
         header={<Subtitle2 as="h2">Integrity</Subtitle2>}
         action={
-          <Badge appearance="tint" color={badge.color}>
-            {badge.label}
-          </Badge>
+          <div className={styles.cardAction}>
+            <Badge appearance="tint" color={badge.color}>
+              {badge.label}
+            </Badge>
+            <Link href={href("/activity", { tab: "integrity" })}>History</Link>
+          </div>
         }
       />
       <Facts facts={facts} />

@@ -73,4 +73,49 @@ describe("Library", () => {
     expect(await screen.findByRole("button", { name: /H1.HEIC/ })).toBeInTheDocument();
     expect(hiddenRequests).toContain(true);
   });
+
+  it("navigates photos with arrow keys and opens lightbox preview", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { archive: { files: 3n, bytes: 1024n } }) };
+          await new Promise(() => undefined);
+        },
+        listAssets: () => ({
+          items: [
+            item("A1", new Date(2026, 9, 3), AssetKind.PHOTO),
+            item("A2", new Date(2026, 9, 2), AssetKind.PHOTO),
+            item("A3", new Date(2026, 9, 1), AssetKind.PHOTO),
+          ],
+        }),
+        getAsset: () => create(GetAssetResponseSchema),
+      });
+    });
+    window.location.hash = "#/library";
+    render(<App transport={transport} platform={desktopLike} />);
+
+    // Initially A1 is selected
+    expect(await screen.findByRole("heading", { level: 2, name: "A1.HEIC" })).toBeInTheDocument();
+
+    // ArrowRight navigates to next item (A2)
+    await userEvent.keyboard("{ArrowRight}");
+    expect(await screen.findByRole("heading", { level: 2, name: "A2.HEIC" })).toBeInTheDocument();
+
+    // ArrowLeft navigates back to A1
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(await screen.findByRole("heading", { level: 2, name: "A1.HEIC" })).toBeInTheDocument();
+
+    // Open lightbox
+    const enlargeBtn = screen.getByRole("button", { name: "Enlarge photo" });
+    await userEvent.setup().click(enlargeBtn);
+
+    // Lightbox dialog should open with title, image, and navigation buttons
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next photo" })).toBeInTheDocument();
+    expect(screen.getByText(/1 of 3/)).toBeInTheDocument();
+
+    // Click next photo in lightbox
+    await userEvent.setup().click(screen.getByRole("button", { name: "Next photo" }));
+    expect(screen.getByText(/2 of 3/)).toBeInTheDocument();
+  });
 });
