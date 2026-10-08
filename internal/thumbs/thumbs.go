@@ -212,13 +212,13 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 	}
 	defer func() { <-r.sem }()
 
-	preview, isRaw, err := rawPreview(src.Path)
+	preview, format, isRaw, err := rawPreview(src.Path)
 	if err != nil {
 		return err
 	}
 	input, tiled := tool.FFmpegFile(src.Path), false
 	if isRaw {
-		input = tool.FFmpegStdin("jpeg_pipe")
+		input = tool.FFmpegStdin(format)
 	} else if tiled, err = r.isTiled(ctx, src.Path); err != nil {
 		return err
 	}
@@ -249,7 +249,7 @@ func (r *Renderer) render(ctx context.Context, src Source, size Size, dest strin
 }
 
 // renderArgs builds the ffmpeg command line for input: the source file
-// (tool.FFmpegFile) or a raw's embedded JPEG preview on standard input
+// (tool.FFmpegFile) or a raw's embedded JPEG or JPEG XL preview on standard input
 // (tool.FFmpegStdin; -nostdin only disables interactive keyboard control). Tiled HEIF images (iPhone HEIC) expose their picture as stream
 // group 0, which the filter graph must stitch; everything else is a plain
 // video stream, of which the first frame is used. ffmpeg applies EXIF and

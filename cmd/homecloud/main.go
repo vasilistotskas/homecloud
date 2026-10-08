@@ -90,6 +90,17 @@ func newApp() *program {
 							}
 						},
 					},
+					{
+						name:  "repair",
+						usage: "move corrupted renditions to .corrupted and release quarantine so the next cycle re-downloads from iCloud",
+						define: func(f *flags) action {
+							library := f.requiredString("library", "library of the asset (see quarantine list)")
+							asset := f.requiredString("asset", "asset id")
+							return func(ctx context.Context, c *call) error {
+								return runQuarantineRepair(ctx, c, *library, *asset)
+							}
+						},
+					},
 				},
 			},
 			{
@@ -285,6 +296,28 @@ func runQuarantineRelease(ctx context.Context, c *call, library, asset, reason s
 		return fmt.Errorf("quarantine release: %w", err)
 	}
 	return printf(c, "released %s/%s; it will be re-verified on the next verify run\n", library, asset)
+}
+
+func runQuarantineRepair(ctx context.Context, c *call, library, asset string) (err error) {
+	cfg, err := loadConfig(c)
+	if err != nil {
+		return err
+	}
+	lock, err := acquireLedgerWriter("repair quarantine in the app (homecloud open)")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, lock.Release()) }()
+	db, err := openLedger(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, db.Close()) }()
+
+	if err := db.RepairQuarantine(ctx, library, asset, cfg.Storage.Root, time.Now()); err != nil {
+		return fmt.Errorf("quarantine repair: %w", err)
+	}
+	return printf(c, "repaired %s/%s: corrupted renditions moved to .corrupted; clean copies will be downloaded on the next cycle\n", library, asset)
 }
 
 func runNotifyTest(ctx context.Context, c *call) error {

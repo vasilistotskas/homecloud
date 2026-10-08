@@ -244,16 +244,22 @@ func TestDNGPreviewInOneTile(t *testing.T) {
 	}
 }
 
-// DNG 1.7 allows JPEG XL previews (Compression 52546). A JPEG preview beside
-// one is used; a DNG whose only primary preview is JPEG XL is reported as
-// such, since homecloud's FFmpeg does not decode JPEG XL.
+// DNG 1.7 allows JPEG XL previews (Compression 52546). Both JPEG and JPEG XL
+// previews are supported and extracted.
 func TestDNGPreviewJPEGXL(t *testing.T) {
 	jxl := []byte{0xff, 0x0a, 1, 2, 3, 4} // a bare JPEG XL codestream signature
 	only := &tiffBuilder{order: binary.LittleEndian}
 	only.ifd("ifd0", "", append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"), dngVersion())...)
 	only.data("jxl", jxl)
-	if _, isDNG, err := preview(t, only.bytes()); !isDNG || !errors.Is(err, errJPEGXLPreview) {
-		t.Fatalf("JPEG XL only: isDNG=%v err=%v, want errJPEGXLPreview", isDNG, err)
+	ref, isDNG, err := preview(t, only.bytes())
+	if !isDNG || err != nil {
+		t.Fatalf("JPEG XL only: isDNG=%v err=%v, want valid preview", isDNG, err)
+	}
+	if ref.format != "jpegxl_pipe" {
+		t.Fatalf("JPEG XL format = %s, want jpegxl_pipe", ref.format)
+	}
+	if got := previewBytes(t, only.bytes()); !bytes.Equal(got, jxl) {
+		t.Fatalf("JPEG XL only: got %x, want %x", got, jxl)
 	}
 
 	jpg := testJPEG(t, 16, 12)
@@ -263,11 +269,27 @@ func TestDNGPreviewJPEGXL(t *testing.T) {
 	both.data("jxl", jxl)
 	both.data("jpg", jpg)
 	if got := previewBytes(t, both.bytes()); !bytes.Equal(got, jpg) {
-		t.Fatalf("JPEG XL and JPEG: picked %d bytes, want the JPEG", len(got))
+		t.Fatalf("JPEG XL and JPEG: picked %d bytes, want the JPEG (larger area)", len(got))
+	}
+
+	// Larger JPEG XL preview wins over smaller JPEG thumbnail
+	jxlLargeFields := append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"),
+		long(tagImageWidth, 64),
+		long(tagImageLength, 48),
+		subIFDs("thumb"),
+		dngVersion(),
+	)
+	jxlWins := &tiffBuilder{order: binary.LittleEndian}
+	jxlWins.ifd("ifd0", "", jxlLargeFields...)
+	jxlWins.ifd("thumb", "", stripImage(subfilePrimaryPreview, compressionJPEG, "jpg")...)
+	jxlWins.data("jxl", jxl)
+	jxlWins.data("jpg", jpg)
+	if got := previewBytes(t, jxlWins.bytes()); !bytes.Equal(got, jxl) {
+		t.Fatalf("larger JPEG XL preview: got %d bytes, want JXL (%d bytes)", len(got), len(jxl))
 	}
 }
 
-func TestDNGPreviewNeedsAPrimaryJPEGPreview(t *testing.T) {
+func TestDNGPreviewNeedsAPrimaryPreview(t *testing.T) {
 	jpg := testJPEG(t, 32, 24)
 	cases := map[string]*tiffBuilder{}
 	for name, subfile := range map[string]uint32{
@@ -291,8 +313,8 @@ func TestDNGPreviewNeedsAPrimaryJPEGPreview(t *testing.T) {
 	cases["preview only in an IFD chain"] = chained
 
 	for name, b := range cases {
-		if _, isDNG, err := preview(t, b.bytes()); !isDNG || !errors.Is(err, errNoJPEGPreview) {
-			t.Errorf("%s: isDNG=%v err=%v; want errNoJPEGPreview", name, isDNG, err)
+		if _, isDNG, err := preview(t, b.bytes()); !isDNG || !errors.Is(err, errNoPreview) {
+			t.Errorf("%s: isDNG=%v err=%v; want errNoPreview", name, isDNG, err)
 		}
 	}
 }

@@ -261,7 +261,7 @@ unit (`loginctl enable-linger` keeps it running on a headless host).
 
 `Dockerfile` builds one image for `linux/amd64` and `linux/arm64` with the agent, the CLI, kei
 and FFmpeg, every input pinned (base images by digest, kei by its release checksums, FFmpeg 9.0.2
-from its signed release tarball, with libwebp and zlib only). The agent is the entrypoint.
+from its signed release tarball, with libwebp, libjxl and zlib). The agent is the entrypoint.
 
 ```sh
 docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$(git rev-parse --short HEAD) -t homecloud .
@@ -406,6 +406,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud status` | Asset counts by state |
 | `homecloud quarantine list` | Files that failed a check, with the reason |
 | `homecloud quarantine release --library L --asset A --reason R` | Lift a quarantine (audited); the asset's files are checked again |
+| `homecloud quarantine repair --library L --asset A` | Move corrupted renditions to `<storage.root>/.corrupted/<timestamp>/` and reset the asset to `downloaded` for re-download on next sync |
 | `homecloud verify` | Ingest kei's manifest and run all outstanding verification, without iCloud |
 | `homecloud notify-test` | Send a test push notification |
 | `homecloud install` / `uninstall` | Register / remove the logon task (Windows) or systemd user unit (Linux) |

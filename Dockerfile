@@ -54,8 +54,9 @@ RUN set -eu; \
 
 # FFmpeg from its release tarball (signed with FFmpeg's release key
 # FCF986EA15E6E293A5644F10B4322F04D67658D8; the checksum below is of the
-# verified tarball), compiled for the target with libwebp (thumbnails) and
-# zlib (PNG); autodetection is off so nothing else slips in. Only ffmpeg and
+# verified tarball), compiled for the target with libwebp (thumbnails),
+# libjxl (JPEG XL / iOS 18 ProRAW) and zlib (PNG); autodetection is off so
+# nothing else slips in. Only ffmpeg and
 # ffprobe are built, without network support.
 FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS ffmpeg
 ARG BUILDARCH
@@ -73,7 +74,7 @@ RUN set -eu; \
     if [ "$TARGETARCH" = "$BUILDARCH" ]; then cross=""; else dpkg --add-architecture "$TARGETARCH"; fi; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl xz-utils make pkg-config nasm gcc libc6-dev \
-      $cross "libwebp-dev:$TARGETARCH" "zlib1g-dev:$TARGETARCH"; \
+      $cross "libwebp-dev:$TARGETARCH" "libjxl-dev:$TARGETARCH" "zlib1g-dev:$TARGETARCH"; \
     rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
     curl -fsSL -o /tmp/ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz"; \
@@ -92,7 +93,7 @@ RUN set -eu; \
     PKG_CONFIG_LIBDIR="/usr/lib/${triple}/pkgconfig:/usr/share/pkgconfig" ./configure \
       --prefix=/opt/ffmpeg $cross \
       --pkg-config=pkg-config \
-      --enable-libwebp --enable-zlib \
+      --enable-libwebp --enable-libjxl --enable-zlib \
       --disable-ffplay --disable-doc --disable-network --disable-debug --disable-autodetect; \
     make -j"$(nproc)"; \
     make install
@@ -113,7 +114,7 @@ ARG SMARTMONTOOLS_VERSION=7.5-2~bpo13+1
 RUN printf 'Types: deb\nURIs: http://deb.debian.org/debian\nSuites: trixie-backports\nComponents: main\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' \
         > /etc/apt/sources.list.d/backports.sources \
     && apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tzdata libdbus-1-3 libwebp7 libwebpmux3 libsharpyuv0 zlib1g libcap2-bin \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata libdbus-1-3 libwebp7 libwebpmux3 libsharpyuv0 libjxl0.11 zlib1g libcap2-bin \
     && apt-get install -y --no-install-recommends -t trixie-backports "smartmontools=${SMARTMONTOOLS_VERSION}" \
     && find / -xdev -type f -perm /6000 -exec chmod a-s {} + \
     && setcap cap_dac_override,cap_sys_rawio,cap_sys_admin+ep /usr/sbin/smartctl \

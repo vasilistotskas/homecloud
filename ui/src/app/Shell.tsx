@@ -106,7 +106,7 @@ export function Shell({ children }: { children: ReactNode }) {
         open
         type="inline"
         className={styles.nav}
-        selectedValue={path}
+        selectedValue={path ?? "/"}
         onNavItemSelect={(_, data) => {
           if (isPath(data.value)) {
             navigate(data.value);

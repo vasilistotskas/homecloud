@@ -77,6 +77,9 @@ func TestRenderArgs(t *testing.T) {
 	if got := renderArgs(tool.FFmpegStdin("jpeg_pipe"), "out.webp", "scale=1", false); !strings.Contains(strings.Join(got, " "), "-protocol_whitelist pipe -f jpeg_pipe -i pipe:0 -vf scale=1") {
 		t.Fatalf("raw preview args = %v", got)
 	}
+	if got := renderArgs(tool.FFmpegStdin("jpegxl_pipe"), "out.webp", "scale=1", false); !strings.Contains(strings.Join(got, " "), "-protocol_whitelist pipe -f jpegxl_pipe -i pipe:0 -vf scale=1") {
+		t.Fatalf("raw jxl preview args = %v", got)
+	}
 }
 
 func TestParseSize(t *testing.T) {

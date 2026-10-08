@@ -44,6 +44,8 @@ const (
 	ServiceDrive = "drivews"
 	// ServiceDocs downloads iCloud Drive file contents.
 	ServiceDocs = "docws"
+	// ServiceCKDatabase manages CloudKit databases (Photos CPLAsset records).
+	ServiceCKDatabase = "ckdatabasews"
 )
 
 // ErrSignInRequired means the saved session no longer works and the owner

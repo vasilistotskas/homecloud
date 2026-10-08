@@ -3,6 +3,8 @@ package ledger
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -102,5 +104,37 @@ func TestReleaseQuarantine(t *testing.T) {
 	events, err := db.Events(ctx, []string{"quarantine_released"}, 0, 5)
 	if err != nil || len(events) != 1 || !strings.Contains(events[0].Detail, "rule fixed") {
 		t.Fatalf("events = %+v, %v", events, err)
+	}
+}
+
+func TestRepairQuarantine(t *testing.T) {
+	db, _ := openTemp(t)
+	ctx := context.Background()
+	tmp := t.TempDir()
+	r := rendition("R2", "original", "photo", true)
+	r.LocalPath = filepath.Join(tmp, "photo.jpg")
+	if err := os.WriteFile(r.LocalPath, []byte("corrupt-data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ingest(t, db, r)
+	if err := db.RecordMismatch(ctx, Key{"PrimarySync", "R2", "original"}, TierContent, "bad sha256", t0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.RepairQuarantine(ctx, "PrimarySync", "R2", tmp, t0); err != nil {
+		t.Fatalf("RepairQuarantine failed: %v", err)
+	}
+
+	if got := state(t, db, "R2"); got != StateDownloaded {
+		t.Fatalf("state = %s, want downloaded", got)
+	}
+	// The original file should have been moved aside
+	if _, err := os.Stat(r.LocalPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("original file %s should have been moved, got err: %v", r.LocalPath, err)
+	}
+	// The event should be recorded
+	events, err := db.Events(ctx, []string{"quarantine_repaired"}, 0, 5)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("events = %+v, %v; want 1 quarantine_repaired event", events, err)
 	}
 }

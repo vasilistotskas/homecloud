@@ -141,6 +141,7 @@ func run() (err error) {
 		log.InfoContext(ctx, "thumbnail cache pruned", "superseded", removed)
 	}
 	agent := app.NewAgent(cfg, db, log, notifier, logs.kei, renderer, time.Now)
+	agent.SetConfigPath(cfgPath)
 
 	// The local API is non-critical: if it cannot serve, archiving continues.
 	webDone := make(chan struct{})

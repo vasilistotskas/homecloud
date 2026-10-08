@@ -13,8 +13,6 @@ import (
 
 // TIFF tags the fixture writes besides those the walker reads (TIFF 6.0).
 const (
-	tagImageWidth      = 256
-	tagImageLength     = 257
 	tagBitsPerSample   = 258
 	tagPhotometric     = 262
 	tagSamplesPerPixel = 277
@@ -73,15 +71,43 @@ func TestRawPreview(t *testing.T) {
 	dir := t.TempDir()
 	preview := testJPEG(t, 64, 48)
 
-	got, isRaw, err := rawPreview(writeTIFF(t, dir, preview, 64, 48, true))
+	got, format, isRaw, err := rawPreview(writeTIFF(t, dir, preview, 64, 48, true))
 	if err != nil || !isRaw {
 		t.Fatalf("DNG: isRaw=%v err=%v, want the embedded preview", isRaw, err)
+	}
+	if format != "jpeg_pipe" {
+		t.Fatalf("DNG format = %s, want jpeg_pipe", format)
 	}
 	if !bytes.Equal(got, preview) {
 		t.Fatalf("DNG preview = %d bytes, want the embedded %d-byte JPEG", len(got), len(preview))
 	}
 
-	if _, isRaw, err := rawPreview(writeTIFF(t, dir, preview, 64, 48, false)); err != nil || isRaw {
+	// JPEG XL preview in DNG
+	jxl := []byte{0xff, 0x0a, 1, 2, 3, 4}
+	jxlFields := append(stripImage(subfilePrimaryPreview, compressionJPEGXL, "jxl"),
+		long(tagImageWidth, 64),
+		long(tagImageLength, 48),
+		dngVersion(),
+	)
+	jxlBuilder := &tiffBuilder{order: binary.LittleEndian}
+	jxlBuilder.ifd("ifd0", "", jxlFields...)
+	jxlBuilder.data("jxl", jxl)
+	jxlPath := filepath.Join(dir, "IMG_JXL.DNG")
+	if writeErr := os.WriteFile(jxlPath, jxlBuilder.bytes(), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	gotJXL, jxlFormat, isRawJXL, jxlErr := rawPreview(jxlPath)
+	if jxlErr != nil || !isRawJXL {
+		t.Fatalf("JPEG XL DNG: isRaw=%v err=%v", isRawJXL, jxlErr)
+	}
+	if jxlFormat != "jpegxl_pipe" {
+		t.Fatalf("JPEG XL format = %s, want jpegxl_pipe", jxlFormat)
+	}
+	if !bytes.Equal(gotJXL, jxl) {
+		t.Fatalf("JPEG XL preview mismatch")
+	}
+
+	if _, _, isRaw, err := rawPreview(writeTIFF(t, dir, preview, 64, 48, false)); err != nil || isRaw {
 		t.Fatalf("plain TIFF: isRaw=%v err=%v, want it rendered as itself", isRaw, err)
 	}
 
@@ -89,7 +115,7 @@ func TestRawPreview(t *testing.T) {
 	if err := os.WriteFile(jpg, preview, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, isRaw, err := rawPreview(jpg); err != nil || isRaw {
+	if _, _, isRaw, err := rawPreview(jpg); err != nil || isRaw {
 		t.Fatalf("JPEG: isRaw=%v err=%v", isRaw, err)
 	}
 
@@ -98,11 +124,11 @@ func TestRawPreview(t *testing.T) {
 	if err := os.WriteFile(mov, append([]byte{0, 0, 0, 0x14, 'f', 't', 'y', 'p', 'q', 't', ' ', ' '}, make([]byte, 64)...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, isRaw, err := rawPreview(mov); err != nil || isRaw {
+	if _, _, isRaw, err := rawPreview(mov); err != nil || isRaw {
 		t.Fatalf("movie: isRaw=%v err=%v, want it rendered as itself", isRaw, err)
 	}
 
-	if _, _, err := rawPreview(filepath.Join(dir, "missing.dng")); err == nil {
+	if _, _, _, err := rawPreview(filepath.Join(dir, "missing.dng")); err == nil {
 		t.Fatal("missing file: want an error")
 	}
 }

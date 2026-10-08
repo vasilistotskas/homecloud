@@ -1,6 +1,7 @@
 package thumbs
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/binary"
 	"errors"
@@ -18,6 +19,8 @@ import (
 // Tags the walker reads.
 const (
 	tagNewSubfileType  = 254
+	tagImageWidth      = 256
+	tagImageLength     = 257
 	tagCompression     = 259
 	tagStripOffsets    = 273
 	tagStripByteCounts = 279
@@ -37,8 +40,7 @@ const (
 	// preview it must be baseline DCT JPEG (DNG 1.7.1.0, Compression).
 	compressionJPEG = 7
 	// compressionJPEGXL is JPEG XL, new in DNG 1.7.0.0, which may also hold a
-	// preview (DNG 1.7.1.0, Compression). It is recognised, not extracted:
-	// the container image's FFmpeg is built without libjxl.
+	// preview (DNG 1.7.1.0, Compression).
 	compressionJPEGXL = 52546
 	// tiffVersion is a classic TIFF's version number. BigTIFF (43), which DNG
 	// allows for files over 4 GB, is not read: no file in the archive needs
@@ -71,15 +73,14 @@ var fieldSize = map[uint16]int64{
 var (
 	// errMalformed marks a TIFF whose structure is broken.
 	errMalformed = errors.New("malformed TIFF")
-	// errNoJPEGPreview: the DNG has no primary preview a JPEG decoder renders.
-	errNoJPEGPreview = errors.New("no JPEG preview")
-	// errJPEGXLPreview: the DNG's only primary preview is JPEG XL (DNG 1.7).
-	errJPEGXLPreview = errors.New("the preview is JPEG XL (DNG 1.7); only JPEG previews are extracted")
+	// errNoPreview: the DNG has no primary preview a JPEG or JPEG XL decoder renders.
+	errNoPreview = errors.New("no JPEG or JPEG XL preview")
 )
 
 // imageRef is a stream inside the file.
 type imageRef struct {
 	offset, length int64
+	format         string
 }
 
 // tiff reads a classic TIFF's directories through bounds-checked reads.
@@ -246,17 +247,37 @@ func (t tiff) image(d directory) (imageRef, bool) {
 		off, okOff := t.uint(d, tags[0])
 		n, okLen := t.uint(d, tags[1])
 		if okOff && okLen {
-			return imageRef{off, n}, true
+			return imageRef{offset: off, length: n}, true
 		}
 	}
 	return imageRef{}, false
 }
 
-// dngPreview finds a DNG's primary preview as a JPEG stream: the IFD in the
-// SubIFD tree with NewSubFileType 1, stored as one baseline JPEG strip or
+// isJXL reports whether data at off begins with a JPEG XL bare codestream
+// (0xFF, 0x0A) or ISOBMFF container (0x00, 0x00, 0x00, 0x0C, 'J', 'X', 'L', ' ', 0x0D, 0x0A, 0x87, 0x0A).
+func isJXL(r io.ReaderAt, off, n int64) bool {
+	if n < 2 {
+		return false
+	}
+	var head [12]byte
+	toRead := min(n, int64(len(head)))
+	if _, err := r.ReadAt(head[:toRead], off); err != nil {
+		return false
+	}
+	if head[0] == 0xff && head[1] == 0x0a {
+		return true
+	}
+	if toRead >= 12 && bytes.Equal(head[:12], []byte{0, 0, 0, 0x0c, 'J', 'X', 'L', ' ', 0x0d, 0x0a, 0x87, 0x0a}) {
+		return true
+	}
+	return false
+}
+
+// dngPreview finds a DNG's primary preview as a JPEG or JPEG XL stream: the IFD in the
+// SubIFD tree with NewSubFileType 1, stored as one baseline JPEG or JPEG XL strip or
 // tile, the largest picture if there are several (a thumbnail and a
 // full-size rendering). Each candidate must decode as baseline or
-// progressive JPEG, so lossless JPEG (the raw image's encoding) is never
+// progressive JPEG or match the JPEG XL signature, so lossless JPEG (the raw image's encoding) is never
 // picked. A DNG is a classic TIFF whose IFD0 has DNGVersion; isDNG is false,
 // without error, for anything else.
 func dngPreview(r io.ReaderAt, size int64) (preview imageRef, isDNG bool, err error) {
@@ -298,8 +319,7 @@ func dngPreview(r io.ReaderAt, size int64) (preview imageRef, isDNG bool, err er
 		imageRef
 		area int
 	}
-	var jpegs []candidate
-	jpegXL := false
+	var candidates []candidate
 	for d, err := range t.tree(int64(h.IFD0), ifd0) {
 		if err != nil {
 			return imageRef{}, true, err
@@ -318,21 +338,23 @@ func dngPreview(r io.ReaderAt, size int64) (preview imageRef, isDNG bool, err er
 		case compressionJPEG:
 			cfg, err := jpeg.DecodeConfig(io.NewSectionReader(r, ref.offset, ref.length))
 			if err == nil {
-				jpegs = append(jpegs, candidate{ref, cfg.Width * cfg.Height})
+				ref.format = "jpeg_pipe"
+				candidates = append(candidates, candidate{ref, cfg.Width * cfg.Height})
 			}
 		case compressionJPEGXL:
-			jpegXL = true
+			if isJXL(r, ref.offset, ref.length) {
+				ref.format = "jpegxl_pipe"
+				w, _ := t.uint(d, tagImageWidth)
+				h, _ := t.uint(d, tagImageLength)
+				candidates = append(candidates, candidate{ref, int(w * h)})
+			}
 		}
 	}
-	switch {
-	case len(jpegs) > 0:
-		best := slices.MaxFunc(jpegs, func(a, b candidate) int {
-			return cmp.Or(cmp.Compare(a.area, b.area), cmp.Compare(a.length, b.length))
-		})
-		return best.imageRef, true, nil
-	case jpegXL:
-		return imageRef{}, true, errJPEGXLPreview
-	default:
-		return imageRef{}, true, errNoJPEGPreview
+	if len(candidates) == 0 {
+		return imageRef{}, true, errNoPreview
 	}
+	best := slices.MaxFunc(candidates, func(a, b candidate) int {
+		return cmp.Or(cmp.Compare(a.area, b.area), cmp.Compare(a.length, b.length))
+	})
+	return best.imageRef, true, nil
 }

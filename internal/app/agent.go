@@ -81,10 +81,15 @@ type Agent struct {
 	icloudEndpoints icloud.Endpoints
 	// pushKey locates the key pushed iPhone backups must be signed with.
 	pushKey func() (string, error)
+	// configPath is the location of config.toml on disk for backup snapshots.
+	configPath string
 
 	hub     *Hub
 	trigger chan struct{}
 }
+
+// SetConfigPath sets the location of config.toml so ledger backups can preserve it.
+func (a *Agent) SetConfigPath(p string) { a.configPath = p }
 
 // NewAgent returns an idle agent. keiLog receives kei's own output.
 func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, keiLog io.Writer,

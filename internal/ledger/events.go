@@ -13,6 +13,8 @@ const (
 	EventQuarantined = "quarantined"
 	// EventQuarantineReleased: an operator released a quarantine, with a reason.
 	EventQuarantineReleased = "quarantine_released"
+	// EventQuarantineRepaired: a corrupted rendition was moved aside and released for re-download.
+	EventQuarantineRepaired = "quarantine_repaired"
 	// EventDriveHealthChanged: the archive drive's health verdict changed.
 	EventDriveHealthChanged = "drive_health_changed"
 	// EventIPhoneBackupChanged: a device's local backup changed state (subject: its UDID).
