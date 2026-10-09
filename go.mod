@@ -1,6 +1,6 @@
 module github.com/vasilistotskas/homecloud
 
-go 1.27.1
+go 1.27.2
 
 require (
 	connectrpc.com/connect v1.21.0
@@ -8,7 +8,7 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/go-cmp v0.7.0
 	github.com/pelletier/go-toml/v2 v2.4.3
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/term v0.46.0
 	golang.org/x/text v0.42.0

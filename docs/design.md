@@ -272,11 +272,11 @@ Every non-official dependency was re-evaluated on 2026-10-06/07 (`notes/homeclou
 
 | Dependency | Version | Source |
 |---|---|---|
-| Go | 1.27.1 | https://go.dev/doc/devel/release |
+| Go | 1.27.2 | https://go.dev/doc/devel/release |
 | modernc.org/sqlite | v1.60.1 | https://pkg.go.dev/modernc.org/sqlite?tab=versions |
 | github.com/pelletier/go-toml/v2 | v2.4.3 | https://pkg.go.dev/github.com/pelletier/go-toml/v2?tab=versions |
 | golang.org/x/sys | v0.48.0 | https://pkg.go.dev/golang.org/x/sys?tab=versions (monitor GO-2026-5024) |
-| golang.org/x/net (publicsuffix) | v0.59.0 | https://proxy.golang.org/golang.org/x/net/@latest (2026-09-08) |
+| golang.org/x/net (publicsuffix) | v0.60.0 | https://proxy.golang.org/golang.org/x/net/@latest (2026-10-08; fixes GO-2026-6617) |
 | golang.org/x/term (password prompt) | v0.46.0 | https://proxy.golang.org/golang.org/x/term/@latest (2026-09-08) |
 | golang.org/x/text (cases, unicode/norm: event search folds case and accents) | v0.42.0 | https://proxy.golang.org/golang.org/x/text/@latest |
 | github.com/google/go-cmp | v0.7.0 | https://pkg.go.dev/github.com/google/go-cmp?tab=versions |
@@ -303,7 +303,7 @@ Every non-official dependency was re-evaluated on 2026-10-06/07 (`notes/homeclou
 | github.com/godbus/dbus/v5 | v5.2.2 | https://github.com/godbus/dbus/releases |
 | dorny/paths-filter (CI) | v4.0.3 | https://github.com/dorny/paths-filter/releases |
 | FFmpeg (ffprobe + ffmpeg, one pin) | 9.0.2 (Windows: Gyan build; container: built from the signed release tarball, see Dockerfile) | https://www.gyan.dev/ffmpeg/builds/, https://ffmpeg.org/download.html |
-| Container base images (Dockerfile, pinned by digest) | ghcr.io/pnpm/pnpm:12.9.1, golang:1.27.1-trixie, debian:trixie-slim | https://github.com/pnpm/pnpm/pkgs/container/pnpm, https://hub.docker.com/_/debian |
+| Container base images (Dockerfile, pinned by digest) | ghcr.io/pnpm/pnpm:12.9.1, golang:1.27.2-trixie, debian:trixie-slim | https://github.com/pnpm/pnpm/pkgs/container/pnpm, https://hub.docker.com/_/debian |
 | tailscale/tailscale (deploy/compose.yaml, pinned by digest) | v1.102.5 | https://github.com/tailscale/tailscale/releases |
 | golangci-lint | v2.14.0 | https://github.com/golangci/golangci-lint/releases |
 | kei | 0.25.0 | https://github.com/rhoopr/kei/releases/tag/v0.25.0 |
