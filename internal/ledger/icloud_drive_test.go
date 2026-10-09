@@ -17,10 +17,10 @@ func driveFile(id, path string) DriveFile {
 
 func driveEventKinds(t *testing.T, db *DB) []string {
 	t.Helper()
-	events, err := db.Events(context.Background(), []string{
+	events, err := db.Events(context.Background(), EventQuery{Kinds: []string{
 		EventDriveFileArchived, EventDriveFileChanged, EventDriveFileMoved,
 		EventDriveFileDeleted, EventDriveFileRestored, EventDriveFileDamaged,
-	}, 0, 50)
+	}}, 0, 50)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import {
   Field,
   makeStyles,
   Option,
+  SearchBox,
   Spinner,
   Tab,
   Table,
@@ -18,9 +19,11 @@ import {
   Text,
   tokens,
 } from "@fluentui/react-components";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { navigate, useLocation } from "../app/router";
+import { searchDelayMs, useDebounced } from "../app/useDebounced";
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { MoreButton, RunBadge, RunTable } from "../components/RunTable";
@@ -32,6 +35,7 @@ import {
   driveSyncOutcomeBadge,
   iphoneCopyChangeBadge,
   iphoneStateBadge,
+  repairStepBadge,
   stateLabel,
   tierLabel,
   type BadgeColor,
@@ -44,11 +48,13 @@ import {
   DriveSyncOutcome,
   EventKind,
   IPhoneBackupCopyChange,
+  QuarantineRepairStep,
   RunKind,
   type DriveFileEvent,
   type Event,
   type Run,
   type IPhoneBackupCopyEvent,
+  type QuarantineRepairEvent,
 } from "../gen/homecloud/agent/v3/agent_pb";
 import { activityTabs, isActivityTab, type ActivityTab } from "./activityTabs";
 
@@ -312,6 +318,13 @@ const iphoneEventKinds = [
   EventKind.IPHONE_BACKUP_PUSH_REFUSED,
 ];
 
+const repairEventKinds = [
+  EventKind.QUARANTINE_REPAIR_REQUESTED,
+  EventKind.RENDITION_SET_ASIDE,
+  EventKind.QUARANTINE_REPAIRED,
+  EventKind.QUARANTINE_REPAIR_ABANDONED,
+];
+
 const driveEventKinds = [
   EventKind.DRIVE_FILE_ARCHIVED,
   EventKind.DRIVE_FILE_CHANGED,
@@ -346,6 +359,25 @@ function driveFileText(d: DriveFileEvent, driveDir: string | undefined): string 
   }
 }
 
+/** A repair step as text; the damaged copy is named within the archive. */
+function repairText(r: QuarantineRepairEvent, root: string | undefined): string {
+  const versions = r.versions.join(", ");
+  switch (r.step) {
+    case QuarantineRepairStep.REQUESTED:
+      return `The failing ${versions} version will be downloaded again. The next sync moves the file aside first.`;
+    case QuarantineRepairStep.SET_ASIDE:
+      return r.keptAs === ""
+        ? `The ${versions} version was already missing; kei downloads it again.`
+        : `The ${versions} version was moved to ${root === undefined ? r.keptAs : `${root}/${r.keptAs}`}, and kei downloads it again.`;
+    case QuarantineRepairStep.REPAIRED:
+      return `Downloaded again (${versions}). It left quarantine, and every check runs again.`;
+    case QuarantineRepairStep.ABANDONED:
+      return `Not repaired: ${r.reason}. The file is back where it was, and it stays quarantined.`;
+    case QuarantineRepairStep.UNSPECIFIED:
+      return "";
+  }
+}
+
 const filters = {
   all: {
     label: "All events",
@@ -354,6 +386,7 @@ const filters = {
       EventKind.RENDITION_MOVED,
       EventKind.QUARANTINED,
       EventKind.QUARANTINE_RELEASED,
+      ...repairEventKinds,
       EventKind.DRIVE_HEALTH_CHANGED,
       ...iphoneEventKinds,
       ...driveEventKinds,
@@ -361,6 +394,7 @@ const filters = {
   },
   quarantined: { label: "Quarantined", kinds: [EventKind.QUARANTINED] },
   released: { label: "Released", kinds: [EventKind.QUARANTINE_RELEASED] },
+  repairs: { label: "Repairs", kinds: repairEventKinds },
   changed: { label: "Changed in iCloud", kinds: [EventKind.RENDITION_CHANGED] },
   moved: { label: "Moved", kinds: [EventKind.RENDITION_MOVED] },
   drive: { label: "Drive health", kinds: [EventKind.DRIVE_HEALTH_CHANGED] },
@@ -393,7 +427,10 @@ function iphoneCopyText(c: IPhoneBackupCopyEvent): string {
   }
 }
 
-function describe(e: Event, driveDir: string | undefined): { kind: string; color: BadgeColor; text: string } {
+function describe(
+  e: Event,
+  dirs: { root: string | undefined; drive: string | undefined },
+): { kind: string; color: BadgeColor; text: string } {
   switch (e.detail.case) {
     case "renditionChanged":
       return {
@@ -432,7 +469,11 @@ function describe(e: Event, driveDir: string | undefined): { kind: string; color
     }
     case "driveFile": {
       const b = driveFileChangeBadge[e.detail.value.change];
-      return { kind: b.label, color: b.color, text: driveFileText(e.detail.value, driveDir) };
+      return { kind: b.label, color: b.color, text: driveFileText(e.detail.value, dirs.drive) };
+    }
+    case "quarantineRepair": {
+      const b = repairStepBadge[e.detail.value.step];
+      return { kind: b.label, color: b.color, text: repairText(e.detail.value, dirs.root) };
     }
     case "iphoneBackupCopy": {
       const c = e.detail.value;
@@ -451,14 +492,17 @@ function Events() {
   const styles = useStyles();
   const table = useTableStyles();
   const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
+  const query = useDebounced(search.trim(), searchDelayMs);
   const settings = useQuery(AgentService.method.getSettings, {});
   const q = useInfiniteQuery(
     AgentService.method.listEvents,
-    { kinds: [...filters[filter].kinds], pageToken: "" },
-    { pageParamKey: "pageToken", getNextPageParam: nextPage },
+    { kinds: [...filters[filter].kinds], query, pageToken: "" },
+    // The previous results stay while a new search loads.
+    { pageParamKey: "pageToken", getNextPageParam: nextPage, placeholderData: keepPreviousData },
   );
   const events = q.data?.pages.flatMap((p) => p.events) ?? [];
-  const driveDir = settings.data?.settings?.driveDir;
+  const dirs = { root: settings.data?.settings?.storageRoot, drive: settings.data?.settings?.driveDir };
 
   return (
     <>
@@ -480,6 +524,14 @@ function Events() {
             ))}
           </Dropdown>
         </Field>
+        <Field label="Search" hint="A photo's file name, an iCloud Drive path or an iPhone's name">
+          <SearchBox
+            value={search}
+            onChange={(_, d) => {
+              setSearch(d.value);
+            }}
+          />
+        </Field>
       </div>
       {q.isPending ? (
         <Spinner label="Loading events…" />
@@ -498,7 +550,7 @@ function Events() {
             </TableHeader>
             <TableBody>
               {events.map((e) => {
-                const d = describe(e, driveDir);
+                const d = describe(e, dirs);
                 const at = toDate(e.at);
                 return (
                   <TableRow key={e.id.toString()}>
@@ -515,7 +567,11 @@ function Events() {
               })}
             </TableBody>
           </Table>
-          {events.length === 0 && <Text className={table.muted}>Nothing recorded yet.</Text>}
+          {events.length === 0 && (
+            <Text className={table.muted}>
+              {query === "" ? "Nothing recorded yet." : "No event matches your search."}
+            </Text>
+          )}
         </Card>
       )}
       <MoreButton q={q} />

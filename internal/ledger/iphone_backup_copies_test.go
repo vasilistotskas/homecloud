@@ -56,7 +56,7 @@ func TestIPhoneBackupCopies(t *testing.T) {
 	}
 
 	kinds := []string{EventIPhoneBackupCopied, EventIPhoneBackupCopyDamaged, EventIPhoneBackupCopyRemoved, EventIPhoneBackupPushRefused}
-	events, err := db.Events(ctx, kinds, 0, 10)
+	events, err := db.Events(ctx, EventQuery{Kinds: kinds}, 0, 10)
 	if err != nil || len(events) != 5 {
 		t.Fatalf("events = %+v, %v", events, err)
 	}

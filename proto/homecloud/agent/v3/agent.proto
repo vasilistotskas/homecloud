@@ -45,6 +45,11 @@ service AgentService {
   // ReleaseQuarantine returns a quarantined asset to verification. The reason
   // is required and recorded in the audit log.
   rpc ReleaseQuarantine(ReleaseQuarantineRequest) returns (ReleaseQuarantineResponse);
+  // RepairQuarantine downloads the failing files of a quarantined asset again:
+  // the next cycle moves each one into the archive's Damaged folder and has
+  // kei download it; the asset leaves quarantine once every file is back, and
+  // every check runs again. A cycle starts now when the agent is idle.
+  rpc RepairQuarantine(RepairQuarantineRequest) returns (RepairQuarantineResponse);
   // StartSync asks the agent to run a cycle now.
   rpc StartSync(StartSyncRequest) returns (StartSyncResponse);
   // SendTestNotification sends a test alert through the configured channel.
@@ -573,6 +578,7 @@ message Event {
     IPhoneBackupChanged iphone_backup_changed = 10;
     DriveFileEvent drive_file = 11;
     IPhoneBackupCopyEvent iphone_backup_copy = 12;
+    QuarantineRepairEvent quarantine_repair = 13;
   }
 }
 
@@ -596,6 +602,37 @@ enum EventKind {
   EVENT_KIND_IPHONE_BACKUP_COPY_REMOVED = 16;
   EVENT_KIND_IPHONE_BACKUP_COPY_DAMAGED = 17;
   EVENT_KIND_IPHONE_BACKUP_PUSH_REFUSED = 18;
+  EVENT_KIND_QUARANTINE_REPAIR_REQUESTED = 19;
+  EVENT_KIND_RENDITION_SET_ASIDE = 20;
+  EVENT_KIND_QUARANTINE_REPAIRED = 21;
+  EVENT_KIND_QUARANTINE_REPAIR_ABANDONED = 22;
+}
+
+// QuarantineRepairEvent is a step of the repair of a quarantined asset.
+message QuarantineRepairEvent {
+  QuarantineRepairStep step = 1;
+  // REQUESTED and REPAIRED: the versions under repair. SET_ASIDE: the one set aside.
+  repeated string versions = 2;
+  // SET_ASIDE: the path the file left.
+  string from = 3;
+  // SET_ASIDE: where the file went, relative to the archive root; empty when
+  // it was already missing.
+  string kept_as = 4;
+  // ABANDONED: why kei will not download the files again.
+  string reason = 5;
+}
+
+enum QuarantineRepairStep {
+  QUARANTINE_REPAIR_STEP_UNSPECIFIED = 0;
+  // An operator asked for the failing files to be downloaded again.
+  QUARANTINE_REPAIR_STEP_REQUESTED = 1;
+  // A failing file left its path, so kei downloads it again.
+  QUARANTINE_REPAIR_STEP_SET_ASIDE = 2;
+  // Every file was downloaded again; the asset left quarantine and is checked again.
+  QUARANTINE_REPAIR_STEP_REPAIRED = 3;
+  // kei will not download a file again; the files were put back and the asset
+  // stays quarantined.
+  QUARANTINE_REPAIR_STEP_ABANDONED = 4;
 }
 
 // IPhoneBackupCopyEvent is something that happened to a copy of an iPhone
@@ -744,6 +781,11 @@ message ListEventsRequest {
   // Maximum events to return, at most 200; 0 selects the default of 50.
   int32 page_size = 2;
   string page_token = 3;
+  // Keeps the events whose subject contains this text, ignoring case and
+  // accents: a photo's or video's file name, an iCloud Drive path, or an
+  // iPhone's name.
+  // Empty keeps every event.
+  string query = 4;
 }
 
 message ListEventsResponse {
@@ -801,6 +843,8 @@ message QuarantinedAsset {
   AssetRef asset = 1;
   google.protobuf.Timestamp quarantined_at = 2;
   repeated Failure failures = 3;
+  // When a repair was requested; unset when none is under way.
+  google.protobuf.Timestamp repair_requested_at = 4;
 }
 
 // Failure is a rendition's recorded verification failure.
@@ -808,6 +852,11 @@ message Failure {
   string version = 1;
   Tier tier = 2;
   string reason = 3;
+  // Under repair: when the file left its path (unset until the next cycle
+  // does it), and where it went, relative to the archive root (empty when it
+  // was already missing).
+  google.protobuf.Timestamp set_aside_at = 4;
+  string kept_as = 5;
 }
 
 message GetAssetRequest {
@@ -865,6 +914,13 @@ message ReleaseQuarantineRequest {
 }
 
 message ReleaseQuarantineResponse {}
+
+message RepairQuarantineRequest {
+  string library = 1;
+  string asset_id = 2;
+}
+
+message RepairQuarantineResponse {}
 
 message StartSyncRequest {}
 

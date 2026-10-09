@@ -133,19 +133,40 @@ type Event struct {
 	Kind, Detail             string
 }
 
-// Events returns up to limit events of the given kinds older than beforeID
-// (all events when beforeID is 0), newest first.
-func (db *DB) Events(ctx context.Context, kinds []string, beforeID int64, limit int) (out []Event, err error) {
-	payload, err := json.Marshal(kinds)
+// EventQuery selects events.
+type EventQuery struct {
+	// Kinds to include; at least one.
+	Kinds []string
+	// Text, when not empty, keeps the events whose subject contains it,
+	// ignoring case and accents (see eventSubject and fold).
+	Text string
+}
+
+// eventSubject is the SQL for the name an event is about, which the app shows
+// for it: the original file name of a Photos asset, the iCloud Drive path (and
+// the earlier one of a move), or the name of the iPhone a backup belongs to.
+// Events about neither (drive health) have none.
+const eventSubject = `CASE
+	WHEN e.library = '` + DriveLibrary + `' THEN concat_ws(char(10), e.detail ->> '$.path', e.detail ->> '$.from', e.detail ->> '$.to')
+	WHEN e.library IS NOT NULL THEN coalesce(r.filename, '')
+	ELSE coalesce(e.detail ->> '$.device_name', '')
+END`
+
+// Events returns up to limit events matching q older than beforeID (all
+// events when beforeID is 0), newest first.
+func (db *DB) Events(ctx context.Context, q EventQuery, beforeID int64, limit int) (out []Event, err error) {
+	payload, err := json.Marshal(q.Kinds)
 	if err != nil {
 		return nil, fmt.Errorf("encode kinds: %w", err)
 	}
+	text := fold(q.Text)
 	rows, err := db.r.QueryContext(ctx, `
 		SELECT e.id, e.at, coalesce(e.library, ''), coalesce(e.asset_id, ''), coalesce(r.filename, ''), e.kind, e.detail
 		FROM events e
 		LEFT JOIN resources r ON r.library = e.library AND r.asset_id = e.asset_id AND r.version = 'original'
 		WHERE e.kind IN (SELECT value FROM json_each(?)) AND (? = 0 OR e.id < ?)
-		ORDER BY e.id DESC LIMIT ?`, string(payload), beforeID, beforeID, limit)
+		  AND (? = '' OR instr(`+foldFunc+`(`+eventSubject+`), ?) > 0)
+		ORDER BY e.id DESC LIMIT ?`, string(payload), beforeID, beforeID, text, text, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query events: %w", err)
 	}

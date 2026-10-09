@@ -33,9 +33,14 @@ import (
 
 // The test binary doubles as a fake kei when HOMECLOUD_FAKE_KEI=1:
 //
-//	sync     → writes HOMECLOUD_FAKE_KEI_REPORT (if set) as its report next to
-//	           --config, then exits with HOMECLOUD_FAKE_KEI_SYNC_EXIT
-//	manifest → prints the file named by HOMECLOUD_FAKE_KEI_MANIFEST
+//	sync      → writes HOMECLOUD_FAKE_KEI_REPORT (if set) as its report next to
+//	            --config; when HOMECLOUD_FAKE_KEI_DOWNLOAD is set, downloads
+//	            every failed row of the manifest again with that content at
+//	            HOMECLOUD_FAKE_KEI_NOW; then exits with HOMECLOUD_FAKE_KEI_SYNC_EXIT
+//	manifest  → prints the file named by HOMECLOUD_FAKE_KEI_MANIFEST
+//	reconcile → marks the manifest's downloaded rows whose file is missing as
+//	            failed, unless HOMECLOUD_FAKE_KEI_RECONCILE=keep (kei leaves
+//	            the rows it protects unchanged)
 func TestMain(m *testing.M) {
 	if os.Getenv("HOMECLOUD_FAKE_KEI") == "1" {
 		os.Exit(fakeKei(os.Args[1:]))
@@ -58,11 +63,29 @@ func fakeKei(args []string) int {
 				return 1
 			}
 		}
+		if content := os.Getenv("HOMECLOUD_FAKE_KEI_DOWNLOAD"); content != "" && fakeKeiDownload(content) != nil {
+			return 1
+		}
 		var code int
 		if _, err := fmt.Sscan(os.Getenv("HOMECLOUD_FAKE_KEI_SYNC_EXIT"), &code); err != nil {
 			return 1
 		}
 		return code
+	case "reconcile":
+		if os.Getenv("HOMECLOUD_FAKE_KEI_RECONCILE") == "keep" {
+			return 0
+		}
+		if editFakeManifest(func(row map[string]any) error {
+			if row["status"] == "downloaded" {
+				if _, err := os.Stat(row["local_path"].(string)); err != nil { //nolint:forcetypeassert // fixture rows
+					row["status"] = "failed"
+				}
+			}
+			return nil
+		}) != nil {
+			return 1
+		}
+		return 0
 	case "manifest":
 		data, err := os.ReadFile(os.Getenv("HOMECLOUD_FAKE_KEI_MANIFEST")) //nolint:gosec // test fixture path set by the test itself
 		if err != nil {
@@ -73,6 +96,47 @@ func fakeKei(args []string) int {
 	default:
 		return 1
 	}
+}
+
+// editFakeManifest rewrites each row of the fake kei's manifest with edit.
+func editFakeManifest(edit func(map[string]any) error) error {
+	file := os.Getenv("HOMECLOUD_FAKE_KEI_MANIFEST")
+	data, err := os.ReadFile(file) //nolint:gosec // test fixture path set by the test itself
+	if err != nil {
+		return err
+	}
+	var rows []map[string]any
+	if err = json.Unmarshal(data, &rows); err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if err = edit(row); err != nil {
+			return err
+		}
+	}
+	if data, err = json.Marshal(rows); err != nil {
+		return err
+	}
+	return os.WriteFile(file, data, 0o600) //nolint:gosec // test fixture path set by the test itself
+}
+
+// fakeKeiDownload downloads every failed row again with content.
+func fakeKeiDownload(content string) error {
+	sum := sha256.Sum256([]byte(content))
+	return editFakeManifest(func(row map[string]any) error {
+		if row["status"] != "failed" {
+			return nil
+		}
+		if err := os.WriteFile(row["local_path"].(string), []byte(content), 0o600); err != nil { //nolint:forcetypeassert,gosec // fixture rows
+			return err
+		}
+		row["status"] = "downloaded"
+		row["downloaded_at"] = os.Getenv("HOMECLOUD_FAKE_KEI_NOW")
+		row["download_checksum"] = hex.EncodeToString(sum[:])
+		row["local_checksum"] = row["download_checksum"]
+		row["size_bytes"] = len(content)
+		return nil
+	})
 }
 
 type recordingNotifier struct {
@@ -352,7 +416,7 @@ func TestCycleAlertsOnceWhenDriveFails(t *testing.T) {
 	if err := agent.Cycle(ctx); err != nil {
 		t.Fatal(err)
 	}
-	events, err := agent.db.Events(ctx, []string{ledger.EventDriveHealthChanged}, 0, 10)
+	events, err := agent.db.Events(ctx, ledger.EventQuery{Kinds: []string{ledger.EventDriveHealthChanged}}, 0, 10)
 	if err != nil || len(events) != 2 {
 		t.Fatalf("drive events = %+v, %v; want failing then ok", events, err)
 	}

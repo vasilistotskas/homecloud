@@ -15,6 +15,7 @@ import {
   IPhoneBackupState,
   ListRunsResponseSchema,
   OverviewSchema,
+  QuarantineRepairStep,
   RunKind,
   RunResult,
   SettingsSchema,
@@ -267,5 +268,56 @@ describe("Activity", () => {
     window.location.hash = "#/activity?tab=integrity";
     render(<App transport={transport} platform={browser} />);
     expect(await screen.findByText("302 of 6,040")).toBeInTheDocument();
+  });
+
+  it("searches events on the agent and describes repairs", async () => {
+    const queries: string[] = [];
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, {}) };
+          await never();
+        },
+        getSettings: () => ({ settings: create(SettingsSchema, { storageRoot: "E:/HomeCloud" }) }),
+        listRuns: () => create(ListRunsResponseSchema),
+        listEvents: (req) => {
+          queries.push(req.query);
+          return create(ListEventsResponseSchema, {
+            events:
+              req.query === "img_0001" && req.kinds.includes(EventKind.RENDITION_SET_ASIDE)
+                ? [
+                    {
+                      id: 9n,
+                      at: { seconds: 1_790_000_000n },
+                      asset: { library: "PrimarySync", assetId: "A1", filename: "IMG_0001.HEIC" },
+                      detail: {
+                        case: "quarantineRepair",
+                        value: {
+                          step: QuarantineRepairStep.SET_ASIDE,
+                          versions: ["original"],
+                          keptAs: "Damaged/20261009T100000Z/2022/06/IMG_0001.HEIC",
+                        },
+                      },
+                    },
+                  ]
+                : [],
+          });
+        },
+      });
+    });
+    window.location.hash = "#/activity?tab=events";
+    render(<App transport={transport} platform={browser} />);
+    const user = userEvent.setup();
+    await user.type(await screen.findByRole("searchbox"), "  img_0001 ");
+    expect(
+      await screen.findByText(
+        "The original version was moved to E:/HomeCloud/Damaged/20261009T100000Z/2022/06/IMG_0001.HEIC, and kei downloads it again.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Set aside")).toBeInTheDocument();
+    // Typing is debounced: no request for a half-typed query.
+    expect(queries).not.toContain("img_000");
+    await user.type(screen.getByRole("searchbox"), "9");
+    expect(await screen.findByText("No event matches your search.")).toBeInTheDocument();
   });
 });

@@ -6,6 +6,7 @@ import {
   DriveSyncOutcome,
   IPhoneBackupState,
   MediaType,
+  QuarantineRepairStep,
   Tier,
 } from "../gen/homecloud/agent/v3/agent_pb";
 
@@ -100,6 +101,14 @@ export const driveFileChangeBadge: Record<DriveFileChange, Labelled> = {
   [DriveFileChange.RESTORED]: { label: "Back in iCloud", color: "success" },
   [DriveFileChange.DAMAGED]: { label: "Damaged copy", color: "danger" },
   [DriveFileChange.REPAIRED]: { label: "Repaired", color: "success" },
+};
+
+export const repairStepBadge: Record<QuarantineRepairStep, Labelled> = {
+  [QuarantineRepairStep.UNSPECIFIED]: { label: "Repair", color: "informative" },
+  [QuarantineRepairStep.REQUESTED]: { label: "Repair requested", color: "informative" },
+  [QuarantineRepairStep.SET_ASIDE]: { label: "Set aside", color: "informative" },
+  [QuarantineRepairStep.REPAIRED]: { label: "Repaired", color: "success" },
+  [QuarantineRepairStep.ABANDONED]: { label: "Repair not possible", color: "warning" },
 };
 
 export const stateLabel: Record<AssetState, string> = {

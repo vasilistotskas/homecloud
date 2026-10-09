@@ -191,7 +191,7 @@ func TestMovedRenditionIsVerifiedAgain(t *testing.T) {
 	if p := pendingFor(t, db, "V"); len(p) != 1 || !p[0].NeedsContent || p[0].LocalPath != moved.LocalPath {
 		t.Fatalf("pending = %+v, want content check of the new path", p)
 	}
-	events, err := db.Events(context.Background(), []string{EventRenditionMoved}, 0, 5)
+	events, err := db.Events(context.Background(), EventQuery{Kinds: []string{EventRenditionMoved}}, 0, 5)
 	if err != nil || len(events) != 1 || !strings.Contains(events[0].Detail, "album-copy") {
 		t.Fatalf("events = %+v, %v", events, err)
 	}

@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json/v2"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -151,6 +153,36 @@ func TestDriveFileMovedEventToProto(t *testing.T) {
 	if d.GetChange() != agentv3.DriveFileChange_DRIVE_FILE_CHANGE_MOVED || d.GetFromPath() != "iCloud Drive/a.pdf" ||
 		d.GetPath() != "iCloud Drive/Docs/b.pdf" || e.GetAsset().GetFilename() != "b.pdf" {
 		t.Fatalf("event = %v", e)
+	}
+}
+
+func TestQuarantineRepairEventsToProto(t *testing.T) {
+	listed := slices.Collect(maps.Values(eventKindNames))
+	for kind, step := range repairSteps {
+		e, err := eventToProto(ledger.Event{
+			ID: 1, Library: "PrimarySync", Asset: "L", Filename: "L.HEIC", Kind: kind,
+			Detail: `{"versions":["live"],"reason":"kei no longer lists the file"}`,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if r := e.GetQuarantineRepair(); r.GetStep() != step || r.GetVersions()[0] != "live" {
+			t.Fatalf("%s = %v", kind, r)
+		}
+		if !slices.Contains(listed, kind) {
+			t.Errorf("%s has no API event kind", kind)
+		}
+	}
+	e, err := eventToProto(ledger.Event{
+		ID: 2, Library: "PrimarySync", Asset: "L", Kind: ledger.EventRenditionSetAside,
+		Detail: `{"version":"live","from":"E:\\HomeCloud\\Photos\\L.MOV","kept_as":"Damaged/20261009T100000Z/L.MOV"}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := e.GetQuarantineRepair(); r.GetVersions()[0] != "live" || r.GetKeptAs() != "Damaged/20261009T100000Z/L.MOV" ||
+		r.GetFrom() != `E:\HomeCloud\Photos\L.MOV` {
+		t.Fatalf("set aside = %v", r)
 	}
 }
 

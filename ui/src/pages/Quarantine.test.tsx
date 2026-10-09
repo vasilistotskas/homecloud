@@ -104,4 +104,52 @@ describe("Quarantine", () => {
     await user.type(searchBox, "nonexistent");
     expect(screen.getByText("No quarantined item matches.")).toBeInTheDocument();
   });
+
+  it("repairs an item and shows the repair's progress", async () => {
+    const repaired: string[] = [];
+    let item = quarantinedItem("Q1", "IMG_0001.HEIC");
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { activity: { phase: Phase.IDLE }, assets: { quarantined: 1n } }) };
+          await new Promise(() => undefined);
+        },
+        getSettings: () =>
+          create(GetSettingsResponseSchema, { settings: create(SettingsSchema, { storageRoot: "E:/HomeCloud" }) }),
+        listQuarantine: () => create(ListQuarantineResponseSchema, { assets: [item] }),
+        getAsset: (req) =>
+          create(GetAssetResponseSchema, { asset: { ref: { library: req.library, assetId: req.assetId } } }),
+        repairQuarantine: (req) => {
+          repaired.push(req.assetId);
+          item = create(QuarantinedAssetSchema, {
+            ...item,
+            repairRequestedAt: timestampFromDate(new Date(2026, 9, 9, 10)),
+            failures: item.failures.map((f) => ({
+              ...f,
+              setAsideAt: timestampFromDate(new Date(2026, 9, 9, 10, 1)),
+              keptAs: "Damaged/20261009T070000Z/2022/06/IMG_0001.HEIC",
+            })),
+          });
+          return {};
+        },
+      });
+    });
+
+    navigate("/quarantine");
+    render(<App transport={transport} platform={desktopLike} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Repair…" }));
+    await user.click(await screen.findByRole("button", { name: "Download again" }));
+
+    expect(
+      await screen.findByText(
+        /original: moved to E:\/HomeCloud\/Damaged\/20261009T070000Z\/2022\/06\/IMG_0001\.HEIC; waiting/,
+      ),
+    ).toBeInTheDocument();
+    expect(repaired).toEqual(["Q1"]);
+    expect(screen.getAllByText("Repairing").length).toBeGreaterThan(0);
+    // An item under repair is neither released nor repaired again.
+    expect(screen.queryByRole("button", { name: "Repair…" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Release…" })).not.toBeInTheDocument();
+  });
 });

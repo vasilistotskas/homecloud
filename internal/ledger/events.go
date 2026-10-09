@@ -13,6 +13,18 @@ const (
 	EventQuarantined = "quarantined"
 	// EventQuarantineReleased: an operator released a quarantine, with a reason.
 	EventQuarantineReleased = "quarantine_released"
+	// EventRepairRequested: an operator asked for the failing renditions of a
+	// quarantined asset to be downloaded again.
+	EventRepairRequested = "quarantine_repair_requested"
+	// EventRenditionSetAside: a failing rendition's file left its recorded
+	// path (kept_as names where it went; empty when it was already missing).
+	EventRenditionSetAside = "rendition_set_aside"
+	// EventRepaired: every rendition of a repair was downloaded again; the
+	// asset left quarantine and every tier runs again.
+	EventRepaired = "quarantine_repaired"
+	// EventRepairAbandoned: the downloader will not download the files again;
+	// the set-aside files were put back and the asset stays quarantined.
+	EventRepairAbandoned = "quarantine_repair_abandoned"
 	// EventDriveHealthChanged: the archive drive's health verdict changed.
 	EventDriveHealthChanged = "drive_health_changed"
 	// EventIPhoneBackupChanged: a device's local backup changed state (subject: its UDID).

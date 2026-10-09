@@ -314,24 +314,36 @@ func appleState(d agentv3.DownloadOutcome) agentv3.AppleAccountState {
 
 // eventKindNames maps API event kinds to the ledger's event kind names.
 var eventKindNames = map[agentv3.EventKind]string{
-	agentv3.EventKind_EVENT_KIND_RENDITION_CHANGED:          ledger.EventRenditionChanged,
-	agentv3.EventKind_EVENT_KIND_STATE_CHANGED:              ledger.EventStateChanged,
-	agentv3.EventKind_EVENT_KIND_QUARANTINED:                ledger.EventQuarantined,
-	agentv3.EventKind_EVENT_KIND_QUARANTINE_RELEASED:        ledger.EventQuarantineReleased,
-	agentv3.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:       ledger.EventDriveHealthChanged,
-	agentv3.EventKind_EVENT_KIND_RENDITION_MOVED:            ledger.EventRenditionMoved,
-	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED:      ledger.EventIPhoneBackupChanged,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED:        ledger.EventDriveFileArchived,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_CHANGED:         ledger.EventDriveFileChanged,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_MOVED:           ledger.EventDriveFileMoved,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DELETED:         ledger.EventDriveFileDeleted,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_RESTORED:        ledger.EventDriveFileRestored,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED:         ledger.EventDriveFileDamaged,
-	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_REPAIRED:        ledger.EventDriveFileRepaired,
-	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPIED:       ledger.EventIPhoneBackupCopied,
-	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPY_REMOVED: ledger.EventIPhoneBackupCopyRemoved,
-	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPY_DAMAGED: ledger.EventIPhoneBackupCopyDamaged,
-	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_PUSH_REFUSED: ledger.EventIPhoneBackupPushRefused,
+	agentv3.EventKind_EVENT_KIND_RENDITION_CHANGED:           ledger.EventRenditionChanged,
+	agentv3.EventKind_EVENT_KIND_STATE_CHANGED:               ledger.EventStateChanged,
+	agentv3.EventKind_EVENT_KIND_QUARANTINED:                 ledger.EventQuarantined,
+	agentv3.EventKind_EVENT_KIND_QUARANTINE_RELEASED:         ledger.EventQuarantineReleased,
+	agentv3.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:        ledger.EventDriveHealthChanged,
+	agentv3.EventKind_EVENT_KIND_RENDITION_MOVED:             ledger.EventRenditionMoved,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED:       ledger.EventIPhoneBackupChanged,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED:         ledger.EventDriveFileArchived,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_CHANGED:          ledger.EventDriveFileChanged,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_MOVED:            ledger.EventDriveFileMoved,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DELETED:          ledger.EventDriveFileDeleted,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_RESTORED:         ledger.EventDriveFileRestored,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_DAMAGED:          ledger.EventDriveFileDamaged,
+	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_REPAIRED:         ledger.EventDriveFileRepaired,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPIED:        ledger.EventIPhoneBackupCopied,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPY_REMOVED:  ledger.EventIPhoneBackupCopyRemoved,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_COPY_DAMAGED:  ledger.EventIPhoneBackupCopyDamaged,
+	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_PUSH_REFUSED:  ledger.EventIPhoneBackupPushRefused,
+	agentv3.EventKind_EVENT_KIND_QUARANTINE_REPAIR_REQUESTED: ledger.EventRepairRequested,
+	agentv3.EventKind_EVENT_KIND_RENDITION_SET_ASIDE:         ledger.EventRenditionSetAside,
+	agentv3.EventKind_EVENT_KIND_QUARANTINE_REPAIRED:         ledger.EventRepaired,
+	agentv3.EventKind_EVENT_KIND_QUARANTINE_REPAIR_ABANDONED: ledger.EventRepairAbandoned,
+}
+
+// repairSteps maps the ledger's repair event kinds to the API's steps.
+var repairSteps = map[string]agentv3.QuarantineRepairStep{
+	ledger.EventRepairRequested:   agentv3.QuarantineRepairStep_QUARANTINE_REPAIR_STEP_REQUESTED,
+	ledger.EventRenditionSetAside: agentv3.QuarantineRepairStep_QUARANTINE_REPAIR_STEP_SET_ASIDE,
+	ledger.EventRepaired:          agentv3.QuarantineRepairStep_QUARANTINE_REPAIR_STEP_REPAIRED,
+	ledger.EventRepairAbandoned:   agentv3.QuarantineRepairStep_QUARANTINE_REPAIR_STEP_ABANDONED,
 }
 
 // iphoneCopyChanges maps the ledger's iPhone backup copy event kinds to the API's.
@@ -439,6 +451,22 @@ func eventToProto(e ledger.Event) (*agentv3.Event, error) {
 		}
 		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
 			out.Detail = &agentv3.Event_RenditionMoved{RenditionMoved: &agentv3.RenditionMoved{Version: d.Version, From: d.From, To: d.To}}
+		}
+	case ledger.EventRepairRequested, ledger.EventRenditionSetAside, ledger.EventRepaired, ledger.EventRepairAbandoned:
+		var d struct {
+			Versions []string `json:"versions"`
+			Version  string   `json:"version"`
+			From     string   `json:"from"`
+			KeptAs   string   `json:"kept_as"`
+			Reason   string   `json:"reason"`
+		}
+		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
+			if d.Version != "" {
+				d.Versions = append(d.Versions, d.Version)
+			}
+			out.Detail = &agentv3.Event_QuarantineRepair{QuarantineRepair: &agentv3.QuarantineRepairEvent{
+				Step: repairSteps[e.Kind], Versions: d.Versions, From: d.From, KeptAs: d.KeptAs, Reason: d.Reason,
+			}}
 		}
 	case ledger.EventDriveHealthChanged:
 		var d struct {

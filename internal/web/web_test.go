@@ -607,6 +607,64 @@ func TestQuarantineActions(t *testing.T) {
 	}
 }
 
+func TestQuarantineRepair(t *testing.T) {
+	e := setup(t)
+	seed(t, e.db, "Q", true)
+	seed(t, e.db, "P", false)
+	ctx := context.Background()
+	repair := func(asset string) error {
+		_, err := e.client.RepairQuarantine(ctx, connect.NewRequest(&agentv3.RepairQuarantineRequest{
+			Library: "PrimarySync", AssetId: asset,
+		}))
+		return err
+	}
+
+	if err := repair("Q"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := e.client.ListQuarantine(ctx, connect.NewRequest(&agentv3.ListQuarantineRequest{}))
+	if err != nil || len(list.Msg.GetAssets()) != 1 || list.Msg.GetAssets()[0].GetRepairRequestedAt() == nil ||
+		list.Msg.GetAssets()[0].GetFailures()[0].GetSetAsideAt() != nil {
+		t.Fatalf("ListQuarantine = %v, %v; want the repair requested, nothing set aside", list, err)
+	}
+	if err := repair("Q"); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("second repair = %v", err)
+	}
+	if _, err := e.client.ReleaseQuarantine(ctx, connect.NewRequest(&agentv3.ReleaseQuarantineRequest{
+		Library: "PrimarySync", AssetId: "Q", Reason: "fine",
+	})); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("release during a repair = %v", err)
+	}
+	if err := repair("P"); code(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("repair of a healthy asset = %v", err)
+	}
+	if err := repair("nope"); code(err) != connect.CodeNotFound {
+		t.Fatalf("repair of an unknown asset = %v", err)
+	}
+
+	search := func(query string) []*agentv3.Event {
+		t.Helper()
+		events, err := e.client.ListEvents(ctx, connect.NewRequest(&agentv3.ListEventsRequest{
+			Kinds: []agentv3.EventKind{
+				agentv3.EventKind_EVENT_KIND_STATE_CHANGED, agentv3.EventKind_EVENT_KIND_QUARANTINE_REPAIR_REQUESTED,
+			},
+			Query: query,
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return events.Msg.GetEvents()
+	}
+	got := search("  q.mov ")
+	if len(got) != 2 || got[0].GetQuarantineRepair().GetStep() != agentv3.QuarantineRepairStep_QUARANTINE_REPAIR_STEP_REQUESTED ||
+		got[0].GetQuarantineRepair().GetVersions()[0] != "original" || got[1].GetAsset().GetAssetId() != "Q" {
+		t.Fatalf("search for Q = %v", got)
+	}
+	if got := search("nothing like it"); len(got) != 0 {
+		t.Fatalf("search without a match = %v", got)
+	}
+}
+
 func TestRunsPagingAndSync(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()

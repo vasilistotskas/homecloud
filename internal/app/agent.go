@@ -291,6 +291,10 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	}
 
 	a.setPhase(PhaseDownloading)
+	// A repair that cannot be prepared waits; the rest of the cycle runs.
+	if err := a.prepareRepairs(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("repairs: %w", err))
+	}
 	outcome, err := a.download(ctx)
 	switch {
 	case errors.Is(err, platform.ErrLowSpace):
@@ -327,7 +331,8 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	if err != nil {
 		return rep, errors.Join(append(errs, err)...)
 	}
-	a.log.InfoContext(ctx, "ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions)
+	a.log.InfoContext(ctx, "ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions,
+		"repaired", ingested.Repaired)
 
 	a.setPhase(PhaseVerifying)
 	verified, err := Verify(ctx, a.cfg, a.db, a.log, a.now, a.hub.Changed)

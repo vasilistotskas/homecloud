@@ -59,6 +59,9 @@ const (
 	// AgentServiceReleaseQuarantineProcedure is the fully-qualified name of the AgentService's
 	// ReleaseQuarantine RPC.
 	AgentServiceReleaseQuarantineProcedure = "/homecloud.agent.v3.AgentService/ReleaseQuarantine"
+	// AgentServiceRepairQuarantineProcedure is the fully-qualified name of the AgentService's
+	// RepairQuarantine RPC.
+	AgentServiceRepairQuarantineProcedure = "/homecloud.agent.v3.AgentService/RepairQuarantine"
 	// AgentServiceStartSyncProcedure is the fully-qualified name of the AgentService's StartSync RPC.
 	AgentServiceStartSyncProcedure = "/homecloud.agent.v3.AgentService/StartSync"
 	// AgentServiceSendTestNotificationProcedure is the fully-qualified name of the AgentService's
@@ -111,6 +114,11 @@ type AgentServiceClient interface {
 	// ReleaseQuarantine returns a quarantined asset to verification. The reason
 	// is required and recorded in the audit log.
 	ReleaseQuarantine(context.Context, *connect.Request[v3.ReleaseQuarantineRequest]) (*connect.Response[v3.ReleaseQuarantineResponse], error)
+	// RepairQuarantine downloads the failing files of a quarantined asset again:
+	// the next cycle moves each one into the archive's Damaged folder and has
+	// kei download it; the asset leaves quarantine once every file is back, and
+	// every check runs again. A cycle starts now when the agent is idle.
+	RepairQuarantine(context.Context, *connect.Request[v3.RepairQuarantineRequest]) (*connect.Response[v3.RepairQuarantineResponse], error)
 	// StartSync asks the agent to run a cycle now.
 	StartSync(context.Context, *connect.Request[v3.StartSyncRequest]) (*connect.Response[v3.StartSyncResponse], error)
 	// SendTestNotification sends a test alert through the configured channel.
@@ -211,6 +219,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("ReleaseQuarantine")),
 			connect.WithClientOptions(opts...),
 		),
+		repairQuarantine: connect.NewClient[v3.RepairQuarantineRequest, v3.RepairQuarantineResponse](
+			httpClient,
+			baseURL+AgentServiceRepairQuarantineProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RepairQuarantine")),
+			connect.WithClientOptions(opts...),
+		),
 		startSync: connect.NewClient[v3.StartSyncRequest, v3.StartSyncResponse](
 			httpClient,
 			baseURL+AgentServiceStartSyncProcedure,
@@ -287,6 +301,7 @@ type agentServiceClient struct {
 	listQuarantine       *connect.Client[v3.ListQuarantineRequest, v3.ListQuarantineResponse]
 	getAsset             *connect.Client[v3.GetAssetRequest, v3.GetAssetResponse]
 	releaseQuarantine    *connect.Client[v3.ReleaseQuarantineRequest, v3.ReleaseQuarantineResponse]
+	repairQuarantine     *connect.Client[v3.RepairQuarantineRequest, v3.RepairQuarantineResponse]
 	startSync            *connect.Client[v3.StartSyncRequest, v3.StartSyncResponse]
 	sendTestNotification *connect.Client[v3.SendTestNotificationRequest, v3.SendTestNotificationResponse]
 	getSettings          *connect.Client[v3.GetSettingsRequest, v3.GetSettingsResponse]
@@ -342,6 +357,11 @@ func (c *agentServiceClient) GetAsset(ctx context.Context, req *connect.Request[
 // ReleaseQuarantine calls homecloud.agent.v3.AgentService.ReleaseQuarantine.
 func (c *agentServiceClient) ReleaseQuarantine(ctx context.Context, req *connect.Request[v3.ReleaseQuarantineRequest]) (*connect.Response[v3.ReleaseQuarantineResponse], error) {
 	return c.releaseQuarantine.CallUnary(ctx, req)
+}
+
+// RepairQuarantine calls homecloud.agent.v3.AgentService.RepairQuarantine.
+func (c *agentServiceClient) RepairQuarantine(ctx context.Context, req *connect.Request[v3.RepairQuarantineRequest]) (*connect.Response[v3.RepairQuarantineResponse], error) {
+	return c.repairQuarantine.CallUnary(ctx, req)
 }
 
 // StartSync calls homecloud.agent.v3.AgentService.StartSync.
@@ -417,6 +437,11 @@ type AgentServiceHandler interface {
 	// ReleaseQuarantine returns a quarantined asset to verification. The reason
 	// is required and recorded in the audit log.
 	ReleaseQuarantine(context.Context, *connect.Request[v3.ReleaseQuarantineRequest]) (*connect.Response[v3.ReleaseQuarantineResponse], error)
+	// RepairQuarantine downloads the failing files of a quarantined asset again:
+	// the next cycle moves each one into the archive's Damaged folder and has
+	// kei download it; the asset leaves quarantine once every file is back, and
+	// every check runs again. A cycle starts now when the agent is idle.
+	RepairQuarantine(context.Context, *connect.Request[v3.RepairQuarantineRequest]) (*connect.Response[v3.RepairQuarantineResponse], error)
 	// StartSync asks the agent to run a cycle now.
 	StartSync(context.Context, *connect.Request[v3.StartSyncRequest]) (*connect.Response[v3.StartSyncResponse], error)
 	// SendTestNotification sends a test alert through the configured channel.
@@ -513,6 +538,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("ReleaseQuarantine")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceRepairQuarantineHandler := connect.NewUnaryHandler(
+		AgentServiceRepairQuarantineProcedure,
+		svc.RepairQuarantine,
+		connect.WithSchema(agentServiceMethods.ByName("RepairQuarantine")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceStartSyncHandler := connect.NewUnaryHandler(
 		AgentServiceStartSyncProcedure,
 		svc.StartSync,
@@ -595,6 +626,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceGetAssetHandler.ServeHTTP(w, r)
 		case AgentServiceReleaseQuarantineProcedure:
 			agentServiceReleaseQuarantineHandler.ServeHTTP(w, r)
+		case AgentServiceRepairQuarantineProcedure:
+			agentServiceRepairQuarantineHandler.ServeHTTP(w, r)
 		case AgentServiceStartSyncProcedure:
 			agentServiceStartSyncHandler.ServeHTTP(w, r)
 		case AgentServiceSendTestNotificationProcedure:
@@ -658,6 +691,10 @@ func (UnimplementedAgentServiceHandler) GetAsset(context.Context, *connect.Reque
 
 func (UnimplementedAgentServiceHandler) ReleaseQuarantine(context.Context, *connect.Request[v3.ReleaseQuarantineRequest]) (*connect.Response[v3.ReleaseQuarantineResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ReleaseQuarantine is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RepairQuarantine(context.Context, *connect.Request[v3.RepairQuarantineRequest]) (*connect.Response[v3.RepairQuarantineResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.RepairQuarantine is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) StartSync(context.Context, *connect.Request[v3.StartSyncRequest]) (*connect.Response[v3.StartSyncResponse], error) {

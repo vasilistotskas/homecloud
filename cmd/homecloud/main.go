@@ -90,6 +90,17 @@ func newApp() *program {
 							}
 						},
 					},
+					{
+						name:  "repair",
+						usage: "download the failing files again; the agent's next sync moves them to the archive's Damaged folder first",
+						define: func(f *flags) action {
+							library := f.requiredString("library", "library of the asset (see quarantine list)")
+							asset := f.requiredString("asset", "asset id")
+							return func(ctx context.Context, c *call) error {
+								return runQuarantineRepair(ctx, c, *library, *asset)
+							}
+						},
+					},
 				},
 			},
 			{
@@ -258,11 +269,27 @@ func runQuarantineList(ctx context.Context, c *call) (err error) {
 		return printf(c, "no quarantined assets\n")
 	}
 	for _, q := range items {
-		if err := printf(c, "%s  %s  %s\n    %s\n    %s\n", q.Library, q.AssetID, q.Version, q.LocalPath, q.Failure); err != nil {
+		if err := printf(c, "%s  %s  %s\n    %s\n    %s\n%s", q.Library, q.AssetID, q.Version, q.LocalPath, q.Failure,
+			repairLine(q.Repair)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// repairLine describes the progress of a repair, or is empty without one.
+func repairLine(r *ledger.Repair) string {
+	switch {
+	case r == nil:
+		return ""
+	case r.SetAsideAt == nil:
+		return fmt.Sprintf("    repair requested %s; the agent's next sync moves the file aside\n",
+			r.RequestedAt.Local().Format(time.DateTime))
+	case r.KeptAs == "":
+		return "    repair: the file was missing; waiting for kei to download it\n"
+	default:
+		return fmt.Sprintf("    repair: moved to %s; waiting for kei to download it\n", r.KeptAs)
+	}
 }
 
 func runQuarantineRelease(ctx context.Context, c *call, library, asset, reason string) (err error) {
@@ -285,6 +312,28 @@ func runQuarantineRelease(ctx context.Context, c *call, library, asset, reason s
 		return fmt.Errorf("quarantine release: %w", err)
 	}
 	return printf(c, "released %s/%s; it will be re-verified on the next verify run\n", library, asset)
+}
+
+func runQuarantineRepair(ctx context.Context, c *call, library, asset string) (err error) {
+	cfg, err := loadConfig(c)
+	if err != nil {
+		return err
+	}
+	lock, err := acquireLedgerWriter("repair it in the app (homecloud open)")
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, lock.Release()) }()
+	db, err := openLedger(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, db.Close()) }()
+
+	if err := db.RequestRepair(ctx, library, asset, time.Now()); err != nil {
+		return fmt.Errorf("quarantine repair: %w", err)
+	}
+	return printf(c, "repair of %s/%s requested; the agent's next sync downloads its failing files again\n", library, asset)
 }
 
 func runNotifyTest(ctx context.Context, c *call) error {

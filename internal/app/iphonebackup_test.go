@@ -87,7 +87,7 @@ func TestIPhoneBackupCheckRecordsStateAndAlertsOnceADay(t *testing.T) {
 	if got := countTitle(n, "homecloud: iPhone backup needs attention"); got != 3 {
 		t.Fatalf("attention alerts over three daily checks = %d, want 3 (one per day)", got)
 	}
-	events, err := agent.db.Events(ctx, []string{ledger.EventIPhoneBackupChanged}, 0, 10)
+	events, err := agent.db.Events(ctx, ledger.EventQuery{Kinds: []string{ledger.EventIPhoneBackupChanged}}, 0, 10)
 	if err != nil || len(events) != 2 {
 		t.Fatalf("state change events = %d, %v; want ok then unencrypted", len(events), err)
 	}
@@ -186,7 +186,7 @@ func TestIPhoneBackupCopiesAreKeptAndPruned(t *testing.T) {
 	if err != nil || len(copies) != 2 || copies[0].Stamp != iphonecopy.Stamp(clock.Add(-26*time.Hour)) {
 		t.Fatalf("copies = %+v, %v", copies, err)
 	}
-	events, err := agent.db.Events(ctx, []string{ledger.EventIPhoneBackupCopied, ledger.EventIPhoneBackupCopyRemoved}, 0, 10)
+	events, err := agent.db.Events(ctx, ledger.EventQuery{Kinds: []string{ledger.EventIPhoneBackupCopied, ledger.EventIPhoneBackupCopyRemoved}}, 0, 10)
 	if err != nil || len(events) != 4 {
 		t.Fatalf("copy events = %d, %v; want three copies and one removal", len(events), err)
 	}

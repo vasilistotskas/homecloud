@@ -34,7 +34,7 @@ flowchart TB
 
     subgraph agent["homecloud-agent · per-user at logon, or a container on a NAS"]
         api["Local API · 127.0.0.1<br/>Connect-RPC, signed /media,<br/>embedded web app"]
-        cycle["Cycle<br/>preflight → download → ingest → verify<br/>→ drive health → export → previews"]
+        cycle["Cycle<br/>preflight → repairs → download → ingest<br/>→ verify → drive health → export → previews"]
         maint["Maintenance, each on its own interval<br/>iCloud Drive sync · integrity scrub<br/>· ledger backup · iPhone backup check"]
     end
 
@@ -49,6 +49,7 @@ flowchart TB
         exports[("manifest.csv<br/>README.txt")]
         thumbs[(".cache/thumbnails")]
         iphonecopies[("iPhone backups/<br/>verified copies")]
+        damaged[("Damaged/<br/>files a repair replaced")]
     end
 
     subgraph outside["Outside the archive"]
@@ -66,6 +67,7 @@ flowchart TB
     cycle -- "runs" --> ffmpeg
     cycle -- "every drive + md array<br/>under the archive" --> smart
     kei --> photos
+    cycle -- "repair: move the damaged file aside" --> damaged
     cycle --> ledger
     cycle --> exports
     ffmpeg --> thumbs
@@ -88,17 +90,18 @@ flowchart TB
 ```
 
 A cycle never touches a drive it cannot confirm, and quarantine is the only reaction to a file
-that fails a check:
+that fails a check. You then release it (the check was wrong) or repair it (download it again):
 
 ```mermaid
 flowchart TD
     start(["Every sync_interval, or Sync now"]) --> vol{"The configured archive<br/>is at storage.root?"}
     vol -- no --> stop["Stop the cycle, alert<br/>(nothing downloaded, checked or deleted)"]
-    vol -- yes --> space{"Free space ≥<br/>min_free_percent?"}
+    vol -- yes --> repairs["Repairs you asked for: move each damaged file<br/>to Damaged/, then kei reconcile marks it missing<br/>(put back if kei would not download it again)"]
+    repairs --> space{"Free space ≥<br/>min_free_percent?"}
     space -- no --> skip["Skip the download, alert<br/>(repeated every notify.repeat_every)"]
     space -- yes --> kei["kei sync"]
     skip --> ingest
-    kei --> ingest["Ingest kei's manifest into the ledger<br/>(changed or moved files lose their checks)"]
+    kei --> ingest["Ingest kei's manifest into the ledger<br/>(changed or moved files lose their checks;<br/>a repaired asset leaves quarantine)"]
     ingest --> verify["Verify every unverified file:<br/>size + SHA-256, MP4/MOV box walk, ffprobe"]
     verify --> bad{"Mismatch or<br/>missing file?"}
     bad -- yes --> q["Quarantine the asset, urgent alert<br/>(never deleted from iCloud)"]
@@ -135,7 +138,7 @@ every time the agent starts. Browsers sign in with a one-time code from `homeclo
 | Web app (`ui/`) | The whole interface: Overview, Library, Activity, Quarantine, Settings. Built once and embedded in the agent's binary. | Any browser, served by the agent |
 | Desktop app (`desktop/`) | A native window around the same web app. It talks to this PC's agent or to a paired homecloud on a NAS and keeps its credentials in the OS credential store. | Windows, Linux |
 | kei, FFmpeg, smartctl | Pinned external tools: kei downloads iCloud Photos, `ffprobe` checks videos and `ffmpeg` renders thumbnails, `smartctl` reads drive health in the container. | Next to the agent |
-| The archive | Plain files you can use without homecloud (`Photos/`, `Drive/`, `iPhone backups/`) plus `homecloud.db`, the ledger of what was downloaded, when and how it was verified, and `manifest.csv`. | One folder: `storage.root` |
+| The archive | Plain files you can use without homecloud (`Photos/`, `Drive/`, `iPhone backups/`, and `Damaged/` for the files repairs replaced) plus `homecloud.db`, the ledger of what was downloaded, when and how it was verified, and `manifest.csv`. | One folder: `storage.root` |
 
 ```mermaid
 flowchart LR
@@ -199,7 +202,8 @@ else.
   Nothing is ever taken as fine by default.
 - **Verify everything, keep everything.** Every downloaded file is checked against what iCloud
   says it is (SHA-256, video structure, `ffprobe`) and re-checked on a schedule. A file that
-  fails is quarantined and kept. Nothing is deleted, from iCloud or from the archive, except
+  fails is quarantined and kept; repairing it downloads it again and moves the damaged file to
+  `Damaged/`. Nothing is deleted, from iCloud or from the archive, except
   homecloud's own derived data: the thumbnail cache, rotated logs, old ledger snapshots, and
   iPhone backup copies beyond `keep`.
 - **One writer.** Only one process writes the ledger at a time (the agent, or the CLI while the
@@ -407,6 +411,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud status` | Asset counts by state |
 | `homecloud quarantine list` | Files that failed a check, with the reason |
 | `homecloud quarantine release --library L --asset A --reason R` | Lift a quarantine (audited); the asset's files are checked again |
+| `homecloud quarantine repair --library L --asset A` | Download the failing files again: the agent's next sync moves each one to `Damaged/<time>/` and has kei download it; the asset leaves quarantine once every file is back, and is checked again. If kei will not download a file again, it is put back and the asset stays quarantined |
 | `homecloud verify` | Ingest kei's manifest and run all outstanding verification, without iCloud |
 | `homecloud notify-test` | Send a test push notification |
 | `homecloud install` / `uninstall` | Register / remove the logon task (Windows) or systemd user unit (Linux) |
@@ -418,8 +423,9 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud iphone push-key` / `push-key --set` | Show this computer's key for pushed backups, creating it (run where the archive is); `--set` saves that key on the computer that pushes (pasted, or on standard input) |
 | `homecloud smartctl serve` | Linux: answer the agent's drive health requests on `smartctl.socket`, the container's smartctl sidecar (`deploy/compose.yaml`) |
 
-`verify` and `quarantine release` write the ledger, which the running agent owns: while it runs
-they refuse, and the same actions are in the app (Sync now, Quarantine → Release).
+`verify`, `quarantine release` and `quarantine repair` write the ledger, which the running agent
+owns: while it runs they refuse, and the same actions are in the app (Sync now, Quarantine →
+Release or Repair).
 
 When kei's Apple session expires the agent alerts every `notify.repeat_every`; re-authenticate with
 `kei login --config <kei config>` and approve the code on a trusted device.

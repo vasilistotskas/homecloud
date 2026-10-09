@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -194,7 +195,8 @@ func (db *DB) RecordMismatch(ctx context.Context, k Key, tier Tier, reason strin
 
 // ReleaseQuarantine is the operator action that lifts a quarantine after review.
 // The asset returns to downloaded with its failures cleared, so every required
-// tier runs again before it can count as verified. The reason is audited.
+// tier runs again before it can count as verified. The reason is audited. An
+// asset under repair is not released: the repair decides how it leaves.
 func (db *DB) ReleaseQuarantine(ctx context.Context, library, assetID, reason string, now time.Time) (err error) {
 	if strings.TrimSpace(reason) == "" {
 		return ErrReasonRequired
@@ -210,13 +212,12 @@ func (db *DB) ReleaseQuarantine(ctx context.Context, library, assetID, reason st
 		}
 	}()
 
-	res, err := tx.ExecContext(ctx, `UPDATE assets SET state = ?, state_changed_at = ?
-		WHERE library = ? AND asset_id = ? AND state = ?`, StateDownloaded, ts, library, assetID, StateQuarantined)
-	if err != nil {
-		return fmt.Errorf("release quarantine %s/%s: %w", library, assetID, err)
+	if err = requireRepairable(ctx, tx, library, assetID); err != nil {
+		return fmt.Errorf("release quarantine: %w", err)
 	}
-	if n, nerr := res.RowsAffected(); nerr != nil || n != 1 {
-		return errors.Join(fmt.Errorf("release quarantine %s/%s: %w", library, assetID, ErrNotQuarantined), nerr)
+	if _, err = tx.ExecContext(ctx, `UPDATE assets SET state = ?, state_changed_at = ?
+		WHERE library = ? AND asset_id = ?`, StateDownloaded, ts, library, assetID); err != nil {
+		return fmt.Errorf("release quarantine %s/%s: %w", library, assetID, err)
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE resources SET failure = NULL WHERE library = ? AND asset_id = ?`,
 		library, assetID); err != nil {
@@ -259,13 +260,27 @@ type QuarantinedRendition struct {
 	// QuarantinedAt is when the asset entered quarantine.
 	QuarantinedAt time.Time
 	Failure       Failure
+	// Repair is the rendition's repair, nil when none was requested.
+	Repair *Repair
+}
+
+// Repair is the progress of one rendition's repair.
+type Repair struct {
+	RequestedAt time.Time
+	// SetAsideAt is nil until the file left its recorded path.
+	SetAsideAt *time.Time
+	// KeptAs is where the damaged file was moved (relative to storage.root,
+	// '/'); empty when it was already missing or is not set aside yet.
+	KeptAs string
 }
 
 // Quarantined lists the failing renditions of all quarantined assets.
 func (db *DB) Quarantined(ctx context.Context) (out []QuarantinedRendition, err error) {
 	rows, err := db.r.QueryContext(ctx, `
-		SELECT r.library, r.asset_id, r.version, r.filename, r.local_path, a.state_changed_at, r.failure
+		SELECT r.library, r.asset_id, r.version, r.filename, r.local_path, a.state_changed_at, r.failure,
+		       p.requested_at, p.set_aside_at, coalesce(p.kept_as, '')
 		FROM resources r JOIN assets a USING (library, asset_id)
+		LEFT JOIN rendition_repairs p USING (library, asset_id, version)
 		WHERE a.state = ? AND r.failure IS NOT NULL
 		ORDER BY a.state_changed_at DESC, r.library, r.asset_id, r.version`, StateQuarantined)
 	if err != nil {
@@ -274,9 +289,21 @@ func (db *DB) Quarantined(ctx context.Context) (out []QuarantinedRendition, err 
 	defer func() { err = errors.Join(err, rows.Close()) }()
 	for rows.Next() {
 		var q QuarantinedRendition
-		var at, failure string
-		if scanErr := rows.Scan(&q.Library, &q.AssetID, &q.Version, &q.Filename, &q.LocalPath, &at, &failure); scanErr != nil {
+		var at, failure, keptAs string
+		var requested, setAside sql.NullString
+		if scanErr := rows.Scan(&q.Library, &q.AssetID, &q.Version, &q.Filename, &q.LocalPath, &at, &failure,
+			&requested, &setAside, &keptAs); scanErr != nil {
 			return nil, fmt.Errorf("scan quarantined: %w", scanErr)
+		}
+		if requested.Valid {
+			rp := Repair{KeptAs: keptAs}
+			if rp.RequestedAt, err = parseTime(requested.String); err != nil {
+				return nil, fmt.Errorf("quarantined %v: %w", q.Key, err)
+			}
+			if rp.SetAsideAt, err = parseNullTime(setAside); err != nil {
+				return nil, fmt.Errorf("quarantined %v: %w", q.Key, err)
+			}
+			q.Repair = &rp
 		}
 		if q.QuarantinedAt, err = parseTime(at); err != nil {
 			return nil, fmt.Errorf("quarantined %v: %w", q.Key, err)

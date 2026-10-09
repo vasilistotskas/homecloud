@@ -33,7 +33,7 @@ func TestIPhoneBackupRecordsAndStateEvents(t *testing.T) {
 		!got.JudgedCompletedAt.Equal(judged) || !got.LastFullReadAt.Equal(t0) {
 		t.Fatalf("records = %+v, %v", recs, err)
 	}
-	events, err := db.Events(ctx, []string{EventIPhoneBackupChanged}, 0, 10)
+	events, err := db.Events(ctx, EventQuery{Kinds: []string{EventIPhoneBackupChanged}}, 0, 10)
 	if err != nil || len(events) != 3 { // ok, stale, and the other folder's first state
 		t.Fatalf("events = %d, %v; want 3", len(events), err)
 	}

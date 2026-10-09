@@ -68,6 +68,21 @@ func Sync(ctx context.Context, cfg config.Kei, log io.Writer) (Outcome, error) {
 	return outcomeFor(exitErr.ExitCode())
 }
 
+// Reconcile runs `kei reconcile`, which reads kei's state and the disk without
+// contacting iCloud and marks every downloaded file that is missing or
+// truncated as failed, so the next sync downloads it again (kei
+// src/commands/reconcile.rs, v0.25.0). It never deletes or changes files.
+// Its report goes to log.
+func Reconcile(ctx context.Context, cfg config.Kei, log io.Writer) error {
+	cmd := platform.Command(ctx, cfg.Binary, "reconcile", "--config", cfg.Config, "--log-level", "warn")
+	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Stdout, cmd.Stderr = log, log
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kei reconcile: %w", err)
+	}
+	return nil
+}
+
 func outcomeFor(code int) (Outcome, error) {
 	switch code {
 	case 0:

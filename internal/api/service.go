@@ -54,10 +54,11 @@ type Ledger interface {
 	LastFinishedRun(ctx context.Context, kind string) (ledger.Run, error)
 	LastCompletedRun(ctx context.Context, kind string) (ledger.Run, error)
 	Runs(ctx context.Context, kind string, beforeID int64, limit int) ([]ledger.Run, error)
-	Events(ctx context.Context, kinds []string, beforeID int64, limit int) ([]ledger.Event, error)
+	Events(ctx context.Context, q ledger.EventQuery, beforeID int64, limit int) ([]ledger.Event, error)
 	Quarantined(ctx context.Context) ([]ledger.QuarantinedRendition, error)
 	Asset(ctx context.Context, library, assetID string) (ledger.AssetDetail, error)
 	ReleaseQuarantine(ctx context.Context, library, assetID, reason string, now time.Time) error
+	RequestRepair(ctx context.Context, library, assetID string, now time.Time) error
 	LibraryPage(ctx context.Context, q ledger.LibraryQuery) ([]ledger.LibraryAsset, error)
 }
 
@@ -378,7 +379,7 @@ func (s *Service) ListEvents(ctx context.Context, req *connect.Request[agentv3.L
 	if err != nil {
 		return nil, err
 	}
-	events, err := s.db.Events(ctx, kinds, before, size)
+	events, err := s.db.Events(ctx, ledger.EventQuery{Kinds: kinds, Text: strings.TrimSpace(req.Msg.GetQuery())}, before, size)
 	if err != nil {
 		return nil, internal(err)
 	}
@@ -418,7 +419,15 @@ func (s *Service) ListQuarantine(ctx context.Context, _ *connect.Request[agentv3
 		if q.Version == ledger.VersionOriginal || qa.GetAsset().GetFilename() == "" {
 			qa.Asset.Filename = q.Filename
 		}
-		qa.Failures = append(qa.Failures, failureToProto(q.Version, q.Failure))
+		f := failureToProto(q.Version, q.Failure)
+		if r := q.Repair; r != nil {
+			qa.RepairRequestedAt = timestamppb.New(r.RequestedAt)
+			if r.SetAsideAt != nil {
+				f.SetAsideAt = timestamppb.New(*r.SetAsideAt)
+			}
+			f.KeptAs = r.KeptAs
+		}
+		qa.Failures = append(qa.Failures, f)
 	}
 	return connect.NewResponse(res), nil
 }
@@ -447,7 +456,9 @@ func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[ag
 	switch {
 	case errors.Is(err, ledger.ErrReasonRequired):
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
-	case errors.Is(err, ledger.ErrNotQuarantined):
+	case errors.Is(err, ledger.ErrNotFound):
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, ledger.ErrNotQuarantined), errors.Is(err, ledger.ErrRepairInProgress):
 		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
 	case err != nil:
 		return nil, internal(err)
@@ -457,6 +468,25 @@ func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[ag
 		"reason", reason, "principal", principal(ctx))
 	s.agent.Hub().Changed()
 	return connect.NewResponse(&agentv3.ReleaseQuarantineResponse{}), nil
+}
+
+// RepairQuarantine implements AgentService.
+func (s *Service) RepairQuarantine(ctx context.Context, req *connect.Request[agentv3.RepairQuarantineRequest]) (*connect.Response[agentv3.RepairQuarantineResponse], error) {
+	m := req.Msg
+	err := s.db.RequestRepair(ctx, m.GetLibrary(), m.GetAssetId(), s.now())
+	switch {
+	case errors.Is(err, ledger.ErrNotFound):
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, ledger.ErrNotQuarantined), errors.Is(err, ledger.ErrRepairInProgress):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case err != nil:
+		return nil, internal(err)
+	}
+	started := s.agent.RequestCycle()
+	s.log.InfoContext(ctx, "quarantine repair requested", "library", m.GetLibrary(), "asset", m.GetAssetId(),
+		"cycle_started", started, "principal", principal(ctx))
+	s.agent.Hub().Changed()
+	return connect.NewResponse(&agentv3.RepairQuarantineResponse{}), nil
 }
 
 // StartSync implements AgentService.

@@ -67,18 +67,18 @@ func TestEventsFilterAndPage(t *testing.T) {
 	if err := db.ReleaseQuarantine(ctx, "PrimarySync", "Q", "reviewed", t0); err != nil {
 		t.Fatal(err)
 	}
-	events, err := db.Events(ctx, []string{"quarantined", "quarantine_released"}, 0, 10)
+	events, err := db.Events(ctx, EventQuery{Kinds: []string{"quarantined", "quarantine_released"}}, 0, 10)
 	if err != nil || len(events) != 2 || events[0].Kind != "quarantine_released" || events[1].Asset != "Q" {
 		t.Fatalf("events = %+v, %v", events, err)
 	}
 	if events[1].Filename == "" {
 		t.Error("event filename should come from the original rendition")
 	}
-	older, err := db.Events(ctx, []string{"quarantined", "quarantine_released"}, events[0].ID, 10)
+	older, err := db.Events(ctx, EventQuery{Kinds: []string{"quarantined", "quarantine_released"}}, events[0].ID, 10)
 	if err != nil || len(older) != 1 || older[0].Kind != "quarantined" {
 		t.Fatalf("older events = %+v, %v", older, err)
 	}
-	none, err := db.Events(ctx, []string{"no_such_kind"}, 0, 10)
+	none, err := db.Events(ctx, EventQuery{Kinds: []string{"no_such_kind"}}, 0, 10)
 	if err != nil || len(none) != 0 {
 		t.Fatalf("unexpected events = %+v, %v", none, err)
 	}
@@ -134,7 +134,7 @@ func TestRecordDriveHealthOnlyOnChange(t *testing.T) {
 			t.Fatalf("step %d (%s): prev=%q changed=%v err=%v", i, s.state, prev, changed, err)
 		}
 	}
-	events, err := db.Events(ctx, []string{EventDriveHealthChanged}, 0, 10)
+	events, err := db.Events(ctx, EventQuery{Kinds: []string{EventDriveHealthChanged}}, 0, 10)
 	if err != nil || len(events) != 3 || events[0].Asset != "" || events[0].Filename != "" {
 		t.Fatalf("events = %+v, %v", events, err)
 	}

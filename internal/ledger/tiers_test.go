@@ -99,7 +99,7 @@ func TestReleaseQuarantine(t *testing.T) {
 	if p := pendingFor(t, db, "R"); len(p) != 1 {
 		t.Fatalf("released asset must be re-verified; pending = %+v", p)
 	}
-	events, err := db.Events(ctx, []string{"quarantine_released"}, 0, 5)
+	events, err := db.Events(ctx, EventQuery{Kinds: []string{"quarantine_released"}}, 0, 5)
 	if err != nil || len(events) != 1 || !strings.Contains(events[0].Detail, "rule fixed") {
 		t.Fatalf("events = %+v, %v", events, err)
 	}

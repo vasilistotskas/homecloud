@@ -34,29 +34,34 @@ func LedgerPath(cfg *config.Config) string {
 func Renditions(rows []kei.ManifestRow) []ledger.Rendition {
 	out := make([]ledger.Rendition, 0, len(rows))
 	for _, r := range rows {
-		structure, probe := verify.RequiredTiers(string(r.MediaType), r.Filename)
-		rd := ledger.Rendition{
-			Library:           r.Library,
-			AssetID:           r.AssetID,
-			Version:           r.Version,
-			Filename:          r.Filename,
-			Downloaded:        r.Status == kei.StatusDownloaded,
-			SizeBytes:         r.SizeBytes,
-			MediaType:         string(r.MediaType),
-			RequiresStructure: structure,
-			RequiresProbe:     probe,
-			CreatedAt:         r.CreatedAt,
-			AddedAt:           r.AddedAt,
-			SeenAt:            r.LastSeenAt,
-		}
-		if rd.Downloaded {
-			// Validate guarantees both are present for downloaded rows.
-			rd.LocalPath = *r.LocalPath
-			rd.SHA256 = *r.DownloadChecksum
-		}
-		out = append(out, rd)
+		out = append(out, rendition(r))
 	}
 	return out
+}
+
+func rendition(r kei.ManifestRow) ledger.Rendition {
+	structure, probe := verify.RequiredTiers(string(r.MediaType), r.Filename)
+	rd := ledger.Rendition{
+		Library:           r.Library,
+		AssetID:           r.AssetID,
+		Version:           r.Version,
+		Filename:          r.Filename,
+		Downloaded:        r.Status == kei.StatusDownloaded,
+		SizeBytes:         r.SizeBytes,
+		MediaType:         string(r.MediaType),
+		RequiresStructure: structure,
+		RequiresProbe:     probe,
+		CreatedAt:         r.CreatedAt,
+		AddedAt:           r.AddedAt,
+		SeenAt:            r.LastSeenAt,
+	}
+	if rd.Downloaded {
+		// Validate guarantees both are present for downloaded rows.
+		rd.LocalPath = *r.LocalPath
+		rd.SHA256 = *r.DownloadChecksum
+		rd.DownloadedAt = r.DownloadedAt
+	}
+	return rd
 }
 
 // Ingest reads kei's manifest and records it in the ledger.

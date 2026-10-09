@@ -40,4 +40,6 @@ var (
 	ErrNotQuarantined = errors.New("asset is not quarantined")
 	// ErrReasonRequired: an audited action was requested without a reason.
 	ErrReasonRequired = errors.New("a reason is required")
+	// ErrRepairInProgress: the asset's repair has not finished.
+	ErrRepairInProgress = errors.New("a repair of this asset is in progress")
 )

@@ -32,11 +32,13 @@ type Rendition struct {
 	Version    string
 	Filename   string
 	Downloaded bool
-	// LocalPath, SizeBytes and SHA256 are meaningful only when Downloaded.
-	LocalPath string
-	SizeBytes uint64
-	SHA256    string
-	MediaType string
+	// LocalPath, SizeBytes, SHA256 and DownloadedAt (when the downloader last
+	// wrote the file) are meaningful only when Downloaded.
+	LocalPath    string
+	SizeBytes    uint64
+	SHA256       string
+	DownloadedAt *time.Time
+	MediaType    string
 	// RequiresStructure / RequiresProbe name the tiers beyond content this
 	// rendition needs; the caller decides them (see verify.RequiredTiers).
 	RequiresStructure, RequiresProbe bool
@@ -48,11 +50,14 @@ type Rendition struct {
 // IngestStats summarises one ingest.
 type IngestStats struct {
 	Assets, Renditions, NewRenditions, ChangedRenditions, MovedRenditions int
+	// Repaired counts quarantined assets whose repair completed.
+	Repaired int
 }
 
 // Ingest records renditions in one transaction. A rendition whose size or hash
 // changed loses its verification evidence. Asset states are recomputed, except
-// that quarantine is sticky.
+// that quarantine is sticky: it ends only when an operator releases the asset
+// or its repair completes (see RequestRepair).
 func (db *DB) Ingest(ctx context.Context, rs []Rendition, now time.Time) (stats IngestStats, err error) {
 	tx, err := db.w.BeginTx(ctx, nil)
 	if err != nil {
@@ -106,6 +111,13 @@ func (db *DB) Ingest(ctx context.Context, rs []Rendition, now time.Time) (stats 
 					return stats, err
 				}
 			}
+		}
+		var repaired bool
+		if repaired, err = completeRepair(ctx, tx, k[0], k[1], group, ts); err != nil {
+			return stats, err
+		}
+		if repaired {
+			stats.Repaired++
 		}
 		if err = recomputeState(ctx, tx, k[0], k[1], group, ts); err != nil {
 			return stats, err
