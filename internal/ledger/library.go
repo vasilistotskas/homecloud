@@ -148,8 +148,14 @@ func (db *DB) fillDisplay(ctx context.Context, a *LibraryAsset) (err error) {
 // pickDisplay prefers the edited ("adjusted") version of the medium that
 // represents the asset, then the original.
 func pickDisplay(kind AssetKind, files []RenditionFile) (RenditionFile, bool) {
+	return pickRendition(kind, files, VersionAdjusted, VersionOriginal)
+}
+
+// pickRendition returns the first of versions present for the medium that
+// represents the asset: the picture of a Live Photo, the video of a video.
+func pickRendition(kind AssetKind, files []RenditionFile, versions ...string) (RenditionFile, bool) {
 	wanted := map[AssetKind]string{KindPhoto: "photo", KindLivePhoto: "live_photo_image", KindVideo: "video"}[kind]
-	for _, version := range []string{VersionAdjusted, VersionOriginal} {
+	for _, version := range versions {
 		for _, f := range files {
 			if f.MediaType == wanted && f.Version == version {
 				return f, true

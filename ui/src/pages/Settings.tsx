@@ -195,6 +195,12 @@ export function SettingsPage() {
           <Text>{formatInterval(s.scrubIntervalSeconds)}</Text>
         </Row>
         <Row
+          label="Safe to delete after"
+          detail="Lists an item once it has been in iCloud Photos this long and every file of it was verified and re-checked (safe_to_delete.min_age)"
+        >
+          <Text>{formatSpan(s.safeToDeleteMinAgeSeconds)}</Text>
+        </Row>
+        <Row
           label="Records backup"
           detail={`${s.backupDir} · newest ${s.backupKeep} kept (backup.dir must be on another drive)`}
           mono

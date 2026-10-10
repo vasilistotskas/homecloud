@@ -38,6 +38,7 @@ type Config struct {
 	Logs         Logs         `toml:"logs"`
 	DriveHealth  DriveHealth  `toml:"drive_health"`
 	Smartctl     Smartctl     `toml:"smartctl"`
+	SafeToDelete SafeToDelete `toml:"safe_to_delete"`
 }
 
 // Storage describes the archive.
@@ -231,6 +232,15 @@ type Backup struct {
 	Interval Duration `toml:"interval"`
 	// Keep is how many of the newest snapshots are kept.
 	Keep int `toml:"keep"`
+}
+
+// SafeToDelete configures the report of iCloud Photos items whose archived
+// copy is proven, which the owner may delete in Apple's Photos app. homecloud
+// itself deletes nothing.
+type SafeToDelete struct {
+	// MinAge is how long an item must have been in iCloud Photos before the
+	// report lists it, so recent photos stay on the owner's devices.
+	MinAge Duration `toml:"min_age"`
 }
 
 // Duration is a time.Duration decoded from a Go duration string such as "1h30m".
@@ -434,6 +444,10 @@ func (c *Config) Validate() error {
 	}
 	if st := c.Drive.StallTimeout.Std(); st < 30*time.Second || st > 10*time.Minute {
 		add("drive.stall_timeout must be between 30s and 10m, got %s", st)
+	}
+
+	if a := c.SafeToDelete.MinAge.Std(); a < 24*time.Hour || a > 10*365*24*time.Hour {
+		add("safe_to_delete.min_age must be between 24h and 87600h (10 years), got %s", a)
 	}
 
 	if c.Logs.MaxSizeMB < 1 || c.Logs.MaxSizeMB > 1024 {

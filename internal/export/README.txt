@@ -34,6 +34,22 @@ manifest.csv
     To check a file yourself, compare its SHA-256 with the manifest
     (Windows: certutil -hashfile <file> SHA256; Linux: sha256sum <file>).
 
+safe-to-delete.csv
+    The photos and videos you can delete from iCloud Photos (in Apple's Photos
+    app) without losing them, rewritten after every sync, newest first. An
+    item is listed only when every one of its files here was verified and then
+    confirmed again by a later check, it has been in iCloud Photos longer than
+    homecloud's safe_to_delete.min_age, and the drives holding this folder were
+    last found healthy (otherwise the file lists nothing). homecloud itself
+    never deletes anything from iCloud; Photos keeps what you delete in
+    Recently Deleted for 30 days.
+      created_at, added_at          when it was taken / added to iCloud (UTC)
+      filename, kind                original file name; photo, live or video
+      size_bytes                    size of all its files here (original, edits,
+                                    Live Photo video): about the space it frees
+      path                          its original below this folder
+      library, asset_id             iCloud's identity of the item
+
 Drive/
     iCloud Drive, archived by homecloud. Nothing here is ever deleted.
     Drive/iCloud Drive/...        the iCloud Drive folder as the Files app shows it

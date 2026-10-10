@@ -13,6 +13,7 @@ export const paths = [
   "/library",
   "/activity",
   "/quarantine",
+  "/safe-to-delete",
   "/settings",
   "/connect",
 ] as const satisfies readonly `/${string}`[];

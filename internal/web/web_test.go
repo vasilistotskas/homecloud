@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
 	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
@@ -25,6 +26,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/media"
 	"github.com/vasilistotskas/homecloud/internal/notify"
@@ -70,7 +72,9 @@ func (n *notes) sent() []notify.Msg {
 
 type env struct {
 	// browser is the host:port a browser on this computer uses.
-	browser  string
+	browser string
+	// root is the archive's root.
+	root     string
 	notes    *notes
 	renderer *thumbs.Renderer
 	url      string
@@ -123,10 +127,11 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 	includeHidden := true
 	renderer := thumbs.New(config.FFmpeg{}, filepath.Join(t.TempDir(), "thumbs"), slog.New(slog.DiscardHandler))
 	cfg := &config.Config{
-		Storage:  config.Storage{Root: t.TempDir(), MinFreePercent: 15},
-		ICloud:   config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
-		Web:      config.Web{Listen: listen, PublicOrigin: &publicOrigin},
-		Schedule: config.Schedule{SyncInterval: config.Duration(time.Hour)},
+		Storage:      config.Storage{Root: t.TempDir(), MinFreePercent: 15},
+		ICloud:       config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
+		Web:          config.Web{Listen: listen, PublicOrigin: &publicOrigin},
+		Schedule:     config.Schedule{SyncInterval: config.Duration(time.Hour)},
+		SafeToDelete: config.SafeToDelete{MinAge: config.Duration(365 * 24 * time.Hour)},
 	}
 
 	discard := slog.New(slog.DiscardHandler)
@@ -159,7 +164,7 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 	srv.Start()
 	t.Cleanup(srv.Close)
 	return &env{
-		url: srv.URL, host: listen, browser: browser, notes: sent, token: token, db: db, agent: agent, renderer: renderer,
+		url: srv.URL, host: listen, browser: browser, root: cfg.Storage.Root, notes: sent, token: token, db: db, agent: agent, renderer: renderer,
 		client: agentv3connect.NewAgentServiceClient(srv.Client(), srv.URL, connect.WithInterceptors(auth.Bearer(token))),
 	}
 }
@@ -850,5 +855,99 @@ func TestOverviewAndEventsOfICloudDrive(t *testing.T) {
 	if len(got) != 2 || got[0].GetDriveFile().GetChange() != agentv3.DriveFileChange_DRIVE_FILE_CHANGE_DELETED ||
 		got[1].GetDriveFile().GetSizeBytes() != 10 || got[0].GetAsset().GetFilename() != "tax.pdf" {
 		t.Fatalf("events = %v", got)
+	}
+}
+
+// seedArchived archives a photo taken at taken, verified a month ago and
+// confirmed by a scrub yesterday; added says when it was added to iCloud.
+func seedArchived(t *testing.T, db *ledger.DB, assetID string, taken, added time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	r := ledger.Rendition{
+		Library: "PrimarySync", AssetID: assetID, Version: "original", Filename: assetID + ".HEIC",
+		Downloaded: true, LocalPath: "/archive/Photos/" + assetID + ".HEIC", SizeBytes: 10,
+		SHA256: strings.Repeat("a", 64), MediaType: "photo", CreatedAt: taken, AddedAt: &added, SeenAt: t0,
+	}
+	if _, err := db.Ingest(ctx, []ledger.Rendition{r}, t0); err != nil {
+		t.Fatal(err)
+	}
+	k := ledger.Key{Library: "PrimarySync", AssetID: assetID, Version: "original"}
+	if err := db.RecordPass(ctx, k, ledger.TierContent, t0.Add(-30*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordScrub(ctx, k, t0.Add(-24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSafeToDelete(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	old := t0.AddDate(-2, 0, 0)
+	seedArchived(t, e.db, "A", time.Date(2024, 5, 2, 9, 0, 0, 0, time.UTC), old)
+	seedArchived(t, e.db, "B", time.Date(2024, 3, 31, 22, 30, 0, 0, time.UTC), old) // April in Athens
+	seedArchived(t, e.db, "C", time.Date(2024, 3, 3, 9, 0, 0, 0, time.UTC), old)
+	seedArchived(t, e.db, "R", time.Date(2024, 3, 3, 9, 0, 0, 0, time.UTC), t0.Add(-time.Hour))
+	seed(t, e.db, "Q", true)
+	athens := connect.NewRequest(&agentv3.GetSafeToDeleteRequest{TimeZone: "Europe/Athens"})
+
+	res, err := e.client.GetSafeToDelete(ctx, athens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := res.Msg.GetReport(); !strings.Contains(r.GetWithheld(), "not been checked") || r.GetAssets() != 0 {
+		t.Fatalf("report before any storage check = %v", r)
+	}
+
+	e.agent.hub.SetStorage(health.Report{State: health.StateOK, CheckedAt: t0})
+	res, err = e.client.GetSafeToDelete(ctx, athens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &agentv3.SafeToDelete{
+		Assets: 3, Bytes: 30, NotVerified: 1, TooRecent: 1, MinAgeSeconds: 365 * 24 * 3600,
+		Months: []*agentv3.SafeToDeleteMonth{
+			{Year: 2024, Month: 5, Assets: 1, Bytes: 10},
+			{Year: 2024, Month: 4, Assets: 1, Bytes: 10},
+			{Year: 2024, Month: 3, Assets: 1, Bytes: 10},
+		},
+	}
+	got := res.Msg.GetReport()
+	if got.GetExportPath() != filepath.Join(e.root, "safe-to-delete.csv") {
+		t.Errorf("export path = %q", got.GetExportPath())
+	}
+	got.ExportPath = ""
+	if !proto.Equal(got, want) {
+		t.Fatalf("report = %v, want %v", got, want)
+	}
+
+	for _, zone := range []string{"", "Local", "Mars/Olympus_Mons"} {
+		_, zoneErr := e.client.GetSafeToDelete(ctx, connect.NewRequest(&agentv3.GetSafeToDeleteRequest{TimeZone: zone}))
+		if code(zoneErr) != connect.CodeInvalidArgument {
+			t.Errorf("time zone %q: %v, want invalid argument", zone, zoneErr)
+		}
+	}
+
+	first, err := e.client.ListSafeToDelete(ctx, connect.NewRequest(&agentv3.ListSafeToDeleteRequest{PageSize: 2}))
+	if err != nil || len(first.Msg.GetItems()) != 2 || first.Msg.GetNextPageToken() == "" {
+		t.Fatalf("first page = %v, %v", first, err)
+	}
+	item := first.Msg.GetItems()[0]
+	if item.GetItem().GetAsset().GetAssetId() != "A" || item.GetSizeBytes() != 10 || item.GetPath() != "/archive/Photos/A.HEIC" ||
+		!item.GetAddedAt().AsTime().Equal(old) || !strings.HasPrefix(item.GetItem().GetThumbnailUrl(), "/media/thumb/PrimarySync/A/original?") {
+		t.Fatalf("first item = %v", item)
+	}
+	rest, err := e.client.ListSafeToDelete(ctx, connect.NewRequest(&agentv3.ListSafeToDeleteRequest{PageToken: first.Msg.GetNextPageToken()}))
+	if err != nil || len(rest.Msg.GetItems()) != 1 || rest.Msg.GetItems()[0].GetItem().GetAsset().GetAssetId() != "C" ||
+		rest.Msg.GetNextPageToken() != "" {
+		t.Fatalf("second page = %v, %v", rest, err)
+	}
+	if _, err = e.client.ListSafeToDelete(ctx, connect.NewRequest(&agentv3.ListSafeToDeleteRequest{PageToken: "!"})); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("malformed token = %v", err)
+	}
+
+	settings, err := e.client.GetSettings(ctx, connect.NewRequest(&agentv3.GetSettingsRequest{}))
+	if err != nil || settings.Msg.GetSettings().GetSafeToDeleteMinAgeSeconds() != 365*24*3600 {
+		t.Fatalf("settings = %v, %v", settings, err)
 	}
 }

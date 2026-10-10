@@ -232,9 +232,10 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 			ScrubInterval: config.Duration(168 * time.Hour),
 			ScrubFraction: 1,
 		},
-		Backup: config.Backup{Dir: filepath.Join(t.TempDir(), "ledger-backups"), Interval: config.Duration(24 * time.Hour), Keep: 2},
-		Notify: config.Notify{RepeatEvery: config.Duration(24 * time.Hour), Timeout: config.Duration(time.Minute)},
-		Drive:  config.Drive{SyncInterval: config.Duration(6 * time.Hour), Workers: 2, StallTimeout: config.Duration(time.Minute)},
+		Backup:       config.Backup{Dir: filepath.Join(t.TempDir(), "ledger-backups"), Interval: config.Duration(24 * time.Hour), Keep: 2},
+		Notify:       config.Notify{RepeatEvery: config.Duration(24 * time.Hour), Timeout: config.Duration(time.Minute)},
+		SafeToDelete: config.SafeToDelete{MinAge: config.Duration(365 * 24 * time.Hour)},
+		Drive:        config.Drive{SyncInterval: config.Duration(6 * time.Hour), Workers: 2, StallTimeout: config.Duration(time.Minute)},
 		IPhoneBackup: config.IPhoneBackup{
 			Dirs: []string{filepath.Join(t.TempDir(), "MobileSync", "Backup")}, MaxAge: config.Duration(7 * 24 * time.Hour),
 			CheckInterval: config.Duration(24 * time.Hour), MaxShrinkPercent: 50,

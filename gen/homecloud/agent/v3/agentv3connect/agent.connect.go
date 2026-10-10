@@ -51,6 +51,12 @@ const (
 	AgentServiceListEventsProcedure = "/homecloud.agent.v3.AgentService/ListEvents"
 	// AgentServiceListAssetsProcedure is the fully-qualified name of the AgentService's ListAssets RPC.
 	AgentServiceListAssetsProcedure = "/homecloud.agent.v3.AgentService/ListAssets"
+	// AgentServiceGetSafeToDeleteProcedure is the fully-qualified name of the AgentService's
+	// GetSafeToDelete RPC.
+	AgentServiceGetSafeToDeleteProcedure = "/homecloud.agent.v3.AgentService/GetSafeToDelete"
+	// AgentServiceListSafeToDeleteProcedure is the fully-qualified name of the AgentService's
+	// ListSafeToDelete RPC.
+	AgentServiceListSafeToDeleteProcedure = "/homecloud.agent.v3.AgentService/ListSafeToDelete"
 	// AgentServiceListQuarantineProcedure is the fully-qualified name of the AgentService's
 	// ListQuarantine RPC.
 	AgentServiceListQuarantineProcedure = "/homecloud.agent.v3.AgentService/ListQuarantine"
@@ -107,6 +113,12 @@ type AgentServiceClient interface {
 	ListEvents(context.Context, *connect.Request[v3.ListEventsRequest]) (*connect.Response[v3.ListEventsResponse], error)
 	// ListAssets pages through the archive, newest first, for the library browser.
 	ListAssets(context.Context, *connect.Request[v3.ListAssetsRequest]) (*connect.Response[v3.ListAssetsResponse], error)
+	// GetSafeToDelete reports the iCloud Photos items the owner may delete in
+	// Apple's Photos app without losing them, totalled by month. Read only:
+	// homecloud deletes nothing.
+	GetSafeToDelete(context.Context, *connect.Request[v3.GetSafeToDeleteRequest]) (*connect.Response[v3.GetSafeToDeleteResponse], error)
+	// ListSafeToDelete pages through the items GetSafeToDelete counts, newest first.
+	ListSafeToDelete(context.Context, *connect.Request[v3.ListSafeToDeleteRequest]) (*connect.Response[v3.ListSafeToDeleteResponse], error)
 	// ListQuarantine lists quarantined assets with their failing renditions.
 	ListQuarantine(context.Context, *connect.Request[v3.ListQuarantineRequest]) (*connect.Response[v3.ListQuarantineResponse], error)
 	// GetAsset returns one asset with every rendition and its verification evidence.
@@ -196,6 +208,20 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+AgentServiceListAssetsProcedure,
 			connect.WithSchema(agentServiceMethods.ByName("ListAssets")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		getSafeToDelete: connect.NewClient[v3.GetSafeToDeleteRequest, v3.GetSafeToDeleteResponse](
+			httpClient,
+			baseURL+AgentServiceGetSafeToDeleteProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetSafeToDelete")),
+			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+			connect.WithClientOptions(opts...),
+		),
+		listSafeToDelete: connect.NewClient[v3.ListSafeToDeleteRequest, v3.ListSafeToDeleteResponse](
+			httpClient,
+			baseURL+AgentServiceListSafeToDeleteProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ListSafeToDelete")),
 			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 			connect.WithClientOptions(opts...),
 		),
@@ -298,6 +324,8 @@ type agentServiceClient struct {
 	listRuns             *connect.Client[v3.ListRunsRequest, v3.ListRunsResponse]
 	listEvents           *connect.Client[v3.ListEventsRequest, v3.ListEventsResponse]
 	listAssets           *connect.Client[v3.ListAssetsRequest, v3.ListAssetsResponse]
+	getSafeToDelete      *connect.Client[v3.GetSafeToDeleteRequest, v3.GetSafeToDeleteResponse]
+	listSafeToDelete     *connect.Client[v3.ListSafeToDeleteRequest, v3.ListSafeToDeleteResponse]
 	listQuarantine       *connect.Client[v3.ListQuarantineRequest, v3.ListQuarantineResponse]
 	getAsset             *connect.Client[v3.GetAssetRequest, v3.GetAssetResponse]
 	releaseQuarantine    *connect.Client[v3.ReleaseQuarantineRequest, v3.ReleaseQuarantineResponse]
@@ -342,6 +370,16 @@ func (c *agentServiceClient) ListEvents(ctx context.Context, req *connect.Reques
 // ListAssets calls homecloud.agent.v3.AgentService.ListAssets.
 func (c *agentServiceClient) ListAssets(ctx context.Context, req *connect.Request[v3.ListAssetsRequest]) (*connect.Response[v3.ListAssetsResponse], error) {
 	return c.listAssets.CallUnary(ctx, req)
+}
+
+// GetSafeToDelete calls homecloud.agent.v3.AgentService.GetSafeToDelete.
+func (c *agentServiceClient) GetSafeToDelete(ctx context.Context, req *connect.Request[v3.GetSafeToDeleteRequest]) (*connect.Response[v3.GetSafeToDeleteResponse], error) {
+	return c.getSafeToDelete.CallUnary(ctx, req)
+}
+
+// ListSafeToDelete calls homecloud.agent.v3.AgentService.ListSafeToDelete.
+func (c *agentServiceClient) ListSafeToDelete(ctx context.Context, req *connect.Request[v3.ListSafeToDeleteRequest]) (*connect.Response[v3.ListSafeToDeleteResponse], error) {
+	return c.listSafeToDelete.CallUnary(ctx, req)
 }
 
 // ListQuarantine calls homecloud.agent.v3.AgentService.ListQuarantine.
@@ -430,6 +468,12 @@ type AgentServiceHandler interface {
 	ListEvents(context.Context, *connect.Request[v3.ListEventsRequest]) (*connect.Response[v3.ListEventsResponse], error)
 	// ListAssets pages through the archive, newest first, for the library browser.
 	ListAssets(context.Context, *connect.Request[v3.ListAssetsRequest]) (*connect.Response[v3.ListAssetsResponse], error)
+	// GetSafeToDelete reports the iCloud Photos items the owner may delete in
+	// Apple's Photos app without losing them, totalled by month. Read only:
+	// homecloud deletes nothing.
+	GetSafeToDelete(context.Context, *connect.Request[v3.GetSafeToDeleteRequest]) (*connect.Response[v3.GetSafeToDeleteResponse], error)
+	// ListSafeToDelete pages through the items GetSafeToDelete counts, newest first.
+	ListSafeToDelete(context.Context, *connect.Request[v3.ListSafeToDeleteRequest]) (*connect.Response[v3.ListSafeToDeleteResponse], error)
 	// ListQuarantine lists quarantined assets with their failing renditions.
 	ListQuarantine(context.Context, *connect.Request[v3.ListQuarantineRequest]) (*connect.Response[v3.ListQuarantineResponse], error)
 	// GetAsset returns one asset with every rendition and its verification evidence.
@@ -515,6 +559,20 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		AgentServiceListAssetsProcedure,
 		svc.ListAssets,
 		connect.WithSchema(agentServiceMethods.ByName("ListAssets")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceGetSafeToDeleteHandler := connect.NewUnaryHandler(
+		AgentServiceGetSafeToDeleteProcedure,
+		svc.GetSafeToDelete,
+		connect.WithSchema(agentServiceMethods.ByName("GetSafeToDelete")),
+		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceListSafeToDeleteHandler := connect.NewUnaryHandler(
+		AgentServiceListSafeToDeleteProcedure,
+		svc.ListSafeToDelete,
+		connect.WithSchema(agentServiceMethods.ByName("ListSafeToDelete")),
 		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
 		connect.WithHandlerOptions(opts...),
 	)
@@ -620,6 +678,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceListEventsHandler.ServeHTTP(w, r)
 		case AgentServiceListAssetsProcedure:
 			agentServiceListAssetsHandler.ServeHTTP(w, r)
+		case AgentServiceGetSafeToDeleteProcedure:
+			agentServiceGetSafeToDeleteHandler.ServeHTTP(w, r)
+		case AgentServiceListSafeToDeleteProcedure:
+			agentServiceListSafeToDeleteHandler.ServeHTTP(w, r)
 		case AgentServiceListQuarantineProcedure:
 			agentServiceListQuarantineHandler.ServeHTTP(w, r)
 		case AgentServiceGetAssetProcedure:
@@ -679,6 +741,14 @@ func (UnimplementedAgentServiceHandler) ListEvents(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) ListAssets(context.Context, *connect.Request[v3.ListAssetsRequest]) (*connect.Response[v3.ListAssetsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ListAssets is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetSafeToDelete(context.Context, *connect.Request[v3.GetSafeToDeleteRequest]) (*connect.Response[v3.GetSafeToDeleteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.GetSafeToDelete is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ListSafeToDelete(context.Context, *connect.Request[v3.ListSafeToDeleteRequest]) (*connect.Response[v3.ListSafeToDeleteResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ListSafeToDelete is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) ListQuarantine(context.Context, *connect.Request[v3.ListQuarantineRequest]) (*connect.Response[v3.ListQuarantineResponse], error) {

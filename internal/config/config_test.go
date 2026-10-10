@@ -89,6 +89,9 @@ sync_interval = "6h"
 workers = 4
 stall_timeout = "2m"
 
+[safe_to_delete]
+min_age = "8760h"
+
 [logs]
 max_size_mb = 20
 max_backups = 10
@@ -134,9 +137,10 @@ func TestLoadValid(t *testing.T) {
 			CheckInterval: Duration(24 * time.Hour), MaxShrinkPercent: 50,
 			ReadInterval: Duration(168 * time.Hour), StalledAfter: Duration(6 * time.Hour),
 		},
-		Logs:        Logs{MaxSizeMB: 20, MaxBackups: 10},
-		DriveHealth: testDriveHealth,
-		Smartctl:    testSmartctl,
+		Logs:         Logs{MaxSizeMB: 20, MaxBackups: 10},
+		DriveHealth:  testDriveHealth,
+		Smartctl:     testSmartctl,
+		SafeToDelete: SafeToDelete{MinAge: Duration(8760 * time.Hour)},
 	}
 	if diff := cmp.Diff(want, cfg); diff != "" {
 		t.Errorf("config mismatch (-want +got):\n%s", diff)
@@ -180,6 +184,8 @@ func TestValidate(t *testing.T) {
 		{"loose kei version", func(c *Config) { c.Kei.Version = "0.24" }, "kei.version"},
 		{"alert on a single kept checkpoint", func(c *Config) { c.Kei.CheckpointAlertCycles = 1 }, "kei.checkpoint_alert_cycles"},
 		{"kept checkpoint alert too late", func(c *Config) { c.Kei.CheckpointAlertCycles = 101 }, "kei.checkpoint_alert_cycles"},
+		{"safe to delete within a day", func(c *Config) { c.SafeToDelete.MinAge = Duration(23 * time.Hour) }, "safe_to_delete.min_age"},
+		{"safe to delete after a lifetime", func(c *Config) { c.SafeToDelete.MinAge = Duration(87601 * time.Hour) }, "safe_to_delete.min_age"},
 		{"loose ffmpeg version", func(c *Config) { c.FFmpeg.Version = "latest" }, "ffmpeg.version"},
 		{"relative ffmpeg", func(c *Config) { c.FFmpeg.FFmpeg = "ffmpeg.exe" }, "ffmpeg.ffmpeg"},
 		{"non-loopback listen", func(c *Config) { c.Web.Listen = "0.0.0.0:8790" }, "web.listen"},

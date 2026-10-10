@@ -40,8 +40,8 @@ type Status struct {
 	PhaseStartedAt time.Time
 	// NextCycleAt is zero until the first cycle has finished.
 	NextCycleAt time.Time
-	// Drive is the latest health check of the archive drive; zero until the
-	// first cycle has checked it.
+	// Storage is the latest health check of the drives holding the archive;
+	// zero until the first cycle has checked them.
 	Storage health.Report
 }
 
@@ -70,6 +70,11 @@ func (h *Hub) Snapshot() (Status, <-chan struct{}) {
 // ledger write made outside a cycle.
 func (h *Hub) Changed() {
 	h.update(func(*Status) {})
+}
+
+// SetStorage publishes the latest health check of the archive's drives.
+func (h *Hub) SetStorage(r health.Report) {
+	h.update(func(s *Status) { s.Storage = r })
 }
 
 func (h *Hub) update(f func(*Status)) {

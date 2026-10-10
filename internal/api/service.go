@@ -4,6 +4,7 @@
 package api
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -24,11 +26,13 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/drive"
+	"github.com/vasilistotskas/homecloud/internal/export"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/media"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/policy"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
 )
 
@@ -61,6 +65,7 @@ type Ledger interface {
 	ReleaseQuarantine(ctx context.Context, library, assetID, reason string, now time.Time) error
 	RequestRepair(ctx context.Context, library, assetID string, now time.Time) error
 	LibraryPage(ctx context.Context, q ledger.LibraryQuery) ([]ledger.LibraryAsset, error)
+	EachArchivedAsset(ctx context.Context, fn func(ledger.ArchivedAsset) error) error
 }
 
 // Agent is the running agent's control surface.
@@ -538,6 +543,7 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv3.GetSetti
 		Downloader:                       &agentv3.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
 		DownloaderConfig:                 c.Kei.Config,
 		DownloaderCheckpointAlertCycles:  int32(c.Kei.CheckpointAlertCycles), //nolint:gosec // validated 2..100
+		SafeToDeleteMinAgeSeconds:        int64(c.SafeToDelete.MinAge.Std().Seconds()),
 		VideoProbe:                       &agentv3.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
 		Thumbnailer:                      &agentv3.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
 		Listen:                           c.Web.Listen,
@@ -713,16 +719,8 @@ func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv3.L
 	if q.Kind, err = assetKindFilter(m.GetKind()); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	if m.GetPageToken() != "" {
-		raw, decodeErr := base64.RawURLEncoding.DecodeString(m.GetPageToken())
-		if decodeErr != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
-		}
-		c, decodeErr := ledger.DecodeCursor(raw)
-		if decodeErr != nil {
-			return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
-		}
-		q.After = &c
+	if q.After, err = libraryCursor(m.GetPageToken()); err != nil {
+		return nil, err
 	}
 	assets, err := s.db.LibraryPage(ctx, q)
 	if err != nil {
@@ -739,11 +737,129 @@ func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv3.L
 		res.Items = append(res.Items, item)
 	}
 	if len(assets) == size {
-		raw, encErr := ledger.EncodeCursor(assets[len(assets)-1].Cursor)
-		if encErr != nil {
-			return nil, internal(encErr)
+		if res.NextPageToken, err = libraryPageToken(assets[len(assets)-1].Cursor); err != nil {
+			return nil, err
 		}
-		res.NextPageToken = base64.RawURLEncoding.EncodeToString(raw)
+	}
+	return connect.NewResponse(res), nil
+}
+
+// libraryCursor decodes a page token of the library's order; nil for the first page.
+func libraryCursor(token string) (*ledger.LibraryCursor, error) {
+	if token == "" {
+		return nil, nil //nolint:nilnil // no token: the first page
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
+	}
+	c, err := ledger.DecodeCursor(raw)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
+	}
+	return &c, nil
+}
+
+// libraryPageToken is the page token that continues after c.
+func libraryPageToken(c ledger.LibraryCursor) (string, error) {
+	raw, err := ledger.EncodeCursor(c)
+	if err != nil {
+		return "", internal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// safeToDelete judges the archive now, against the agent's latest storage check.
+func (s *Service) safeToDelete(ctx context.Context) (app.SafeToDelete, error) {
+	st, _ := s.agent.Hub().Snapshot()
+	r, err := app.BuildSafeToDelete(ctx, s.db, s.cfg.SafeToDelete.MinAge.Std(), st.Storage, s.now())
+	if err != nil {
+		return app.SafeToDelete{}, internal(err)
+	}
+	return r, nil
+}
+
+// GetSafeToDelete implements AgentService.
+func (s *Service) GetSafeToDelete(ctx context.Context, req *connect.Request[agentv3.GetSafeToDeleteRequest]) (*connect.Response[agentv3.GetSafeToDeleteResponse], error) {
+	zone := req.Msg.GetTimeZone()
+	// LoadLocation reads "" as UTC and "Local" as the agent's own zone; the
+	// months must be the viewer's.
+	if zone == "" || zone == "Local" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("time_zone must name an IANA time zone"))
+	}
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("time_zone: %w", err))
+	}
+	r, err := s.safeToDelete(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &agentv3.SafeToDelete{
+		Withheld:      r.Withheld,
+		Assets:        int64(len(r.Items)),
+		Bytes:         r.Bytes(),
+		NotVerified:   int64(r.Counts[policy.NotVerified]),
+		AwaitingScrub: int64(r.Counts[policy.AwaitingScrub]),
+		TooRecent:     int64(r.Counts[policy.TooRecent]),
+		MinAgeSeconds: int64(s.cfg.SafeToDelete.MinAge.Std().Seconds()),
+		ExportPath:    filepath.Join(s.cfg.Storage.Root, export.SafeToDeleteFile),
+	}
+	for _, m := range r.Months(loc) {
+		out.Months = append(out.Months, &agentv3.SafeToDeleteMonth{
+			Year: int32(m.Year), Month: int32(m.Month), //nolint:gosec // calendar years and months
+			Assets: int64(m.Assets), Bytes: m.Bytes,
+		})
+	}
+	return connect.NewResponse(&agentv3.GetSafeToDeleteResponse{Report: out}), nil
+}
+
+// ListSafeToDelete implements AgentService. Each page judges the archive
+// again and continues after the last item of the previous one.
+func (s *Service) ListSafeToDelete(ctx context.Context, req *connect.Request[agentv3.ListSafeToDeleteRequest]) (*connect.Response[agentv3.ListSafeToDeleteResponse], error) {
+	m := req.Msg
+	size, err := pageSize(m.GetPageSize(), defaultLibraryPage)
+	if err != nil {
+		return nil, err
+	}
+	after, err := libraryCursor(m.GetPageToken())
+	if err != nil {
+		return nil, err
+	}
+	r, err := s.safeToDelete(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := r.Items
+	if after != nil {
+		// Items are in the library's order: capture time, then asset id, descending.
+		start := slices.IndexFunc(items, func(a ledger.ArchivedAsset) bool {
+			return cmp.Or(strings.Compare(a.Cursor.CreatedAt, after.CreatedAt), strings.Compare(a.Cursor.AssetID, after.AssetID)) < 0
+		})
+		if start < 0 {
+			start = len(items)
+		}
+		items = items[start:]
+	}
+	p, _ := auth.PrincipalFrom(ctx)
+	res := &agentv3.ListSafeToDeleteResponse{}
+	for _, a := range items[:min(size, len(items))] {
+		item, convErr := s.libraryItem(p, a.LibraryAsset)
+		if convErr != nil {
+			return nil, internal(convErr)
+		}
+		original, ok := a.Original()
+		if !ok {
+			return nil, internal(fmt.Errorf("safe-to-delete %s/%s: no original on disk", a.Library, a.AssetID))
+		}
+		res.Items = append(res.Items, &agentv3.SafeToDeleteItem{
+			Item: item, AddedAt: optionalTimePtr(a.AddedAt), SizeBytes: a.SizeBytes(), Path: original.LocalPath,
+		})
+	}
+	if len(items) > size {
+		if res.NextPageToken, err = libraryPageToken(items[size-1].Cursor); err != nil {
+			return nil, err
+		}
 	}
 	return connect.NewResponse(res), nil
 }

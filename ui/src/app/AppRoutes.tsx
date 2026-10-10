@@ -5,6 +5,7 @@ import { ConnectPage } from "../pages/Connect";
 import { LibraryPage } from "../pages/Library";
 import { OverviewPage } from "../pages/Overview";
 import { QuarantinePage } from "../pages/Quarantine";
+import { SafeToDeletePage } from "../pages/SafeToDelete";
 import { SettingsPage } from "../pages/Settings";
 import { navigate, useLocation, type Path } from "./router";
 import { Shell } from "./Shell";
@@ -15,6 +16,7 @@ const shellPages: Record<Exclude<Path, "/connect">, () => ReactNode> = {
   "/library": () => <LibraryPage />,
   "/activity": () => <ActivityPage />,
   "/quarantine": () => <QuarantinePage />,
+  "/safe-to-delete": () => <SafeToDeletePage />,
   "/settings": () => <SettingsPage />,
 };
 

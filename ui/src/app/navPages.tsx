@@ -1,4 +1,5 @@
 import {
+  CloudCheckmarkRegular,
   HistoryRegular,
   HomeRegular,
   ImageMultipleRegular,
@@ -15,5 +16,6 @@ export const navPages: readonly { path: Path; label: string; icon: ReactElement 
   { path: "/library", label: "Library", icon: <ImageMultipleRegular /> },
   { path: "/activity", label: "Activity", icon: <HistoryRegular /> },
   { path: "/quarantine", label: "Quarantine", icon: <ShieldErrorRegular /> },
+  { path: "/safe-to-delete", label: "Safe to delete", icon: <CloudCheckmarkRegular /> },
   { path: "/settings", label: "Settings", icon: <SettingsRegular /> },
 ];

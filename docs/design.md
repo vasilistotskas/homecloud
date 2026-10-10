@@ -37,7 +37,7 @@ Packages:
 
 | Package | Responsibility |
 |---|---|
-| `cmd/homecloud` | CLI on the standard `flag` package with a small command dispatcher (`dispatch.go`: `--config` before or after the command, help, usage errors exit 2): `archive init`, `doctor`, `verify`, `status`, `quarantine list` / `quarantine release` / `quarantine repair`, `open`, `notify-test`, `install`, `uninstall`, `icloud login` / `icloud status`, `drive ls`. *(planned: `report`, `delete`)* |
+| `cmd/homecloud` | CLI on the standard `flag` package with a small command dispatcher (`dispatch.go`: `--config` before or after the command, help, usage errors exit 2): `archive init`, `doctor`, `verify`, `status`, `quarantine list` / `quarantine release` / `quarantine repair`, `open`, `notify-test`, `install`, `uninstall`, `icloud login` / `icloud status`, `drive ls`. *(planned: `delete`)* |
 | `cmd/homecloud-agent` | The headless agent (scheduler loop); see Spike C |
 | `internal/config` | Strict TOML load + validation |
 | `internal/ledger` | SQLite (WAL), embedded migrations (`PRAGMA user_version`), queries, checked snapshots (`VACUUM INTO` + `integrity_check`) |
@@ -46,7 +46,7 @@ Packages:
 | `internal/doctor` | Read-only environment checks behind `homecloud doctor` |
 | `internal/tool` | Version checks of pinned external executables |
 | `internal/platform` | Every OS-specific behaviour (see §8a), including `Command`, the only way homecloud starts a program: on Windows it sets `CREATE_NO_WINDOW`, because the agent is a GUI-subsystem process and Windows would otherwise open a console window for every kei/ffmpeg/ffprobe run (enforced by a `forbidigo` rule on `os/exec`) |
-| `internal/policy` | *(planned, P3)* Pure deletion-eligibility predicate and batch caps (no I/O) |
+| `internal/policy` | Pure eligibility predicate (no I/O): `Judge` gives each asset `eligible` or the first condition it misses (§7). *(planned, P3: batch caps)* |
 | `internal/deleter` | *(planned, P3)* Journal (fsync before any call), sidecar execution, post-delete confirmation |
 | `internal/archive` | The archive marker `homecloud-archive.json`: `Init` once, `Check` before every cycle and maintenance job (§8d) |
 | `internal/health` | Health verdict on every drive and md array under the archive (§8b). *(planned: archive identity, free space, ledger integrity and data freshness as deletion gates)* |
@@ -58,7 +58,7 @@ Packages:
 | `internal/parallel` | `ForEach`: the one bounded worker pool (verification, scrub, Drive downloads) |
 | `internal/logfile` | Size-rotated log files (Windows agent and kei logs): backups `<name>-<UTC time>.log`, never renamed again, oldest beyond `logs.max_backups` deleted; every file operation goes through an `os.Root` on the logs folder; a rotation that fails (a viewer holding the file) is reported in the agent log and retried at the next write |
 | `internal/notify` | ntfy client |
-| `internal/export` | `manifest.csv` and `README.txt` at the archive root, rewritten atomically after every cycle |
+| `internal/export` | `manifest.csv`, `safe-to-delete.csv` (§7) and `README.txt` at the archive root, rewritten atomically after every cycle |
 | `internal/logging` | The run a log line belongs to: `WithRun` puts it in the context, `Handler` adds `run` and `run_kind` to every record logged with that context (§8l) |
 | `internal/thumbs` | Thumbnail and preview rendering and cache (§8c) |
 | `internal/media` | Signed, expiring `/media` URLs and their handler (§8c) |
@@ -71,7 +71,7 @@ Packages:
 
 Process model: a **per-user process launched at logon** by a Task Scheduler user task (`homecloud install`). Not a Windows service: services run in Session 0, which cannot interact with the user's session.
 
-Data layout (root is the required `storage.root`, e.g. `D:\Archive` or `/srv/homecloud`; no default): `homecloud-archive.json` (the archive's identity, §8d), `Photos\` (kei-owned; `Photos\Hidden\` for photos hidden in iCloud), `Drive\` (the iCloud Drive archive, §8g), `iPhone backups\` (copies of iPhone backups, §8e), `kei\` (the generated kei config and its sync report; kei's own state lives in `%USERPROFILE%\.config\kei`, §10), `homecloud.db`, `manifest.csv`, `README.txt` and `.cache\thumbnails\` (hidden, derived). Logs live outside the archive (§8l); ledger snapshots go to `backup.dir` on another drive (§6). *(planned: `deletions.jsonl`, P3.)*
+Data layout (root is the required `storage.root`, e.g. `D:\Archive` or `/srv/homecloud`; no default): `homecloud-archive.json` (the archive's identity, §8d), `Photos\` (kei-owned; `Photos\Hidden\` for photos hidden in iCloud), `Drive\` (the iCloud Drive archive, §8g), `iPhone backups\` (copies of iPhone backups, §8e), `kei\` (the generated kei config and its sync report; kei's own state lives in `%USERPROFILE%\.config\kei`, §10), `homecloud.db`, `manifest.csv`, `safe-to-delete.csv` (§7), `README.txt` and `.cache\thumbnails\` (hidden, derived). Logs live outside the archive (§8l); ledger snapshots go to `backup.dir` on another drive (§6). *(planned: `deletions.jsonl`, P3.)*
 
 ## 5. Ledger
 
@@ -101,9 +101,17 @@ Scrub (implemented): after a cycle, when `schedule.scrub_interval` has passed si
 
 Ledger backup (implemented): every `backup.interval` the agent writes `homecloud-<UTC time>.db` to `backup.dir` with `VACUUM INTO` (one consistent view of the live ledger), runs `PRAGMA integrity_check` on the copy, and only then renames it into place; the newest `backup.keep` snapshots are kept and nothing else in the directory is touched. Partial snapshots left by an interrupted backup are pruned too. Doctor requires `backup.dir` to be on a different volume than `storage.root`. A failure is retried every cycle and alerts at most every `notify.repeat_every`. Each backup is a `ledger_backup` run. Restoring: stop the agent, delete `homecloud.db-wal` and `homecloud.db-shm` (a stale write-ahead log would be replayed onto the restored file), then copy a snapshot over `<root>/homecloud.db`.
 
-## 7. Deletion *(planned, P3; nothing below is implemented)*
+## 7. Deletion
 
-Eligibility is a pure function; **all** must hold:
+**Safe-to-delete report (implemented, read only — the rollout's report stage).** homecloud lists the iCloud Photos items the owner may delete in Apple's Photos app and deletes nothing itself. `policy.Judge` (pure, no I/O) decides per asset from `ledger.EachArchivedAsset` (every asset with a file on disk, its renditions' evidence, whether a repair is under way), and gives `eligible` or the first unmet condition, in this order:
+
+1. *not verified*: the asset is `verified`, its original of the asset's own medium is on disk, every rendition passed each tier it requires and none has a recorded failure, and no repair is under way (`rendition_repairs`);
+2. *awaiting scrub*: every rendition's checksum was confirmed after its last tier pass, i.e. by a scrub that read it back from disk (a pass records `last_scrub_at` at its own time, a scrub later). Compared in Go: the ledger's RFC 3339 text has a varying number of fractional digits, so SQL string comparison would order `…15Z` after `…15.5Z`;
+3. *too recent*: `added_at` (added to iCloud Photos) is at least `safe_to_delete.min_age` (24h–87600h) ago; an unknown `added_at` fails.
+
+The whole report is withheld (nothing listed, the reason given) unless the agent's latest storage check (§8b, made every cycle) is `ok`; before the first check after a start it is withheld too. Sizes are the sum of an asset's archived files (original, edits, Live Photo video, RAW), about what deleting it frees in iCloud. Not checked, because nothing reports it: whether the item is still in iCloud — kei refreshes `last_seen_at` only for assets a sync enumerates and keeps assets deleted upstream with a stale one (kei CHANGELOG, #211), so an item the owner already deleted stays listed. Outputs: `safe-to-delete.csv` at the archive root after every cycle (newest first; header only while withheld), and the API's `GetSafeToDelete` (totals, the counts per unmet condition, and per-month totals in the viewer's IANA time zone, so they match the months the app groups items under; the agent embeds `time/tzdata`, as Windows has no zone database) and `ListSafeToDelete` (pages newest first, keyset on capture time and asset id as `ListAssets`, judged again per page). The app's Safe to delete page shows both. Live baseline (2026-10-10): 3,899 verified assets, but only ~300 of 6,041 files re-hashed by a scrub since their verification (5 % weekly), so the list fills over ~20 weeks.
+
+**Automatic deletion** *(planned, P3; nothing below is implemented)*. Eligibility is a pure function; **all** must hold:
 
 - every resource of the asset (original, Live Photo video, RAW, edits) verified at its required tiers;
 - `added_at_utc` older than `retention_days`;
@@ -122,7 +130,7 @@ Rollout (each stage enabled explicitly by the owner): report-only (2 weeks) → 
 - **P0** — toolchain, repo, CI, this document; spikes: (A) kei `asset_id` ↔ pyicloud identity on 20 assets (gate for P3), (B) kei auth/manifest representation of Live Photos/edits/`added_at`/exit codes, (C) console-less logon launch; `homecloud doctor`.
 - **P1** — kei full sync, ledger, verification, status UI, ntfy. One-time in-session reconciliation of the interim archive, then its removal.
 - **P2** — local encrypted iPhone backup + monitor (milestone A, implemented — §8e); homecloud's own iCloud sign-in (milestone B1, implemented — §8f); iCloud Drive archive (milestone B2, implemented — §8g) and its app views (B3, implemented: Overview card and sign-in banner, Activity "iCloud Drive" tab and events, Settings group; the API's Overview carries Drive totals and the session's sign-in time, never the session itself).
-- **P3** — staged deleter.
+- **P3** — staged deleter; its report stage, the safe-to-delete report (§7), is implemented.
 
 ## 8a. Platforms, API and GUI (decided 2026-10-05)
 

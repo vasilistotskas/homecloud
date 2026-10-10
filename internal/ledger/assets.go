@@ -76,21 +76,17 @@ func (db *DB) renditions(ctx context.Context, library, assetID string) (out []Re
 	}
 	defer func() { err = errors.Join(err, rows.Close()) }()
 	for rows.Next() {
-		r := RenditionDetail{Passed: map[Tier]time.Time{}}
+		var r RenditionDetail
 		var content, structure, probe, failure sql.NullString
 		if scanErr := rows.Scan(&r.Version, &r.Filename, &r.LocalPath, &r.MediaType, &r.SizeBytes, &r.SHA256,
 			&r.RequiresStructure, &r.RequiresProbe, &content, &structure, &probe, &failure); scanErr != nil {
 			return nil, fmt.Errorf("scan rendition: %w", scanErr)
 		}
-		for tier, at := range map[Tier]sql.NullString{TierContent: content, TierStructure: structure, TierProbe: probe} {
-			t, perr := parseNullTime(at)
-			if perr != nil {
-				return nil, fmt.Errorf("rendition %s of %s/%s: %w", r.Version, library, assetID, perr)
-			}
-			if t != nil {
-				r.Passed[tier] = *t
-			}
+		passed, perr := passes(content, structure, probe)
+		if perr != nil {
+			return nil, fmt.Errorf("rendition %s of %s/%s: %w", r.Version, library, assetID, perr)
 		}
+		r.Passed = passed
 		if failure.Valid {
 			f, perr := parseFailure(failure.String)
 			if perr != nil {

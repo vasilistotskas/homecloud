@@ -19,6 +19,9 @@ import (
 	"syscall"
 	"time"
 
+	// Viewers name their time zone (GetSafeToDelete); Windows has no zone database.
+	_ "time/tzdata"
+
 	"github.com/vasilistotskas/homecloud/internal/api"
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/auth"

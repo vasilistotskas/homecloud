@@ -34,6 +34,16 @@ service AgentService {
   rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // GetSafeToDelete reports the iCloud Photos items the owner may delete in
+  // Apple's Photos app without losing them, totalled by month. Read only:
+  // homecloud deletes nothing.
+  rpc GetSafeToDelete(GetSafeToDeleteRequest) returns (GetSafeToDeleteResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // ListSafeToDelete pages through the items GetSafeToDelete counts, newest first.
+  rpc ListSafeToDelete(ListSafeToDeleteRequest) returns (ListSafeToDeleteResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // ListQuarantine lists quarantined assets with their failing renditions.
   rpc ListQuarantine(ListQuarantineRequest) returns (ListQuarantineResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
@@ -860,6 +870,69 @@ message LibraryItem {
   string display_version = 7;
 }
 
+message GetSafeToDeleteRequest {
+  // The IANA time zone the months are counted in, e.g. "Europe/Athens": the
+  // viewer's, so the totals match the months it shows the items under.
+  string time_zone = 1;
+}
+
+message GetSafeToDeleteResponse {
+  SafeToDelete report = 1;
+}
+
+// SafeToDelete lists an item only when every archived file of it passed
+// verification and was then confirmed again by a scrub, it was added to
+// iCloud Photos more than min_age ago, it is not quarantined or under repair,
+// and the drives holding the archive were last found healthy.
+message SafeToDelete {
+  // Why nothing is listed even if items qualify; empty when the report stands.
+  string withheld = 1;
+  // The listed items and the size of their archived files: about the iCloud
+  // space deleting them frees.
+  int64 assets = 2;
+  int64 bytes = 3;
+  // The listed items by the month they were taken, newest first, items
+  // without a capture time last.
+  repeated SafeToDeleteMonth months = 4;
+  // Archived items not listed, by the first condition they miss: not
+  // verified (also quarantined or under repair), not confirmed again by a
+  // scrub yet, added to iCloud less than min_age ago.
+  int64 not_verified = 5;
+  int64 awaiting_scrub = 6;
+  int64 too_recent = 7;
+  int64 min_age_seconds = 8;
+  // The same list as CSV on the agent's computer, rewritten after every cycle.
+  string export_path = 9;
+}
+
+message SafeToDeleteMonth {
+  // Both zero for items iCloud gave no capture time for.
+  int32 year = 1;
+  int32 month = 2;
+  int64 assets = 3;
+  int64 bytes = 4;
+}
+
+message ListSafeToDeleteRequest {
+  // At most 200; 0 selects the default of 60.
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListSafeToDeleteResponse {
+  repeated SafeToDeleteItem items = 1;
+  string next_page_token = 2;
+}
+
+message SafeToDeleteItem {
+  LibraryItem item = 1;
+  google.protobuf.Timestamp added_at = 2;
+  // The size of all of its archived files (original, edits, Live Photo video).
+  int64 size_bytes = 3;
+  // Its original's path on the agent's computer.
+  string path = 4;
+}
+
 message ListQuarantineRequest {}
 
 message ListQuarantineResponse {
@@ -1015,6 +1088,9 @@ message Settings {
   // How many syncs in a row may keep the downloader's checkpoint before the
   // agent alerts.
   int32 downloader_checkpoint_alert_cycles = 30;
+  // How long an item must have been in iCloud Photos before the
+  // safe-to-delete report lists it.
+  int64 safe_to_delete_min_age_seconds = 31;
 }
 
 // ToolPin is an external tool and the exact version homecloud requires.

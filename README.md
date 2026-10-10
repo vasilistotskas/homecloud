@@ -46,7 +46,7 @@ flowchart TB
         photos[("Photos/ + *.xmp")]
         drivedir[("Drive/ + .versions/<br/>+ manifest.csv")]
         ledger[("homecloud.db<br/>ledger + audit log")]
-        exports[("manifest.csv<br/>README.txt")]
+        exports[("manifest.csv · README.txt<br/>safe-to-delete.csv")]
         thumbs[(".cache/thumbnails")]
         iphonecopies[("iPhone backups/<br/>verified copies")]
         damaged[("Damaged/<br/>files a repair replaced")]
@@ -111,7 +111,8 @@ flowchart TD
     bad -- no --> ok["Verified"]
     q --> after
     ok --> after["Health of every drive and RAID array under the archive<br/>(SMART, md) · manifest.csv · thumbnails"]
-    after --> due{"Maintenance due?"}
+    after --> std["safe-to-delete.csv: items whose every file was verified,<br/>then re-hashed by a scrub, in iCloud longer than<br/>safe_to_delete.min_age, not quarantined or under repair<br/>(lists nothing unless every drive is OK)"]
+    std --> due{"Maintenance due?"}
     due -- "scrub (schedule.scrub_interval)" --> scrub["Re-hash the photo and Drive files confirmed longest ago<br/>(schedule.scrub_fraction of each per run)"]
     due -- "iCloud Drive (drive.sync_interval)" --> dsync["List iCloud Drive; download new/changed files,<br/>check size + Apple's signature (ZIP check for packages),<br/>keep replaced copies in .versions, record deletions"]
     due -- "backup (backup.interval)" --> snap["Checked ledger snapshot to backup.dir"]
@@ -138,10 +139,10 @@ every time the agent starts. Browsers sign in with a one-time code from `homeclo
 |---|---|---|
 | `homecloud-agent` | The service. It alone runs kei, verifies files, schedules every job, writes the ledger, sends alerts, and serves the API and the web app. | At logon for the owner (Windows Task Scheduler, systemd `--user`), or a container on a NAS |
 | `homecloud` | The command-line tool: setup (`archive init`, `install`), sign-in (`icloud login`), checks (`doctor`, `status`), and `iphone push`. It shares the agent's packages and takes the same lock before writing the ledger. | The same computer, or `docker compose exec` on the NAS |
-| Web app (`ui/`) | The whole interface: Overview, Library, Activity, Quarantine, Settings. Built once and embedded in the agent's binary. | Any browser, served by the agent |
+| Web app (`ui/`) | The whole interface: Overview, Library, Activity, Quarantine, Safe to delete, Settings. Built once and embedded in the agent's binary. | Any browser, served by the agent |
 | Desktop app (`desktop/`) | A native window around the same web app. It talks to this PC's agent or to a paired homecloud on a NAS and keeps its credentials in the OS credential store. | Windows, Linux |
 | kei, FFmpeg, smartctl | Pinned external tools: kei downloads iCloud Photos, `ffprobe` checks videos and `ffmpeg` renders thumbnails, `smartctl` reads drive health in the container. | Next to the agent |
-| The archive | Plain files you can use without homecloud (`Photos/`, `Drive/`, `iPhone backups/`, and `Damaged/` for the files repairs replaced) plus `homecloud.db`, the ledger of what was downloaded, when and how it was verified, and `manifest.csv`. | One folder: `storage.root` |
+| The archive | Plain files you can use without homecloud (`Photos/`, `Drive/`, `iPhone backups/`, and `Damaged/` for the files repairs replaced) plus `homecloud.db`, the ledger of what was downloaded, when and how it was verified, `manifest.csv`, and `safe-to-delete.csv`. | One folder: `storage.root` |
 
 ```mermaid
 flowchart LR
@@ -399,6 +400,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[backup]` | `dir` (must be on another drive than `storage.root`), `interval`, `keep` |
 | `[drive]` | `sync_interval` (≥ 15m), `workers` (parallel downloads, 1–16), `stall_timeout` (a download receiving nothing this long is retried next sync, 30s–10m) |
 | `[iphone_backup]` | `dirs` (absolute paths, written out: Apple Devices uses `C:\Users\<you>\Apple\MobileSync\Backup`, desktop iTunes `C:\Users\<you>\AppData\Roaming\Apple Computer\MobileSync\Backup`; may be empty with `incoming`), `incoming` (a folder another computer pushes finished backups to, apart from `storage.root`, `backup.dir` and every `dirs` entry; `""` for none), `keep` (copies of each device's backups kept under `<storage.root>/iPhone backups`, newest first, 0–100; 0 keeps none; ≥ 1 with `incoming`), `max_age`, `check_interval` (≤ `max_age`), `read_interval` (how often every backup file is read in full, ≥ `check_interval`), `stalled_after` (a backup still running this long counts as unfinished), `max_shrink_percent` |
+| `[safe_to_delete]` | `min_age`: how long an item must have been in iCloud Photos before the safe-to-delete report lists it (24h–87600h, e.g. `"8760h"` for a year) |
 | `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files in `%LOCALAPPDATA%\homecloud\logs` on Windows, and how many crash reports are kept (Linux logs to journald) |
 | `[drive_health]` | Linux only: `source`, where the SMART data of the drives under the archive comes from: `"udisks"` (a desktop's udisks2, no rights needed) or `"smartctl"` (a server or the container). Windows reads NVMe health itself and has no such section |
 | `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m), `socket` (where the container's smartctl sidecar answers; empty runs smartctl in the agent) |
@@ -438,6 +440,17 @@ the whole library again (Activity shows "place in iCloud kept"; the banner gives
 is missed. If it does not clear: stop the agent, run `kei reset sync-token --yes --config <kei config>`
 (it keeps kei's download history, so nothing is downloaded again), and start the agent; the next sync
 lists the library once and saves a new place.
+
+**Free up iCloud space** with the app's Safe to delete page (also written to
+`<storage.root>/safe-to-delete.csv` after every sync). It lists, by the month they were taken and
+with the space each month frees, the photos and videos whose every archived file was verified and
+then re-hashed by a later scrub, that have been in iCloud Photos longer than
+`safe_to_delete.min_age`, and that are neither quarantined nor being repaired; while any drive
+under the archive is not OK it lists nothing and says why. The scrub re-checks
+`schedule.scrub_fraction` of the archive per run, so items join the list gradually after they are
+archived. homecloud deletes nothing: delete them in Apple's Photos app, which keeps them in
+Recently Deleted for 30 days. An item you already deleted in iCloud stays listed, as kei does not
+report deletions.
 
 **Restore the ledger** from a snapshot: stop the agent, delete `homecloud.db-wal` and
 `homecloud.db-shm` next to `<storage.root>\homecloud.db` if they exist, copy the newest

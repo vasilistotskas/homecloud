@@ -24,6 +24,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/logging"
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
+	"github.com/vasilistotskas/homecloud/internal/policy"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
 )
 
@@ -394,8 +395,28 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	} else {
 		a.log.InfoContext(ctx, "manifest exported", "files", files)
 	}
+	if err := a.exportSafeToDelete(ctx); err != nil {
+		errs = append(errs, err)
+	}
 	a.preparePreviews(ctx)
 	return rep, errors.Join(errs...)
+}
+
+// exportSafeToDelete rewrites the safe-to-delete report at the archive root,
+// judged against the storage check this cycle made.
+func (a *Agent) exportSafeToDelete(ctx context.Context) error {
+	st, _ := a.hub.Snapshot()
+	r, err := BuildSafeToDelete(ctx, a.db, a.cfg.SafeToDelete.MinAge.Std(), st.Storage, a.now())
+	if err != nil {
+		return err
+	}
+	if err := export.WriteSafeToDelete(a.cfg.Storage.Root, r.Items); err != nil {
+		return err
+	}
+	a.log.InfoContext(ctx, "safe-to-delete report exported", "assets", len(r.Items), "bytes", r.Bytes(),
+		"withheld", r.Withheld, "not_verified", r.Counts[policy.NotVerified],
+		"awaiting_scrub", r.Counts[policy.AwaitingScrub], "too_recent", r.Counts[policy.TooRecent])
+	return nil
 }
 
 func (a *Agent) alertAuth(ctx context.Context) {
@@ -548,7 +569,7 @@ func ParseCycleReport(detail string) (CycleReport, error) {
 // array that lost its redundancy, is urgent.
 func (a *Agent) checkStorage(ctx context.Context) error {
 	report := health.Check(ctx, a.readStorage, a.readDrive, a.now())
-	a.hub.update(func(s *Status) { s.Storage = report })
+	a.hub.SetStorage(report)
 
 	previous, changed, err := a.db.RecordDriveHealth(ctx, string(report.State), report.Reasons, report.CheckedAt)
 	if err != nil {
