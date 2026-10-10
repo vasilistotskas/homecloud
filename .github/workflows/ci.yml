@@ -13,11 +13,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Runners are named by OS version, never `-latest`, so an image change is a
+# deliberate commit. Linux is the oldest release homecloud supports (glibc
+# 2.39, kei's floor; docs/design.md): Linux builds then run everywhere
+# homecloud does, and the tests cover the oldest supported kernel and tools.
 jobs:
   # CI minutes are limited: each job runs only when something it checks
   # changed. A change to this workflow runs everything.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
@@ -83,7 +87,7 @@ jobs:
     needs: changes
     # Also builds the app that the Go and desktop jobs embed.
     if: needs.changes.outputs.web == 'true' || needs.changes.outputs.go == 'true' || needs.changes.outputs.desktop == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ui
@@ -122,7 +126,7 @@ jobs:
   proto:
     needs: changes
     if: needs.changes.outputs.proto == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -172,7 +176,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-2025]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -235,7 +239,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          - os: windows-2025
             bundles: nsis
           - os: ubuntu-24.04
             bundles: deb
@@ -286,7 +290,7 @@ jobs:
   image:
     needs: changes
     if: needs.changes.outputs.image == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
