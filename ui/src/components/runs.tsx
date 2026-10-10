@@ -18,7 +18,13 @@ export interface RunRow {
   result: React.ReactNode;
 }
 
+/** What the download did, and whether the downloader kept its place in iCloud. */
 function downloadLabel(run: Run): string {
+  const outcome = downloadOutcomeLabel(run);
+  return run.cycle?.checkpoint?.blocked === true ? `${outcome} · place in iCloud kept` : outcome;
+}
+
+function downloadOutcomeLabel(run: Run): string {
   const c = run.cycle;
   if (c === undefined) {
     return run.result === RunResult.RUNNING ? "In progress" : "—";

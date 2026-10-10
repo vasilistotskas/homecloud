@@ -428,6 +428,47 @@ describe("App", () => {
     );
   });
 
+  it.each([
+    { blockedCycles: 2n, shown: false },
+    { blockedCycles: 3n, shown: true },
+  ])(
+    "warns once the downloader kept its place for the alert count of syncs ($blockedCycles of 3: $shown)",
+    async ({ blockedCycles, shown }) => {
+      const transport = createRouterTransport(({ service }) => {
+        service(AgentService, {
+          async *watchOverview() {
+            yield {
+              overview: create(OverviewSchema, {
+                assets: { verified: 10n },
+                downloaderCheckpoint: {
+                  blocked: true,
+                  blockedCycles,
+                  reason: "inventory_delta_bridge_failed",
+                  source: "kei",
+                  explanation: "the prior provider checkpoint could not be replayed incrementally",
+                },
+              }),
+            };
+            await never();
+          },
+          getSettings: () => ({
+            settings: create(SettingsSchema, { ...settings, downloaderCheckpointAlertCycles: 3 }),
+          }),
+          listRuns: () => create(ListRunsResponseSchema),
+        });
+      });
+      render(<App transport={transport} platform={browser} />);
+      // Settings have loaded: the banner can compare with the alert count.
+      expect(await screen.findByText(/re-read every/)).toBeInTheDocument();
+      if (shown) {
+        expect(screen.getByText("Photo syncs keep re-listing your library")).toBeInTheDocument();
+        expect(screen.getByText(/for 3 syncs in a row/)).toBeInTheDocument();
+      } else {
+        expect(screen.getByText("Your archive is complete and verified")).toBeInTheDocument();
+      }
+    },
+  );
+
   it("shows the most severe problem when several are present", async () => {
     const transport = createRouterTransport(({ service }) => {
       service(AgentService, {

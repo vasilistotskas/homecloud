@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/export"
@@ -222,7 +226,7 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 		Storage: config.Storage{Root: filepath.Dir(manifest)},
 		ICloud:  config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden, RequestTimeout: config.Duration(time.Minute)},
 		Verify:  config.Verify{Workers: 2},
-		Kei:     config.Kei{Binary: exe, Config: filepath.Join(t.TempDir(), "kei.toml")},
+		Kei:     config.Kei{Binary: exe, Config: filepath.Join(t.TempDir(), "kei.toml"), CheckpointAlertCycles: 3},
 		Schedule: config.Schedule{
 			SyncInterval:  config.Duration(time.Hour),
 			ScrubInterval: config.Duration(168 * time.Hour),
@@ -523,6 +527,92 @@ func TestCycleLogsWhatKeiDid(t *testing.T) {
 	if len(started) != 1 || len(finished) != 1 || started[0][logging.KeyRun] != k[logging.KeyRun] ||
 		finished[0]["ok"] != true || finished[0]["duration_ms"] == nil {
 		t.Fatalf("run lines = %v %v", started, finished)
+	}
+}
+
+// TestCycleAlertsWhenKeiKeepsItsCheckpoint: each cycle records whether kei
+// kept its iCloud checkpoint and for how many syncs in a row; a cycle in which
+// kei wrote no report neither counts nor resets that. kei.checkpoint_alert_cycles
+// in a row alert once (then every notify.repeat_every), and a sync that saves
+// the checkpoint resets the count.
+func TestCycleAlertsWhenKeiKeepsItsCheckpoint(t *testing.T) {
+	clock := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	agent, notes := newTestAgent(t, fixture(t, false), "0", &clock)
+	ctx := context.Background()
+	// Written after every cycle below starts, so each one reads it as its own.
+	report := func(blocked bool) string {
+		stats := `"sync_token_blocked":false`
+		if blocked {
+			stats = `"sync_token_blocked":true,"sync_token_blocked_reason":"inventory_delta_bridge_failed",
+				"sync_token_blocked_source":"kei","sync_token_blocked_zone":"PrimarySync",
+				"sync_token_blocked_explanation":"the prior provider checkpoint could not be replayed incrementally after inventory reconciliation",
+				"full_enumeration_reason":"enum_config_hash_drift"`
+		}
+		return `{"version":"3","timestamp":"2026-10-09T23:00:00Z","status":"success","stats":{"assets_seen":1,` + stats + `}}`
+	}
+	checkpointAlerts := func() []notify.Msg {
+		var out []notify.Msg
+		for _, m := range notes.msgs {
+			if strings.Contains(m.Title, "re-listing") {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	cycle := func(syncExit, keiReport string) *Checkpoint {
+		t.Helper()
+		t.Setenv("HOMECLOUD_FAKE_KEI_SYNC_EXIT", syncExit)
+		t.Setenv("HOMECLOUD_FAKE_KEI_REPORT", keiReport)
+		if keiReport == "" {
+			if err := os.Remove(kei.ReportPath(agent.cfg.Kei)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				t.Fatal(err)
+			}
+		}
+		_ = agent.Cycle(ctx) // a kei failure fails the cycle; the record is what is checked
+		clock = clock.Add(time.Hour)
+		run, err := agent.db.LastFinishedRun(ctx, CycleRunKind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rep, err := ParseCycleReport(run.Detail)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep.Checkpoint
+	}
+	held := func(syncs int) *Checkpoint {
+		return &Checkpoint{
+			Blocked: true, BlockedCycles: syncs, Reason: "inventory_delta_bridge_failed", Source: "kei", Zone: "PrimarySync",
+			Explanation:           "the prior provider checkpoint could not be replayed incrementally after inventory reconciliation",
+			FullEnumerationReason: "enum_config_hash_drift",
+		}
+	}
+
+	for _, s := range []struct {
+		name, syncExit, report string
+		want                   *Checkpoint
+		alerts                 int
+	}{
+		{"saved", "0", report(false), &Checkpoint{}, 0},
+		{"kept once, by design", "0", report(true), held(1), 0},
+		{"kept twice", "0", report(true), held(2), 0},
+		{"kei failed without a report", "1", "", nil, 0},
+		{"kept a third time", "0", report(true), held(3), 1},
+		{"kept a fourth time, within notify.repeat_every", "0", report(true), held(4), 1},
+		{"saved again", "0", report(false), &Checkpoint{}, 1},
+		{"kept once more", "0", report(true), held(1), 1},
+	} {
+		got := cycle(s.syncExit, s.report)
+		if diff := cmp.Diff(s.want, got); diff != "" {
+			t.Fatalf("%s: checkpoint (-want +got):\n%s", s.name, diff)
+		}
+		if n := len(checkpointAlerts()); n != s.alerts {
+			t.Fatalf("%s: %d checkpoint alerts, want %d (all: %v)", s.name, n, s.alerts, notes.titles())
+		}
+	}
+	// ntfy topics are public: the alert gives kei's reason, nothing of the library.
+	if body := checkpointAlerts()[0].Body; !strings.Contains(body, "3 syncs in a row (inventory_delta_bridge_failed)") {
+		t.Fatalf("alert body = %q", body)
 	}
 }
 

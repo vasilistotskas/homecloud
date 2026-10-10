@@ -509,6 +509,24 @@ function Hero({ overview, env }: { overview: Overview; env: Env }) {
   if (iphone.tone === "warning") {
     problems.push({ rank: 30, tone: "warning", icon: <PhoneRegular />, title: iphone.title, body: iphone.detail });
   }
+  // The downloader keeps its place for one sync by design; the agent alerts
+  // at the same count.
+  const checkpoint = overview.downloaderCheckpoint;
+  const alertAfter = env.settings?.downloaderCheckpointAlertCycles;
+  if (
+    checkpoint?.blocked === true &&
+    alertAfter !== undefined &&
+    alertAfter > 0 &&
+    checkpoint.blockedCycles >= BigInt(alertAfter)
+  ) {
+    problems.push({
+      rank: 25,
+      tone: "warning",
+      icon: <ArrowSyncRegular />,
+      title: "Photo syncs keep re-listing your library",
+      body: `The downloader kept its place in iCloud Photos for ${formatCount(checkpoint.blockedCycles)} syncs in a row, so every sync lists the whole library again (${checkpoint.reason}: ${checkpoint.explanation}). Nothing is missed. If it doesn't clear, reset the downloader's place as the README's Operating section describes.`,
+    });
+  }
   if (pending > 0n) {
     problems.push({
       rank: 10,

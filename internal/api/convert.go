@@ -292,7 +292,20 @@ func cycleToProto(detail string) (*agentv3.CycleReport, error) {
 		Mismatched:        int64(rep.Verified.Mismatched),
 		Errored:           int64(rep.Verified.Errored),
 		Error:             rep.Error,
+		Checkpoint:        checkpointToProto(rep.Checkpoint),
 	}, nil
+}
+
+// checkpointToProto converts a cycle's record of kei's checkpoint; nil when
+// kei wrote no report for that cycle.
+func checkpointToProto(c *app.Checkpoint) *agentv3.DownloaderCheckpoint {
+	if c == nil {
+		return nil
+	}
+	return &agentv3.DownloaderCheckpoint{
+		Blocked: c.Blocked, BlockedCycles: int64(c.BlockedCycles), Reason: c.Reason, Source: c.Source,
+		Explanation: c.Explanation, Zone: c.Zone, FullEnumerationReason: c.FullEnumerationReason,
+	}
 }
 
 func appleState(d agentv3.DownloadOutcome) agentv3.AppleAccountState {

@@ -51,6 +51,9 @@ const (
 	// alertIPhonePush: a backup pushed from another computer was refused,
 	// or the incoming folder could not be read.
 	alertIPhonePush = "iphone-push"
+	// alertCheckpoint: kei kept its iCloud checkpoint for
+	// kei.checkpoint_alert_cycles syncs in a row.
+	alertCheckpoint = "kei-checkpoint"
 )
 
 // CycleRunKind is the ledger run kind of a sync cycle.
@@ -193,10 +196,34 @@ func (a *Agent) Run(ctx context.Context) error {
 
 // CycleReport is recorded as the detail of each cycle run.
 type CycleReport struct {
-	KeiOutcome string             `json:"kei_outcome"`
+	KeiOutcome string `json:"kei_outcome"`
+	// Checkpoint is nil when kei wrote no report for the cycle's sync.
+	Checkpoint *Checkpoint        `json:"checkpoint,omitempty"`
 	Ingested   ledger.IngestStats `json:"ingested"`
 	Verified   VerifyStats        `json:"verified"`
 	Error      string             `json:"error,omitempty"`
+}
+
+// CycleCheckpointField is CycleReport.Checkpoint's name in the ledger.
+const CycleCheckpointField = "checkpoint"
+
+// Checkpoint is whether kei's sync kept its previous iCloud checkpoint (sync
+// token) instead of saving a new one, as kei's report says. The reasons are
+// kei's own words, recorded as kei wrote them.
+type Checkpoint struct {
+	Blocked bool `json:"blocked"`
+	// BlockedCycles counts the syncs in a row, this one included, that kept
+	// the checkpoint; 0 when this one saved it. Cycles in which kei wrote no
+	// report neither count nor reset it.
+	BlockedCycles int    `json:"blocked_cycles"`
+	Reason        string `json:"reason,omitempty"`
+	// Source is who kei says caused it: "kei", "icloud" or "unknown".
+	Source      string `json:"source,omitempty"`
+	Explanation string `json:"explanation,omitempty"`
+	Zone        string `json:"zone,omitempty"`
+	// FullEnumerationReason is set when the sync listed the whole library
+	// instead of the changes since the checkpoint, and says why.
+	FullEnumerationReason string `json:"full_enumeration_reason,omitempty"`
 }
 
 // CycleReport.KeiOutcome values for cycles in which kei did not report one.
@@ -295,7 +322,14 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	if err := a.prepareRepairs(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("repairs: %w", err))
 	}
-	outcome, err := a.download(ctx)
+	outcome, report, err := a.download(ctx)
+	if report != nil {
+		cp, cpErr := a.checkpoint(ctx, report.Stats)
+		rep.Checkpoint = cp
+		if cpErr != nil {
+			errs = append(errs, cpErr)
+		}
+	}
 	switch {
 	case errors.Is(err, platform.ErrLowSpace):
 		// Below storage.min_free_percent: archive what is on disk, download nothing new.
@@ -389,24 +423,66 @@ func (a *Agent) alertRepeated(ctx context.Context, key string, m notify.Msg) {
 	}
 }
 
+// checkpoint records whether kei kept its iCloud checkpoint in the sync whose
+// stats are s, and for how many syncs in a row, continuing the count of the
+// last cycle that recorded one. It alerts when that reaches
+// kei.checkpoint_alert_cycles: kei keeps the checkpoint for one sync by
+// design, but a kept checkpoint means the next sync lists the library again,
+// and one kept sync after sync means kei is stuck (rhoopr/kei#924).
+func (a *Agent) checkpoint(ctx context.Context, s kei.Stats) (*Checkpoint, error) {
+	cp := &Checkpoint{Blocked: s.SyncTokenBlocked, FullEnumerationReason: s.FullEnumerationReason}
+	if !cp.Blocked {
+		return cp, nil
+	}
+	cp.Reason, cp.Source, cp.Explanation, cp.Zone = s.SyncTokenBlockedReason, s.SyncTokenBlockedSource,
+		s.SyncTokenBlockedExplanation, s.SyncTokenBlockedZone
+	cp.BlockedCycles = 1
+	switch last, err := a.db.LastFinishedRunWith(ctx, CycleRunKind, CycleCheckpointField); {
+	case errors.Is(err, ledger.ErrNotFound):
+	case err != nil:
+		return cp, fmt.Errorf("kei checkpoint of the previous cycles: %w", err)
+	default:
+		previous, err := ParseCycleReport(last.Detail)
+		if err != nil {
+			return cp, fmt.Errorf("kei checkpoint of cycle %d: %w", last.ID, err)
+		}
+		cp.BlockedCycles += previous.Checkpoint.BlockedCycles
+	}
+	a.log.InfoContext(ctx, "kei kept its iCloud checkpoint", "syncs_in_a_row", cp.BlockedCycles,
+		"reason", cp.Reason, "blocked_by", cp.Source, "explanation", cp.Explanation)
+	if cp.BlockedCycles >= a.cfg.Kei.CheckpointAlertCycles {
+		// kei's reason is from its fixed vocabulary: it names nothing in the library.
+		a.alertRepeated(ctx, alertCheckpoint, notify.Msg{
+			Title: "homecloud: photo syncs keep re-listing your library",
+			Body: fmt.Sprintf("kei kept its place in iCloud Photos for %d syncs in a row (%s), so every sync lists the whole library again. "+
+				"Nothing is missed; the app shows kei's explanation.", cp.BlockedCycles, cp.Reason),
+			Priority: notify.PriorityDefault,
+			Tags:     []string{"warning"},
+		})
+	}
+	return cp, nil
+}
+
 // download runs kei unless the archive volume is below its free-space
-// minimum, in which case it returns an ErrLowSpace-wrapping error.
-func (a *Agent) download(ctx context.Context) (kei.Outcome, error) {
+// minimum, in which case it returns an ErrLowSpace-wrapping error. The report
+// is what kei wrote for this sync, nil when it wrote none or it could not be
+// read (logged).
+func (a *Agent) download(ctx context.Context) (kei.Outcome, *kei.Report, error) {
 	if _, err := a.checkSpace(); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	started := a.now()
 	outcome, err := kei.Sync(ctx, a.cfg.Kei, a.keiLog)
-	if ctx.Err() == nil { // a sync cut short by a stop is the run's to report
-		a.logKeiSync(ctx, outcome, err, started)
+	if ctx.Err() != nil { // a sync cut short by a stop is the run's to report
+		return outcome, nil, err
 	}
-	return outcome, err
+	return outcome, a.logKeiSync(ctx, outcome, err, started), err
 }
 
 // logKeiSync logs what a kei sync that started at started did, from the
-// report kei wrote for it: one line, at warning level or above when
-// something needs a look.
-func (a *Agent) logKeiSync(ctx context.Context, outcome kei.Outcome, syncErr error, started time.Time) {
+// report kei wrote for it, and returns that report (nil if there is none): one
+// line, at warning level or above when something needs a look.
+func (a *Agent) logKeiSync(ctx context.Context, outcome kei.Outcome, syncErr error, started time.Time) *kei.Report {
 	level, attrs := slog.LevelInfo, []any{"outcome", outcome.String()}
 	switch {
 	case syncErr != nil:
@@ -426,7 +502,10 @@ func (a *Agent) logKeiSync(ctx context.Context, outcome kei.Outcome, syncErr err
 			"bytes", s.BytesDownloaded, "duration_ms", int64(s.ElapsedSeconds*1000),
 			"enumeration_errors", s.EnumerationErrors, "enumeration_incomplete", s.EnumerationIncomplete,
 			"inventory_drop_assets", s.InventoryDropAssets, "rate_limited", s.RateLimited,
-			"state_write_failures", s.StateWriteFailures)
+			"state_write_failures", s.StateWriteFailures, "sync_token_blocked", s.SyncTokenBlocked)
+		if s.FullEnumerationReason != "" {
+			attrs = append(attrs, "full_enumeration_reason", s.FullEnumerationReason)
+		}
 		if len(rep.Failed) > 0 {
 			attrs = append(attrs, "failed_assets", rep.Failed)
 		}
@@ -438,6 +517,10 @@ func (a *Agent) logKeiSync(ctx context.Context, outcome kei.Outcome, syncErr err
 		}
 	}
 	a.log.Log(ctx, level, "kei sync finished", attrs...)
+	if err != nil {
+		return nil
+	}
+	return &rep
 }
 
 // alert sends m and logs that it did (alert titles and bodies name no file

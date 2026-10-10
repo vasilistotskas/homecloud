@@ -169,6 +169,12 @@ export function SettingsPage() {
         <Row label="Check for new items" detail="Downloads new photos and videos, then verifies them">
           <Text>{formatInterval(s.syncIntervalSeconds)}</Text>
         </Row>
+        <Row
+          label="Alert when syncs keep re-listing"
+          detail="After this many syncs in a row in which the downloader kept its place in iCloud Photos; one is normal (kei.checkpoint_alert_cycles)"
+        >
+          <Text>{s.downloaderCheckpointAlertCycles} syncs</Text>
+        </Row>
       </Group>
 
       <Group title="Verification">

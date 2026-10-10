@@ -39,7 +39,8 @@ request_timeout = "1m"
 
 [kei]
 binary = '@KEI_BINARY@'
-version = "0.24.1"
+version = "0.25.0"
+checkpoint_alert_cycles = 3
 config = '@KEI_CONFIG@'
 
 [ffmpeg]
@@ -114,7 +115,7 @@ func TestLoadValid(t *testing.T) {
 			MinFreePercent: 15,
 		},
 		ICloud: ICloud{AppleID: "someone@example.com", IncludeHidden: new(true), RequestTimeout: Duration(time.Minute)},
-		Kei:    Kei{Binary: testKeiBinary, Version: "0.24.1", Config: testKeiConfig},
+		Kei:    Kei{Binary: testKeiBinary, Version: "0.25.0", Config: testKeiConfig, CheckpointAlertCycles: 3},
 		FFmpeg: FFmpeg{
 			FFprobe: testFFprobeBin, FFmpeg: testFFmpegBin, Version: "9.0.2",
 			ProbeTimeout: Duration(5 * time.Minute), Renderers: 4, RenderTimeout: Duration(2 * time.Minute),
@@ -177,6 +178,8 @@ func TestValidate(t *testing.T) {
 		{"hidden unset", func(c *Config) { c.ICloud.IncludeHidden = nil }, "icloud.include_hidden"},
 		{"relative kei binary", func(c *Config) { c.Kei.Binary = `kei.exe` }, "kei.binary"},
 		{"loose kei version", func(c *Config) { c.Kei.Version = "0.24" }, "kei.version"},
+		{"alert on a single kept checkpoint", func(c *Config) { c.Kei.CheckpointAlertCycles = 1 }, "kei.checkpoint_alert_cycles"},
+		{"kept checkpoint alert too late", func(c *Config) { c.Kei.CheckpointAlertCycles = 101 }, "kei.checkpoint_alert_cycles"},
 		{"loose ffmpeg version", func(c *Config) { c.FFmpeg.Version = "latest" }, "ffmpeg.version"},
 		{"relative ffmpeg", func(c *Config) { c.FFmpeg.FFmpeg = "ffmpeg.exe" }, "ffmpeg.ffmpeg"},
 		{"non-loopback listen", func(c *Config) { c.Web.Listen = "0.0.0.0:8790" }, "web.listen"},

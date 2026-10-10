@@ -182,3 +182,31 @@ func TestLastCompletedRunSkipsRunsThatCouldNotWork(t *testing.T) {
 		t.Fatalf("no runs of kind: %v, want ErrNotFound", err)
 	}
 }
+
+func TestLastFinishedRunWith(t *testing.T) {
+	db, _ := openTemp(t)
+	ctx := context.Background()
+	finish := func(detail map[string]any) int64 {
+		t.Helper()
+		id, err := db.StartRun(ctx, "cycle", t0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.FinishRun(ctx, id, true, detail, t0); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	if _, err := db.LastFinishedRunWith(ctx, "cycle", "checkpoint"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("no runs: %v, want ErrNotFound", err)
+	}
+	with := finish(map[string]any{"checkpoint": map[string]any{"blocked": false}})
+	finish(map[string]any{"error": "kei sync failed"})
+	if _, err := db.StartRun(ctx, "cycle", t0); err != nil { // unfinished
+		t.Fatal(err)
+	}
+	got, err := db.LastFinishedRunWith(ctx, "cycle", "checkpoint")
+	if err != nil || got.ID != with {
+		t.Fatalf("LastFinishedRunWith = %d, %v; want run %d", got.ID, err, with)
+	}
+}

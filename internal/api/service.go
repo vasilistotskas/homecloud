@@ -53,6 +53,7 @@ type Ledger interface {
 	DriveTotals(ctx context.Context) (files, bytes, deleted int64, err error)
 	LastFinishedRun(ctx context.Context, kind string) (ledger.Run, error)
 	LastCompletedRun(ctx context.Context, kind string) (ledger.Run, error)
+	LastFinishedRunWith(ctx context.Context, kind, field string) (ledger.Run, error)
 	Runs(ctx context.Context, kind string, beforeID int64, limit int) ([]ledger.Run, error)
 	Events(ctx context.Context, q ledger.EventQuery, beforeID int64, limit int) ([]ledger.Event, error)
 	Quarantined(ctx context.Context) ([]ledger.QuarantinedRendition, error)
@@ -273,6 +274,9 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv3.Overvie
 	if ov.LastDriveSync, err = s.lastRun(ctx, app.DriveSyncRunKind); err != nil {
 		return nil, err
 	}
+	if ov.DownloaderCheckpoint, err = s.downloaderCheckpoint(ctx); err != nil {
+		return nil, err
+	}
 	if ov.IcloudDrive, err = s.icloudDrive(ctx); err != nil {
 		return nil, err
 	}
@@ -303,6 +307,24 @@ func (s *Service) nextRun(ctx context.Context, kind string, every time.Duration,
 		return nil, internal(err)
 	}
 	return optionalTime(app.NextRunAt(completed, every, nextCycle, s.cfg.Schedule.SyncInterval.Std())), nil
+}
+
+// downloaderCheckpoint returns kei's checkpoint as recorded by the latest
+// cycle in which kei wrote a report, or nil before the first: a cycle in which
+// kei failed without one does not hide a checkpoint that stays kept.
+func (s *Service) downloaderCheckpoint(ctx context.Context) (*agentv3.DownloaderCheckpoint, error) {
+	last, err := s.db.LastFinishedRunWith(ctx, app.CycleRunKind, app.CycleCheckpointField)
+	switch {
+	case errors.Is(err, ledger.ErrNotFound):
+		return nil, nil
+	case err != nil:
+		return nil, internal(err)
+	}
+	rep, err := app.ParseCycleReport(last.Detail)
+	if err != nil {
+		return nil, internal(err)
+	}
+	return checkpointToProto(rep.Checkpoint), nil
 }
 
 // lastRun returns the most recent finished run of kind, or nil before the first.
@@ -515,6 +537,7 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv3.GetSetti
 		MinFreePercent:                   c.Storage.MinFreePercent,
 		Downloader:                       &agentv3.ToolPin{Binary: c.Kei.Binary, Version: c.Kei.Version},
 		DownloaderConfig:                 c.Kei.Config,
+		DownloaderCheckpointAlertCycles:  int32(c.Kei.CheckpointAlertCycles), //nolint:gosec // validated 2..100
 		VideoProbe:                       &agentv3.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
 		Thumbnailer:                      &agentv3.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
 		Listen:                           c.Web.Listen,

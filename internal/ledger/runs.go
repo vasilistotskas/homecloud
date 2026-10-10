@@ -93,6 +93,22 @@ func (db *DB) LastCompletedRun(ctx context.Context, kind string) (Run, error) {
 	return runs[0], nil
 }
 
+// LastFinishedRunWith returns the most recent finished run of kind whose
+// detail has the top-level field, or ErrNotFound: the last run that recorded
+// something only some runs can.
+func (db *DB) LastFinishedRunWith(ctx context.Context, kind, field string) (Run, error) {
+	runs, err := db.queryRuns(ctx, `SELECT id, kind, started_at, finished_at, ok, detail FROM runs
+		WHERE kind = ? AND finished_at IS NOT NULL AND json_extract(detail, '$.' || ?) IS NOT NULL
+		ORDER BY id DESC LIMIT 1`, kind, field)
+	if err != nil {
+		return Run{}, err
+	}
+	if len(runs) == 0 {
+		return Run{}, fmt.Errorf("last finished %s run with %s: %w", kind, field, ErrNotFound)
+	}
+	return runs[0], nil
+}
+
 func (db *DB) queryRuns(ctx context.Context, query string, args ...any) (out []Run, err error) {
 	rows, err := db.r.QueryContext(ctx, query, args...)
 	if err != nil {

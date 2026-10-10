@@ -45,6 +45,19 @@ type Stats struct {
 	InventoryDropAssets   int     `json:"inventory_drop_assets"`
 	StateWriteFailures    int     `json:"state_write_failures"`
 	Interrupted           bool    `json:"interrupted"`
+	// SyncTokenBlocked: kei kept its previous iCloud checkpoint (sync token)
+	// for safety although no download failed, so its next sync lists the
+	// library from that older point again. The other SyncTokenBlocked fields
+	// say why, in kei's words: a reason from a vocabulary kei extends, who
+	// caused it ("kei", "icloud" or "unknown"), a sentence, and the zone.
+	SyncTokenBlocked            bool   `json:"sync_token_blocked"`
+	SyncTokenBlockedReason      string `json:"sync_token_blocked_reason"`
+	SyncTokenBlockedSource      string `json:"sync_token_blocked_source"`
+	SyncTokenBlockedExplanation string `json:"sync_token_blocked_explanation"`
+	SyncTokenBlockedZone        string `json:"sync_token_blocked_zone"`
+	// FullEnumerationReason is set when this sync listed the whole library
+	// instead of the changes since the checkpoint, and says why.
+	FullEnumerationReason string `json:"full_enumeration_reason"`
 }
 
 // FailedAsset is one asset kei could not download.

@@ -40,6 +40,31 @@ func TestReadReport(t *testing.T) {
 	}
 }
 
+// TestReadReportCheckpoint reads the checkpoint fields of a report kei 0.25.0
+// wrote on 2026-10-09, while its delta bridge kept failing (rhoopr/kei#924).
+func TestReadReportCheckpoint(t *testing.T) {
+	path := writeReport(t, `{"version":"3","timestamp":"2026-10-09T16:56:41Z","status":"success",
+		"stats":{"assets_seen":3899,"downloaded":0,"failed":0,"enumeration_errors":0,"enumeration_incomplete":false,
+		"sync_token_blocked":true,"sync_token_blocked_reason":"inventory_delta_bridge_failed",
+		"sync_token_blocked_source":"kei",
+		"sync_token_blocked_explanation":"the prior provider checkpoint could not be replayed incrementally after inventory reconciliation",
+		"sync_token_blocked_zone":"PrimarySync","full_enumeration_reason":"enum_config_hash_drift"}}`)
+	r, err := ReadReport(path, since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := r.Stats
+	if !s.SyncTokenBlocked || s.SyncTokenBlockedReason != "inventory_delta_bridge_failed" || s.SyncTokenBlockedSource != "kei" ||
+		s.SyncTokenBlockedZone != "PrimarySync" || s.FullEnumerationReason != "enum_config_hash_drift" ||
+		!strings.HasPrefix(s.SyncTokenBlockedExplanation, "the prior provider checkpoint") {
+		t.Fatalf("stats = %+v", s)
+	}
+	// One held checkpoint is kei working as designed, not trouble.
+	if r.Troubled() {
+		t.Fatal("a report whose only finding is a held checkpoint is troubled")
+	}
+}
+
 func TestReadReportRefuses(t *testing.T) {
 	for name, tc := range map[string]struct {
 		path func(t *testing.T) string

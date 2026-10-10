@@ -70,6 +70,12 @@ type Kei struct {
 	Binary  string `toml:"binary"`
 	Version string `toml:"version"`
 	Config  string `toml:"config"`
+	// CheckpointAlertCycles is how many syncs in a row may end with kei
+	// keeping its previous iCloud checkpoint before the agent alerts. kei
+	// keeps it for one sync by design, e.g. after its settings changed; a
+	// checkpoint kept sync after sync means every sync lists the whole
+	// library again and kei is stuck.
+	CheckpointAlertCycles int `toml:"checkpoint_alert_cycles"`
 }
 
 // FFmpeg pins one FFmpeg build: ffprobe checks that videos play, ffmpeg
@@ -349,6 +355,11 @@ func (c *Config) Validate() error {
 		if !versionPattern.MatchString(f.value) {
 			add("%s must be an exact MAJOR.MINOR.PATCH version, got %q", f.key, f.value)
 		}
+	}
+
+	// One kept checkpoint is kei working as designed, so a single sync never alerts.
+	if n := c.Kei.CheckpointAlertCycles; n < 2 || n > 100 {
+		add("kei.checkpoint_alert_cycles must be between 2 and 100, got %d", n)
 	}
 
 	if t := c.FFmpeg.ProbeTimeout.Std(); t < 30*time.Second || t > time.Hour {
