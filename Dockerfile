@@ -35,12 +35,12 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-X main.version=${VERSION}" -o /out/ ./cmd/homecloud ./cmd/homecloud-agent
 
 # kei, the iCloud Photos downloader: its release binary, checked against the
-# release's published SHA-256 (kei v0.25.0 SHA256SUMS.txt).
+# release's published SHA-256 (kei v0.25.3 SHA256SUMS.txt).
 FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS kei
 ARG TARGETARCH
-ARG KEI_VERSION=0.25.0
-ARG KEI_SHA256_AMD64=695192c4af06a521fe8d70981d8b15590830b09c1836d968357e29271bb20ae3
-ARG KEI_SHA256_ARM64=edf30a3ba889b8456ad0eb7b7e691e44d09f17b878efbef715d99aa8aaace399
+ARG KEI_VERSION=0.25.3
+ARG KEI_SHA256_AMD64=a476613e2c7d795530ee214a71dff94491a91c69f6add941437da7b5e4ad9c76
+ARG KEI_SHA256_ARM64=44582a9236515d3327e66812a1ce8bcf74e33a1a9eecad946acdd1bf4443c0cf
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
     case "$TARGETARCH" in \

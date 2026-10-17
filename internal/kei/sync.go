@@ -12,7 +12,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/platform"
 )
 
-// Outcome classifies a completed kei sync by exit code (kei src/lib.rs, v0.25.0).
+// Outcome classifies a completed kei sync by exit code (kei src/lib.rs, v0.25.3).
 type Outcome int
 
 // Sync outcomes.
@@ -71,7 +71,7 @@ func Sync(ctx context.Context, cfg config.Kei, log io.Writer) (Outcome, error) {
 // Reconcile runs `kei reconcile`, which reads kei's state and the disk without
 // contacting iCloud and marks every downloaded file that is missing or
 // truncated as failed, so the next sync downloads it again (kei
-// src/commands/reconcile.rs, v0.25.0). It never deletes or changes files.
+// src/commands/reconcile.rs, v0.25.3). It never deletes or changes files.
 // Its report goes to log.
 func Reconcile(ctx context.Context, cfg config.Kei, log io.Writer) error {
 	cmd := platform.Command(ctx, cfg.Binary, "reconcile", "--config", cfg.Config, "--log-level", "warn")
