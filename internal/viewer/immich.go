@@ -1,9 +1,9 @@
 // Package viewer keeps the optional viewer, Immich reading the archive's
 // Photos/ (README, "The viewer"), in step with the archive: Immich shows an
 // edit and its original as two items, and only the ledger knows which edit
-// belongs to which original, so the agent stacks them, the edit on top. It
-// uses Immich's API (v3.3.5) with a key that needs only asset.read,
-// stack.read and stack.create.
+// belongs to which original, so the agent stacks them, the edit on top; and
+// Immich scans the folder only nightly, so the agent queues a scan when files
+// land. It uses Immich's API (v3.3.5) with a key granting Permissions.
 package viewer
 
 import (
@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -20,8 +21,9 @@ import (
 )
 
 // Permissions are what the agent's API key must grant; Immich's "all" grants
-// every one.
-var Permissions = []string{"asset.read", "stack.read", "stack.create"}
+// every one. The library ones queue a scan when files land, and Immich allows
+// them to an administrator's key only.
+var Permissions = []string{"asset.read", "stack.read", "stack.create", "library.read", "library.update"}
 
 const permissionAll = "all"
 
@@ -96,6 +98,45 @@ func (c *Client) MissingPermissions(ctx context.Context) ([]string, error) {
 		}
 	}
 	return missing, nil
+}
+
+// PhotosLibraries returns the external libraries that import photosPath, the
+// archive's Photos/ as Immich sees it; none is an error, since nothing of the
+// archive is then in the viewer.
+func (c *Client) PhotosLibraries(ctx context.Context, photosPath string) ([]string, error) {
+	var libs []struct {
+		ID          string   `json:"id"`
+		ImportPaths []string `json:"importPaths"`
+	}
+	if err := c.call(ctx, http.MethodGet, "/libraries", nil, &libs); err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, l := range libs {
+		if slices.Contains(l.ImportPaths, photosPath) {
+			ids = append(ids, l.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no Immich library imports %s: add an external library with that import path", photosPath)
+	}
+	return ids, nil
+}
+
+// ScanPhotos queues a scan of every library that imports photosPath, so files
+// that just landed in the archive show in the viewer without waiting for
+// Immich's nightly scan.
+func (c *Client) ScanPhotos(ctx context.Context, photosPath string) error {
+	ids, err := c.PhotosLibraries(ctx, photosPath)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := c.call(ctx, http.MethodPost, "/libraries/"+url.PathEscape(id)+"/scan", nil, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // searchRequest is a metadata search in the shape Immich v3.2 introduced:

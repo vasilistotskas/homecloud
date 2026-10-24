@@ -362,15 +362,18 @@ of RAM, and downloads its search models (1.7 GB) on first use. Then:
 4. Open `https://<TS_HOSTNAME>.<tailnet>.ts.net:8443` and create the admin account.
 5. In Administration, External libraries, add a library with the import path
    `/mnt/archive/Photos`.
-6. Immich shows an edit and its original as two items, and only homecloud knows which edit
-   belongs to which original. To have the agent stack each edit over its original after every
-   sync:
-   - In Immich, under Account settings, API keys, create a key as the library's owner, with
-     `asset.read`, `stack.read` and `stack.create`.
+6. Connect the agent to Immich, so new photos show within minutes and edits sit over their
+   originals. Immich scans the folder only nightly and shows an edit and its original as two
+   items, and only homecloud knows which edit belongs to which original. After each sync that
+   brought new or changed files, the agent asks Immich to scan, then stacks each edit over its
+   original.
+   - In Immich, under Account settings, API keys, create a key as the administrator who owns the
+     library, with `asset.read`, `stack.read`, `stack.create`, `library.read` and
+     `library.update`. Immich allows library scans to administrators only.
    - Run `docker compose exec homecloud homecloud viewer key --set` and paste the key.
    - Add `[viewer]` to `config.toml` with `url = "http://immich-server:2283"` and
      `photos_path = "/mnt/archive/Photos"`.
-   - `homecloud doctor` then checks that the key works.
+   - `homecloud doctor` then checks the key and that a library imports that path.
 
 Point the Immich iPhone app at the same address, and leave its backup off. Its settings come from
 `deploy/immich.json` (the version check is off), so they cannot be changed in the web UI.

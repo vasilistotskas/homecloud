@@ -54,6 +54,12 @@ type IngestStats struct {
 	Repaired int
 }
 
+// FilesChanged reports whether the ingest found files new, changed, moved or
+// repaired on disk.
+func (s IngestStats) FilesChanged() bool {
+	return s.NewRenditions+s.ChangedRenditions+s.MovedRenditions+s.Repaired > 0
+}
+
 // Ingest records renditions in one transaction. A rendition whose size or hash
 // changed loses its verification evidence. Asset states are recomputed, except
 // that quarantine is sticky: it ends only when an operator releases the asset

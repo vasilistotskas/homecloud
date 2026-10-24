@@ -76,6 +76,7 @@ func TestCycleStacksEditsInTheViewer(t *testing.T) {
 	var (
 		mu      sync.Mutex
 		created [][]string
+		scans   int
 	)
 	withViewer(t, agent, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
@@ -88,7 +89,16 @@ func TestCycleStacksEditsInTheViewer(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"assets":{"items":[
 				{"id":"o","originalPath":"/mnt/archive/Photos/2022/06/IMG_0001_QUFBQTA.HEIC"},
 				{"id":"e","originalPath":"/mnt/archive/Photos/2022/06/IMG_0001_edited_QUFBQTA.HEIC"}],"nextCursor":null}}`)
+		case "GET /api/libraries":
+			_, _ = fmt.Fprint(w, `[{"id":"lib","name":"Photos","importPaths":["/mnt/archive/Photos"]}]`)
+		case "POST /api/libraries/lib/scan":
+			scans++
+			w.WriteHeader(http.StatusNoContent)
 		case "GET /api/stacks":
+			if len(created) > 0 {
+				_, _ = fmt.Fprint(w, `[{"id":"s1","primaryAssetId":"e","assets":[{"id":"e"},{"id":"o"}]}]`)
+				return
+			}
 			_, _ = fmt.Fprint(w, `[]`)
 		case "POST /api/stacks":
 			var req struct {
@@ -110,9 +120,19 @@ func TestCycleStacksEditsInTheViewer(t *testing.T) {
 		t.Fatal(err)
 	}
 	mu.Lock()
+	if len(created) != 1 || !slices.Equal(created[0], []string{"e", "o"}) || scans != 1 {
+		t.Fatalf("stacks created = %v, scans = %d; want the edit over its original, after a scan for the new files", created, scans)
+	}
+	mu.Unlock()
+
+	// Nothing new on disk: no scan, and the stack is already there.
+	if err := agent.Cycle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
 	defer mu.Unlock()
-	if len(created) != 1 || !slices.Equal(created[0], []string{"e", "o"}) {
-		t.Fatalf("stacks created = %v, want the edit over its original", created)
+	if len(created) != 1 || scans != 1 {
+		t.Fatalf("a cycle with nothing new: stacks created = %v, scans = %d; want neither again", created, scans)
 	}
 	if s, _ := agent.Hub().Snapshot(); s.Phase != PhaseIdle {
 		t.Fatalf("phase after the cycle = %v, want idle", s.Phase)

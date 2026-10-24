@@ -63,8 +63,9 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 	return append(results, checkIPhoneBackupDirs(cfg)...)
 }
 
-// checkViewer checks the viewer the agent stacks edits in: its API key is
-// saved here, Immich answers with it, and it grants what the agent needs.
+// checkViewer checks the viewer the agent keeps in step: its API key is saved
+// here, Immich answers with it, it grants what the agent needs, and a library
+// there imports Photos/.
 func checkViewer(ctx context.Context, cfg config.Viewer) Result {
 	const name = "viewer"
 	path, err := viewer.KeyPath()
@@ -79,12 +80,16 @@ func checkViewer(ctx context.Context, cfg config.Viewer) Result {
 	if err != nil {
 		return Result{Name: name, Err: err}
 	}
-	missing, err := viewer.New(cfg, key).MissingPermissions(ctx)
+	client := viewer.New(cfg, key)
+	missing, err := client.MissingPermissions(ctx)
 	switch {
 	case err != nil:
 		return Result{Name: name, Err: err}
 	case len(missing) > 0:
 		return Result{Name: name, Err: fmt.Errorf("the API key lacks %s: create one that grants it", strings.Join(missing, ", "))}
+	}
+	if _, err := client.PhotosLibraries(ctx, cfg.PhotosPath); err != nil {
+		return Result{Name: name, Err: err}
 	}
 	return Result{Name: name, Detail: cfg.URL}
 }

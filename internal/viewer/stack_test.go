@@ -29,6 +29,8 @@ type fakeImmich struct {
 	nextStack   int
 	permissions []string
 	creates     int
+	libraries   map[string][]string // library id -> import paths
+	scans       []string            // library ids, in the order scanned
 }
 
 func newFakeImmich(t *testing.T, paths ...string) *fakeImmich {
@@ -96,6 +98,12 @@ func (f *fakeImmich) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			next = strconv.Itoa(end)
 		}
 		f.write(w, map[string]any{"assets": map[string]any{"items": items, "nextCursor": next}})
+	case "GET /api/libraries":
+		out := []map[string]any{}
+		for id, paths := range f.libraries {
+			out = append(out, map[string]any{"id": id, "name": id, "importPaths": paths})
+		}
+		f.write(w, out)
 	case "GET /api/stacks":
 		out := []map[string]any{}
 		for s, top := range f.primary {
@@ -121,6 +129,11 @@ func (f *fakeImmich) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 		f.write(w, map[string]any{"id": "s" + strconv.Itoa(f.nextStack)})
 	default:
+		if id, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/libraries/"), "/scan"); ok && r.Method == http.MethodPost && f.libraries[id] != nil {
+			f.scans = append(f.scans, id)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		http.NotFound(w, r)
 	}
 }
@@ -202,13 +215,28 @@ func TestStackEditsReportsImmichErrors(t *testing.T) {
 	}
 }
 
+func TestScanPhotos(t *testing.T) {
+	f := newFakeImmich(t)
+	f.libraries = map[string][]string{"photos": {"/mnt/archive/Photos"}, "other": {"/mnt/elsewhere"}}
+	c := testClient(t, f, testKey)
+	if err := c.ScanPhotos(context.Background(), "/mnt/archive/Photos"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(f.scans, []string{"photos"}) {
+		t.Fatalf("scanned %v, want only the library over Photos", f.scans)
+	}
+	if err := c.ScanPhotos(context.Background(), "/mnt/archive/Elsewhere"); err == nil || !strings.Contains(err.Error(), "no Immich library imports") {
+		t.Fatalf("no library over the path: err = %v", err)
+	}
+}
+
 func TestMissingPermissions(t *testing.T) {
 	tests := []struct {
 		granted, missing []string
 	}{
-		{[]string{"asset.read", "stack.read", "stack.create"}, nil},
+		{[]string{"asset.read", "stack.read", "stack.create", "library.read", "library.update"}, nil},
 		{[]string{"all"}, nil},
-		{[]string{"asset.read"}, []string{"stack.read", "stack.create"}},
+		{[]string{"asset.read", "library.read"}, []string{"stack.read", "stack.create", "library.update"}},
 	}
 	for _, tt := range tests {
 		f := newFakeImmich(t)

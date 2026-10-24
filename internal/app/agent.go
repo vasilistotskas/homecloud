@@ -415,15 +415,18 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 		errs = append(errs, err)
 	}
 	a.preparePreviews(ctx)
-	a.updateViewer(ctx)
+	a.updateViewer(ctx, ingested.FilesChanged())
 	return rep, errors.Join(errs...)
 }
 
-// updateViewer stacks each edit over its original in the viewer ([viewer]),
-// which cannot pair them by itself. Photos/Hidden is out of the viewer's
-// sight, so its pairs are left out. The viewer is derived, like previews:
-// a failure is logged and retried next cycle, never failing the cycle.
-func (a *Agent) updateViewer(ctx context.Context) {
+// updateViewer keeps the viewer ([viewer]) in step with the archive. When
+// filesChanged, it queues Immich's scan of Photos/, which otherwise runs
+// nightly; then it stacks each edit over its original, which Immich cannot
+// pair by itself (files the scan adds are stacked next cycle). Photos/Hidden
+// is out of the viewer's sight, so its pairs are left out. The viewer is
+// derived, like previews: a failure is logged and retried next cycle, never
+// failing the cycle.
+func (a *Agent) updateViewer(ctx context.Context, filesChanged bool) {
 	if a.cfg.Viewer == (config.Viewer{}) {
 		return
 	}
@@ -448,7 +451,13 @@ func (a *Agent) updateViewer(ctx context.Context) {
 		a.log.ErrorContext(ctx, "viewer not updated: the edits could not be read", "err", err)
 		return
 	}
-	res, err := viewer.StackEdits(ctx, viewer.New(a.cfg.Viewer, key), pairs, kei.DownloadDir(a.cfg.Storage.Root), a.cfg.Viewer.PhotosPath)
+	client := viewer.New(a.cfg.Viewer, key)
+	if filesChanged {
+		if scanErr := client.ScanPhotos(ctx, a.cfg.Viewer.PhotosPath); scanErr != nil {
+			a.log.WarnContext(ctx, "viewer not asked to scan the new files", "err", scanErr)
+		}
+	}
+	res, err := viewer.StackEdits(ctx, client, pairs, kei.DownloadDir(a.cfg.Storage.Root), a.cfg.Viewer.PhotosPath)
 	if err != nil {
 		a.log.WarnContext(ctx, "viewer not updated", "err", err, "stacked_now", res.Created)
 		return

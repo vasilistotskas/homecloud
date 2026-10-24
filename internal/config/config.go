@@ -250,8 +250,9 @@ type SafeToDelete struct {
 }
 
 // Viewer connects the agent to the optional viewer: Immich, reading the
-// archive's Photos/ (README, "The viewer"). Each cycle the agent stacks every
-// edit over its original there, which Immich cannot pair by itself. Absent
+// archive's Photos/ (README, "The viewer"). Each cycle the agent asks Immich
+// to scan files that just landed, and stacks every edit over its original
+// there, which Immich cannot pair by itself. Absent
 // when there is no viewer. Its API key is kept apart from this file, in the
 // per-user state directory (homecloud viewer key --set).
 type Viewer struct {
