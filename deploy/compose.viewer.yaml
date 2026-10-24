@@ -1,0 +1,77 @@
+# The optional viewer: Immich over the archive's Photos/, read only, to browse
+# the library from the iPhone's Immich app or a browser without a copy on the
+# phone (design.md §10, Spike D). homecloud stays the archive: Immich reads
+# Photos/ and nothing else, and it cannot write there. Browse only; never
+# upload, edit or trash in it.
+#
+#   docker compose -f compose.yaml -f compose.viewer.yaml up -d
+#
+# Immich is then at https://<TS_HOSTNAME>.<your tailnet>.ts.net:8443, once the
+# tailnet policy grants your devices tcp:8443 too (README, "The viewer").
+
+services:
+  # The same node, also serving Immich on port 8443 (serve-viewer.json).
+  tailscale:
+    volumes:
+      - ./serve-viewer.json:/serve/serve.json:ro
+
+  # Immich runs in its own network namespace, not the agent's: Tailscale
+  # proxies to it by name, and it cannot reach the agent's 127.0.0.1.
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:v3.3.5@sha256:485d546a2e31d6a8b4db8423fcba5c109de8c218d93410af115fd1ccfc4352a6
+    environment:
+      TZ: ${TZ}
+      DB_HOSTNAME: immich-database
+      DB_USERNAME: ${IMMICH_DB_USERNAME}
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD}
+      DB_DATABASE_NAME: ${IMMICH_DB_DATABASE_NAME}
+      REDIS_HOSTNAME: immich-redis
+      IMMICH_CONFIG_FILE: /config/immich.json
+    volumes:
+      # Immich's own files: thumbnails, previews, transcoded videos and its
+      # database dumps.
+      - ${HOMECLOUD_DATA}/immich/library:/data
+      - ./immich.json:/config/immich.json:ro
+      - ${HOMECLOUD_ARCHIVE}/Photos:/mnt/archive/Photos:ro
+      # Photos/Hidden stays hidden: an empty, read-only file system over it,
+      # so Immich never sees those files at all.
+      - type: tmpfs
+        target: /mnt/archive/Photos/Hidden
+        read_only: true
+        tmpfs:
+          size: 4096
+    depends_on:
+      - immich-redis
+      - immich-database
+    restart: unless-stopped
+
+  # Downloads its models (1.7 GB) on first use, then needs no network.
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:v3.3.5@sha256:5b28c9352c8374b8a1ed96fbdd8d6755fea6e43510ec43fdf6538aa02ea40f56
+    volumes:
+      - immich-model-cache:/cache
+    restart: unless-stopped
+
+  # Valkey and Postgres as Immich v3.3.5 pins them (its docker-compose.yml).
+  immich-redis:
+    image: docker.io/valkey/valkey:9@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+    healthcheck:
+      test: redis-cli ping | grep -q PONG || exit 1
+    restart: unless-stopped
+
+  immich-database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    environment:
+      POSTGRES_USER: ${IMMICH_DB_USERNAME}
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD}
+      POSTGRES_DB: ${IMMICH_DB_DATABASE_NAME}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      # On a local drive: Immich does not support its database on a network
+      # share.
+      - ${HOMECLOUD_DATA}/immich/postgres:/var/lib/postgresql/data
+    shm_size: 128mb
+    restart: unless-stopped
+
+volumes:
+  immich-model-cache:

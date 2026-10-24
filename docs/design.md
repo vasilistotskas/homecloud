@@ -390,9 +390,15 @@ Immich v3.3.5 (server, machine learning, Valkey and Immich's Postgres, all pinne
 - **PhotoPrism:** not run. Its docs list no native iOS app, only a PWA (which needs its own HTTPS domain) and third-party apps (PhotoSync, Stream, Photoflare, Prismatic). The deciding requirement is browsing the archive from the iPhone without storing it there, which Immich's own iOS app does.
 
 **Decision: Immich is the optional viewer and phone gallery; PhotoPrism is not used.** homecloud stays the archive, and Immich only reads `Photos/` (`:ro`). Kept with it:
-- Hidden stays out of Immich's timeline, by excluding it (the default) or by moving it into the locked folder.
+- Hidden stays out of Immich: the profile masks `Photos/Hidden`. Immich's locked folder would also work, but only through a PIN-unlocked session.
 - homecloud's ledger drives the stacks, since the ledger already knows each edit's original.
 - The version check is off, and the models are seeded once.
+
+**The opt-in profile:** `deploy/compose.viewer.yaml` (README, "The viewer"). It was run as written against the sample: 150 files imported, none from `Photos/Hidden`, no write errors, and the config applied.
+- Hidden is masked by an empty read-only tmpfs mounted over `Photos/Hidden`, not by an exclusion pattern, so Immich never sees those files.
+- Immich runs in its own network namespace, and Tailscale Serve proxies port 8443 to it by name. Tailscale v1.104.2 reaches a non-localhost backend with `SystemDial`.
+- `deploy/immich.json` turns the version check off. A config file also makes every setting read-only in the web UI.
+- Dependabot bumps the pins: `compose.viewer.yaml` matches its compose file pattern.
 
 Still to check, on the owner's iPhone: how the Immich iOS app shows external-library assets over Tailscale (no local copy kept), and what it does with stacks and the locked folder.
 

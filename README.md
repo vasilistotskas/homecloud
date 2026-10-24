@@ -347,6 +347,24 @@ ACL syntax `autogroup:member:*`), the devices of your tailnet's users, which a t
 is. Devices you tagged before then need rules of their own. The NAS's SMB share
 belongs to the NAS itself, not to this node, so the iPhone push is not affected.
 
+**The viewer (optional):** [Immich](https://immich.app) over the archive's `Photos/`, to browse
+the library from the iPhone's Immich app or a browser, like iCloud Photos but without a copy on
+the phone. homecloud stays the archive. Immich reads `Photos/` and nothing else, it cannot write
+there (`:ro`), and `Photos/Hidden` is covered by an empty file system, so Immich never sees it.
+Use it to browse only: don't upload, edit or trash in it. Immich keeps its own previews and
+database under `HOMECLOUD_DATA/immich` (on a local drive, not a network share), needs about 4 GB
+of RAM, and downloads its search models (1.7 GB) on first use. Then:
+1. Set `IMMICH_DB_PASSWORD` in `.env`, using letters and digits only.
+2. Grant your devices `tcp:8443` of `tag:homecloud` as well, and add `tag:homecloud:8443` to the
+   test's `accept`.
+3. Start it with `docker compose -f compose.yaml -f compose.viewer.yaml up -d`.
+4. Open `https://<TS_HOSTNAME>.<tailnet>.ts.net:8443` and create the admin account.
+5. In Administration, External libraries, add a library with the import path
+   `/mnt/archive/Photos`.
+
+Point the Immich iPhone app at the same address, and leave its backup off. Its settings come from
+`deploy/immich.json` (the version check is off), so they cannot be changed in the web UI.
+
 **iPhone backups on a NAS:** Apple's Devices app keeps backing up to the PC, and the PC sends
 each finished backup to the NAS. Create a shared folder in UGOS (say `homecloud-iphone`, the
 NAS folder `HOMECLOUD_IPHONE_INCOMING` names) that the NAS user owning the homecloud folders can
