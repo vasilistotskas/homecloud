@@ -23,7 +23,7 @@ Make a local drive (E:) the single, verified home of the owner's iCloud data —
 | icloudpd "Move" mode | Rejected as deleter | Deletes assets whose download failed (#1312, open); >1 GB videos truncated (#1311, open); seeking a maintainer since 2026-01 (#1305) |
 | kei | **Adopted as downloader** | MIT, active (v0.26.0, 2026-10-23), checksum-verified downloads, JSON manifest; iCloud deletion is an explicit non-goal (product charter) |
 | pyicloud (timlaing fork) | **Adopted as deletion transport** (sidecar) | MIT, 2.7.0 (2026-09-04), CloudKit `PhotoAsset.delete()`; bug #353 (per-record errors discarded) ⇒ every delete is re-confirmed |
-| PhotoSync / Immich / Ente | Not the pipeline | iOS requires a user tap to delete from the phone library; background upload is OS-scheduled |
+| PhotoSync / Immich / Ente | Not the pipeline; **Immich adopted as the optional read-only viewer** (§10 Spike D) | iOS requires a user tap to delete from the phone library; background upload is OS-scheduled |
 | iCloud for Windows sync folder | Not used by homecloud | Download throttled (~1 MB/s measured); cannot relocate off C:; on-demand reads time out |
 | Write our own iCloud client | Rejected for Photos; **adopted for iCloud Drive** (§8f) | For Photos it would re-implement the SRP/2FA/CloudKit surface kei and pyicloud already maintain; for Drive no maintained tool archives without deleting (§8f) |
 
@@ -367,6 +367,34 @@ Conclusion: deletion addresses assets by kei `asset_id`, cross-checked against s
 - Two entrypoints over the same `internal/` packages: `cmd/homecloud` (console CLI) and `cmd/homecloud-agent` (built with `-ldflags=-H=windowsgui`, so Windows never allocates a console; logs go to file).
 - Started by a Task Scheduler **logon trigger** for the owner, interactive token: the agent runs in the user's session, where kei's credentials live (Windows Credential Manager). A named mutex enforces a single instance.
 - Rejected: `conhost.exe --headless` (undocumented; flagged by EDR rules as defense evasion — Elastic "Proxy Execution via Console Window Host"); a Windows service (Session 0, LocalSystem — no access to the user's credential vault); kei's own `kei install` service mode (same reason, and homecloud must own scheduling to sequence sync → ingest → verify).
+
+### Spike D — viewer and phone gallery (#21, 2026-10-24)
+
+Immich v3.3.5 (server, machine learning, Valkey and Immich's Postgres, all pinned by digest) on Docker Desktop, over an 89-asset sample of `Photos/` copied from the archive (165 files, 9.9 GB) and mounted `:ro` as external libraries: 25 ProRAW DNGs (15 with an edit), 20 Live Photos, 10 edited Live Photos, 10 edited HEICs, the 10 largest HEICs, 10 videos, and 10 assets from `Photos/Hidden`.
+
+- **Imported:** 165/165 files, 0 failed jobs; thumbnails 89/89; CLIP embeddings 165/165 (one request reset while the model loaded, and the retry succeeded).
+- **ProRAW:** 25/25 DNG previews render, with dimensions.
+- **Videos:** 10/10 have their duration.
+- **Sidecars:** GPS from kei's XMP reached Immich for 48/48 assets that have it. `dc:subject` did not become tags (0/11), which is right for kei's sidecars, where it holds stale album membership.
+- **Live Photos:** Immich pairs them by Apple's `ContentIdentifier`. 30/30 originals are paired with their video, and the video is hidden from the timeline. For edited Live Photos, 8/10 edits are paired. The other 2 are edited renders that carry no `ContentIdentifier` (checked with exiftool 13.59), so each shows as a still plus a separate video.
+- **Edits:** without help, each edit and its original are two timeline items. Immich's API stacks them (`POST /stacks`, the first id is the cover). 25/25 edit + original pairs were stacked with the edit as the cover, which took the timeline from 113 items to 88. Stacks survive a library rescan.
+- **`Photos/Hidden`:** with the exclusion pattern `**/Hidden/**`, the library over `Photos/` imported none of it. Hidden is not hidden in Immich, though: a separate library over `Photos/Hidden` puts its items in the main timeline. Moving them into Immich's locked folder (`PUT /assets` with `visibility: locked`, from a session unlocked with the owner's PIN) works, and survives a rescan.
+- **Writes into the mount:** none attempted. No EROFS or EACCES errors in the logs, and nothing is written next to the originals.
+- **Egress:**
+  - The first start downloads 1.7 GB of models, from the Hugging Face Hub and, for OCR, `modelscope.cn`.
+  - The version check is on by default, and the API turns it off.
+  - On a Docker `internal` network (no gateway), the stack still works once the models are in place: the API, CLIP search (the text model loads from the cache) and thumbnail jobs, with no DNS or connection errors.
+  - Map tiles come from `tiles.immich.cloud`, fetched by the browser or app, not the server. Reverse geocoding is local.
+- **RAM on this PC (16 GB, 16 cores), idle after indexing:** server 2.2 GB (3.1 GB while indexing), machine learning 1.0 GB, Postgres 0.4 GB, Valkey 18 MB, about 3.7 GB in total. The NAS has not been measured.
+- **Not applicable:** HEIC over 16 MB (Immich #30876). The archive's largest HEIC is 11.9 MB.
+- **PhotoPrism:** not run. Its docs list no native iOS app, only a PWA (which needs its own HTTPS domain) and third-party apps (PhotoSync, Stream, Photoflare, Prismatic). The deciding requirement is browsing the archive from the iPhone without storing it there, which Immich's own iOS app does.
+
+**Decision: Immich is the optional viewer and phone gallery; PhotoPrism is not used.** homecloud stays the archive, and Immich only reads `Photos/` (`:ro`). Kept with it:
+- Hidden stays out of Immich's timeline, by excluding it (the default) or by moving it into the locked folder.
+- homecloud's ledger drives the stacks, since the ledger already knows each edit's original.
+- The version check is off, and the models are seeded once.
+
+Still to check, on the owner's iPhone: how the Immich iOS app shows external-library assets over Tailscale (no local copy kept), and what it does with stacks and the locked folder.
 
 ### Verification design corrections
 
