@@ -671,7 +671,7 @@ func (a *Agent) preparePreviews(ctx context.Context) {
 	for _, hidden := range []bool{false, true} {
 		var after *ledger.LibraryCursor
 		for {
-			page, err := a.db.LibraryPage(ctx, ledger.LibraryQuery{HiddenDir: hiddenDir, Hidden: hidden, After: after, Limit: previewPage})
+			page, err := a.db.LibraryPage(ctx, ledger.LibraryQuery{LibraryFilter: ledger.LibraryFilter{HiddenDir: hiddenDir, Hidden: hidden}, After: after, Limit: previewPage})
 			if err != nil {
 				a.log.ErrorContext(ctx, "previews not prepared: the library could not be read", "err", err)
 				return

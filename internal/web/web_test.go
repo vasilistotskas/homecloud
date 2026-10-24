@@ -3,6 +3,7 @@ package web_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
 	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
@@ -831,6 +833,60 @@ func TestLibraryAndSignedThumbnails(t *testing.T) {
 	}
 	if status, _, _ := get(t, e, strings.Split(item.GetThumbnailUrl(), "?")[0], ""); status != http.StatusForbidden {
 		t.Fatalf("unsigned thumbnail = %d", status)
+	}
+}
+
+func TestOnThisDayAndCaptureMonths(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	athens := time.FixedZone("EEST", 3*60*60)
+	// 21:30 UTC on 19 June is already 20 June in Athens (summer time, UTC+3).
+	seedArchived(t, e.db, "Y22", time.Date(2022, 6, 19, 21, 30, 0, 0, time.UTC), t0)
+	seedArchived(t, e.db, "Y23", time.Date(2023, 6, 20, 12, 0, 0, 0, athens), t0)
+	seedArchived(t, e.db, "OTHER", time.Date(2023, 6, 21, 12, 0, 0, 0, athens), t0)
+	seedArchived(t, e.db, "NOW", time.Date(2026, 6, 20, 9, 0, 0, 0, athens), t0)
+
+	day := &agentv3.CalendarDate{Year: 2026, Month: 6, Day: 20}
+	res, err := e.client.ListAssets(ctx, &agentv3.ListAssetsRequest{OnThisDay: day, TimeZone: "Europe/Athens"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range res.GetItems() {
+		got = append(got, it.GetAsset().GetAssetId())
+	}
+	if !slices.Equal(got, []string{"Y23", "Y22"}) {
+		t.Fatalf("on this day = %v; want Y23 and Y22 (earlier years only, counted in Athens)", got)
+	}
+	if _, err = e.client.ListAssets(ctx, &agentv3.ListAssetsRequest{OnThisDay: day}); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("on this day without a time zone = %v, want invalid_argument", err)
+	}
+	if _, err = e.client.ListAssets(ctx, &agentv3.ListAssetsRequest{
+		OnThisDay: &agentv3.CalendarDate{Year: 2026, Month: 2, Day: 30}, TimeZone: "Europe/Athens",
+	}); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("30 February = %v, want invalid_argument", err)
+	}
+
+	before, err := e.client.ListAssets(ctx, &agentv3.ListAssetsRequest{
+		TakenBefore: timestamppb.New(time.Date(2023, 6, 21, 0, 0, 0, 0, athens)),
+	})
+	if err != nil || len(before.GetItems()) != 2 || before.GetItems()[0].GetAsset().GetAssetId() != "Y23" {
+		t.Fatalf("taken before 21 June 2023 = %v, %v; want Y23 then Y22", before, err)
+	}
+
+	months, err := e.client.ListCaptureMonths(ctx, &agentv3.ListCaptureMonthsRequest{TimeZone: "Europe/Athens"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counts []string
+	for _, m := range months.GetMonths() {
+		counts = append(counts, fmt.Sprintf("%d-%02d:%d", m.GetYear(), m.GetMonth(), m.GetAssets()))
+	}
+	if !slices.Equal(counts, []string{"2026-06:1", "2023-06:2", "2022-06:1"}) || months.GetUnknown() != 0 {
+		t.Fatalf("capture months = %v, unknown %d", counts, months.GetUnknown())
+	}
+	if _, err := e.client.ListCaptureMonths(ctx, &agentv3.ListCaptureMonthsRequest{TimeZone: "Local"}); code(err) != connect.CodeInvalidArgument {
+		t.Fatalf("capture months in the agent's own zone = %v, want invalid_argument", err)
 	}
 }
 

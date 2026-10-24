@@ -40,6 +40,9 @@ const (
 	AgentServiceListEventsProcedure = "/homecloud.agent.v3.AgentService/ListEvents"
 	// AgentServiceListAssetsProcedure is the procedure name of the AgentService's ListAssets RPC.
 	AgentServiceListAssetsProcedure = "/homecloud.agent.v3.AgentService/ListAssets"
+	// AgentServiceListCaptureMonthsProcedure is the procedure name of the AgentService's
+	// ListCaptureMonths RPC.
+	AgentServiceListCaptureMonthsProcedure = "/homecloud.agent.v3.AgentService/ListCaptureMonths"
 	// AgentServiceGetSafeToDeleteProcedure is the procedure name of the AgentService's GetSafeToDelete
 	// RPC.
 	AgentServiceGetSafeToDeleteProcedure = "/homecloud.agent.v3.AgentService/GetSafeToDelete"
@@ -128,6 +131,14 @@ var (
 			StreamType:       connect.StreamTypeUnary,
 			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListAssets"),
 			Procedure:        AgentServiceListAssetsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceListCaptureMonthsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListCaptureMonths"),
+			Procedure:        AgentServiceListCaptureMonthsProcedure,
 			IdempotencyLevel: connect.IdempotencyNoSideEffects,
 		}
 	})
@@ -267,6 +278,9 @@ type AgentServiceClient interface {
 	ListEvents(context.Context, *v3.ListEventsRequest) (*v3.ListEventsResponse, error)
 	// ListAssets pages through the archive, newest first, for the library browser.
 	ListAssets(context.Context, *v3.ListAssetsRequest) (*v3.ListAssetsResponse, error)
+	// ListCaptureMonths counts the assets of a library view by the month they
+	// were taken, newest first, so the browser can jump to a month.
+	ListCaptureMonths(context.Context, *v3.ListCaptureMonthsRequest) (*v3.ListCaptureMonthsResponse, error)
 	// GetSafeToDelete reports the iCloud Photos items the owner may delete in
 	// Apple's Photos app without losing them, totalled by month. Read only:
 	// homecloud deletes nothing.
@@ -356,6 +370,9 @@ type AgentServiceHandler interface {
 	ListEvents(context.Context, *v3.ListEventsRequest) (*v3.ListEventsResponse, error)
 	// ListAssets pages through the archive, newest first, for the library browser.
 	ListAssets(context.Context, *v3.ListAssetsRequest) (*v3.ListAssetsResponse, error)
+	// ListCaptureMonths counts the assets of a library view by the month they
+	// were taken, newest first, so the browser can jump to a month.
+	ListCaptureMonths(context.Context, *v3.ListCaptureMonthsRequest) (*v3.ListCaptureMonthsResponse, error)
 	// GetSafeToDelete reports the iCloud Photos items the owner may delete in
 	// Apple's Photos app without losing them, totalled by month. Read only:
 	// homecloud deletes nothing.
@@ -413,6 +430,7 @@ func RegisterAgentServiceHandler(server *connect.Server, svc AgentServiceHandler
 		connect.Method{Spec: agentServiceListRunsSpec(), Handler: adapter.listRuns},
 		connect.Method{Spec: agentServiceListEventsSpec(), Handler: adapter.listEvents},
 		connect.Method{Spec: agentServiceListAssetsSpec(), Handler: adapter.listAssets},
+		connect.Method{Spec: agentServiceListCaptureMonthsSpec(), Handler: adapter.listCaptureMonths},
 		connect.Method{Spec: agentServiceGetSafeToDeleteSpec(), Handler: adapter.getSafeToDelete},
 		connect.Method{Spec: agentServiceListSafeToDeleteSpec(), Handler: adapter.listSafeToDelete},
 		connect.Method{Spec: agentServiceListQuarantineSpec(), Handler: adapter.listQuarantine},
@@ -473,6 +491,10 @@ func (UnimplementedAgentServiceHandler) ListEvents(context.Context, *v3.ListEven
 
 func (UnimplementedAgentServiceHandler) ListAssets(context.Context, *v3.ListAssetsRequest) (*v3.ListAssetsResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListAssets is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) ListCaptureMonths(context.Context, *v3.ListCaptureMonthsRequest) (*v3.ListCaptureMonthsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListCaptureMonths is not implemented")
 }
 
 func (UnimplementedAgentServiceHandler) GetSafeToDelete(context.Context, *v3.GetSafeToDeleteRequest) (*v3.GetSafeToDeleteResponse, error) {
@@ -586,6 +608,14 @@ func (c *agentServiceClient) ListEvents(ctx context.Context, req *v3.ListEventsR
 func (c *agentServiceClient) ListAssets(ctx context.Context, req *v3.ListAssetsRequest) (*v3.ListAssetsResponse, error) {
 	var res v3.ListAssetsResponse
 	if err := c.client.CallUnary(ctx, agentServiceListAssetsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListCaptureMonths(ctx context.Context, req *v3.ListCaptureMonthsRequest) (*v3.ListCaptureMonthsResponse, error) {
+	var res v3.ListCaptureMonthsResponse
+	if err := c.client.CallUnary(ctx, agentServiceListCaptureMonthsSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -783,6 +813,18 @@ func (h agentServiceHandler) listAssets(ctx context.Context, _ connect.Spec, str
 		return err
 	}
 	res, err := h.svc.ListAssets(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listCaptureMonths(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListCaptureMonthsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListCaptureMonths(ctx, &req)
 	if err != nil {
 		return err
 	}

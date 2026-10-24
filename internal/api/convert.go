@@ -1,11 +1,13 @@
 package api
 
 import (
+	"cmp"
 	"encoding/base64"
 	"encoding/json/v2"
 	"fmt"
 	"math"
 	"path"
+	"slices"
 	"strconv"
 	"time"
 
@@ -701,4 +703,48 @@ func assetKindFilter(k agentv3.AssetKind) (ledger.AssetKind, error) {
 		}
 	}
 	return "", fmt.Errorf("unsupported asset kind %v", k)
+}
+
+// onThisDay returns the span of date's month and day in loc in each year from
+// first's up to the year before date's: none when first is nil. A 29 February
+// has a span only in leap years.
+func onThisDay(date *agentv3.CalendarDate, loc *time.Location, first *time.Time) ([]ledger.TimeSpan, error) {
+	year, month, day := int(date.GetYear()), time.Month(date.GetMonth()), int(date.GetDay())
+	// 2000 is a leap year, so every valid month and day exists in it.
+	if year < 1 || month < time.January || month > time.December || day < 1 ||
+		time.Date(2000, month, day, 0, 0, 0, 0, time.UTC).Day() != day {
+		return nil, fmt.Errorf("%04d-%02d-%02d is not a calendar date", year, month, day)
+	}
+	spans := []ledger.TimeSpan{}
+	if first == nil {
+		return spans, nil
+	}
+	for y := first.In(loc).Year(); y < year; y++ {
+		from := time.Date(y, month, day, 0, 0, 0, 0, loc)
+		if from.Day() != day {
+			continue
+		}
+		spans = append(spans, ledger.TimeSpan{From: from, To: time.Date(y, month, day+1, 0, 0, 0, 0, loc)})
+	}
+	return spans, nil
+}
+
+// captureMonths counts capture times by their month in loc, newest first.
+func captureMonths(taken []time.Time, loc *time.Location) []*agentv3.CaptureMonth {
+	counts := map[[2]int]int64{}
+	for _, t := range taken {
+		l := t.In(loc)
+		counts[[2]int{l.Year(), int(l.Month())}]++
+	}
+	out := make([]*agentv3.CaptureMonth, 0, len(counts))
+	for k, n := range counts {
+		out = append(out, &agentv3.CaptureMonth{Year: int32(k[0]), Month: int32(k[1]), Assets: n}) //nolint:gosec // calendar years and months
+	}
+	slices.SortFunc(out, func(a, b *agentv3.CaptureMonth) int {
+		if c := cmp.Compare(b.GetYear(), a.GetYear()); c != 0 {
+			return c
+		}
+		return cmp.Compare(b.GetMonth(), a.GetMonth())
+	})
+	return out
 }

@@ -34,6 +34,11 @@ service AgentService {
   rpc ListAssets(ListAssetsRequest) returns (ListAssetsResponse) {
     option idempotency_level = NO_SIDE_EFFECTS;
   }
+  // ListCaptureMonths counts the assets of a library view by the month they
+  // were taken, newest first, so the browser can jump to a month.
+  rpc ListCaptureMonths(ListCaptureMonthsRequest) returns (ListCaptureMonthsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
   // GetSafeToDelete reports the iCloud Photos items the owner may delete in
   // Apple's Photos app without losing them, totalled by month. Read only:
   // homecloud deletes nothing.
@@ -839,6 +844,46 @@ message ListAssetsRequest {
   // Lists the photos hidden in iCloud (archived under Photos/Hidden) instead
   // of the others.
   bool hidden = 4;
+  // Lists only the assets taken on this date's month and day in the years
+  // before its year, counted in time_zone ("on this day"). A 29 February
+  // matches only leap years.
+  CalendarDate on_this_day = 5;
+  // Lists only the assets taken before this instant, to start the browser at
+  // a date.
+  google.protobuf.Timestamp taken_before = 6;
+  // The IANA time zone on_this_day is counted in, e.g. "Europe/Athens": the
+  // viewer's. Required with on_this_day.
+  string time_zone = 7;
+}
+
+// CalendarDate is a day of the Gregorian calendar.
+message CalendarDate {
+  int32 year = 1;
+  // 1 to 12.
+  int32 month = 2;
+  // 1 to the length of the month.
+  int32 day = 3;
+}
+
+message ListCaptureMonthsRequest {
+  // The library view whose assets are counted, as in ListAssetsRequest.
+  AssetKind kind = 1;
+  bool hidden = 2;
+  // The IANA time zone the months are counted in: the viewer's.
+  string time_zone = 3;
+}
+
+message ListCaptureMonthsResponse {
+  // Newest first.
+  repeated CaptureMonth months = 1;
+  // The view's assets iCloud gave no capture time for; they are in no month.
+  int64 unknown = 2;
+}
+
+message CaptureMonth {
+  int32 year = 1;
+  int32 month = 2;
+  int64 assets = 3;
 }
 
 message ListAssetsResponse {

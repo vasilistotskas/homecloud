@@ -65,6 +65,8 @@ type Ledger interface {
 	ReleaseQuarantine(ctx context.Context, library, assetID, reason string, now time.Time) error
 	RequestRepair(ctx context.Context, library, assetID string, now time.Time) error
 	LibraryPage(ctx context.Context, q ledger.LibraryQuery) ([]ledger.LibraryAsset, error)
+	CaptureTimes(ctx context.Context, f ledger.LibraryFilter) ([]time.Time, int, error)
+	FirstCapture(ctx context.Context) (*time.Time, error)
 	EachArchivedAsset(ctx context.Context, fn func(ledger.ArchivedAsset) error) error
 }
 
@@ -745,10 +747,23 @@ func (s *Service) ListAssets(ctx context.Context, req *agentv3.ListAssetsRequest
 	if err != nil {
 		return nil, err
 	}
-	q := ledger.LibraryQuery{HiddenDir: s.hiddenDir, Hidden: m.GetHidden(), Limit: size}
-	if q.Kind, err = assetKindFilter(m.GetKind()); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
+	f, err := s.libraryFilter(m.GetKind(), m.GetHidden())
+	if err != nil {
+		return nil, err
 	}
+	if m.GetTakenBefore() != nil {
+		if err = m.GetTakenBefore().CheckValid(); err != nil {
+			return nil, connect.Errorf(connect.CodeInvalidArgument, "taken_before: %v", err).WithCause(err)
+		}
+		before := m.GetTakenBefore().AsTime()
+		f.TakenBefore = &before
+	}
+	if m.GetOnThisDay() != nil {
+		if f.Taken, err = s.onThisDay(ctx, m.GetOnThisDay(), m.GetTimeZone()); err != nil {
+			return nil, err
+		}
+	}
+	q := ledger.LibraryQuery{LibraryFilter: f, Limit: size}
 	if q.After, err = libraryCursor(m.GetPageToken()); err != nil {
 		return nil, err
 	}
@@ -772,6 +787,50 @@ func (s *Service) ListAssets(ctx context.Context, req *agentv3.ListAssetsRequest
 		}
 	}
 	return res, nil
+}
+
+// libraryFilter is the library view of an asset kind and the Hidden switch.
+func (s *Service) libraryFilter(kind agentv3.AssetKind, hidden bool) (ledger.LibraryFilter, error) {
+	k, err := assetKindFilter(kind)
+	if err != nil {
+		return ledger.LibraryFilter{}, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
+	}
+	return ledger.LibraryFilter{Kind: k, HiddenDir: s.hiddenDir, Hidden: hidden}, nil
+}
+
+// onThisDay returns the spans of date's month and day, in zone, in every year
+// from the archive's first capture up to the year before date's.
+func (s *Service) onThisDay(ctx context.Context, date *agentv3.CalendarDate, zone string) ([]ledger.TimeSpan, error) {
+	loc, err := viewerZone(zone)
+	if err != nil {
+		return nil, err
+	}
+	first, err := s.db.FirstCapture(ctx)
+	if err != nil {
+		return nil, internal(err)
+	}
+	spans, err := onThisDay(date, loc, first)
+	if err != nil {
+		return nil, connect.Errorf(connect.CodeInvalidArgument, "on_this_day: %v", err).WithCause(err)
+	}
+	return spans, nil
+}
+
+// ListCaptureMonths implements AgentService.
+func (s *Service) ListCaptureMonths(ctx context.Context, req *agentv3.ListCaptureMonthsRequest) (*agentv3.ListCaptureMonthsResponse, error) {
+	loc, err := viewerZone(req.GetTimeZone())
+	if err != nil {
+		return nil, err
+	}
+	f, err := s.libraryFilter(req.GetKind(), req.GetHidden())
+	if err != nil {
+		return nil, err
+	}
+	taken, unknown, err := s.db.CaptureTimes(ctx, f)
+	if err != nil {
+		return nil, internal(err)
+	}
+	return &agentv3.ListCaptureMonthsResponse{Months: captureMonths(taken, loc), Unknown: int64(unknown)}, nil
 }
 
 // libraryCursor decodes a page token of the library's order; nil for the first page.
@@ -809,17 +868,25 @@ func (s *Service) safeToDelete(ctx context.Context) (app.SafeToDelete, error) {
 	return r, nil
 }
 
-// GetSafeToDelete implements AgentService.
-func (s *Service) GetSafeToDelete(ctx context.Context, req *agentv3.GetSafeToDeleteRequest) (*agentv3.GetSafeToDeleteResponse, error) {
-	zone := req.GetTimeZone()
-	// LoadLocation reads "" as UTC and "Local" as the agent's own zone; the
-	// months must be the viewer's.
+// viewerZone loads the viewer's IANA time zone, which dates and months are
+// counted in. LoadLocation reads "" as UTC and "Local" as the agent's own
+// zone, neither of which is the viewer's.
+func viewerZone(zone string) (*time.Location, error) {
 	if zone == "" || zone == "Local" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, "time_zone must name an IANA time zone")
 	}
 	loc, err := time.LoadLocation(zone)
 	if err != nil {
 		return nil, connect.Errorf(connect.CodeInvalidArgument, "time_zone: %v", err).WithCause(err)
+	}
+	return loc, nil
+}
+
+// GetSafeToDelete implements AgentService.
+func (s *Service) GetSafeToDelete(ctx context.Context, req *agentv3.GetSafeToDeleteRequest) (*agentv3.GetSafeToDeleteResponse, error) {
+	loc, err := viewerZone(req.GetTimeZone())
+	if err != nil {
+		return nil, err
 	}
 	r, err := s.safeToDelete(ctx)
 	if err != nil {
