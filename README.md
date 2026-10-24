@@ -449,8 +449,8 @@ then re-hashed by a later scrub, that have been in iCloud Photos longer than
 under the archive is not OK it lists nothing and says why. The scrub re-checks
 `schedule.scrub_fraction` of the archive per run, so items join the list gradually after they are
 archived. homecloud deletes nothing: delete them in Apple's Photos app, which keeps them in
-Recently Deleted for 30 days. An item you already deleted in iCloud stays listed, as kei does not
-report deletions.
+Recently Deleted for 30 days. An item you already deleted in iCloud stays listed: kei records
+deletions in iCloud but does not report them in its manifest yet (homecloud #16, kei #708).
 
 **Restore the ledger** from a snapshot: stop the agent, delete `homecloud.db-wal` and
 `homecloud.db-shm` next to `<storage.root>\homecloud.db` if they exist, copy the newest
