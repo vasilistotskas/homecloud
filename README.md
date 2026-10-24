@@ -242,8 +242,8 @@ else.
 
 - Windows 11 amd64, or Linux (amd64/arm64) with glibc ≥ 2.39 (Ubuntu 24.04, Debian 13) and
   Linux ≥ 5.8
-- Go 1.27.2; Node.js 24 with pnpm (version pinned in `ui/package.json`)
-- [kei](https://github.com/rhoopr/kei) 0.25.3 and FFmpeg 9.0.2 (`ffprobe` and `ffmpeg`), pinned
+- Go 1.27.3; Node.js 24 with pnpm (version pinned in `ui/package.json`)
+- [kei](https://github.com/rhoopr/kei) 0.26.0 and FFmpeg 9.0.2 (`ffprobe` and `ffmpeg`), pinned
   in the config and checked by `homecloud doctor`. FFmpeg needs libwebp (thumbnails) and libjxl
   (JPEG XL previews in DNG 1.7 files); on Windows the Gyan `full_build` has both
 - The desktop app additionally needs Rust (pinned in `desktop/src-tauri/rust-toolchain.toml`)

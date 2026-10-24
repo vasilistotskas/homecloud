@@ -2,15 +2,15 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, vi } from "vitest";
 
-// jsdom has no matchMedia; tests run with a light system theme.
-vi.stubGlobal("matchMedia", (query: string): MediaQueryList => ({
+// jsdom has no matchMedia; tests run with a light system theme. Only the
+// non-deprecated members: the app listens with addEventListener (theme.tsx).
+type MediaQueryStub = Omit<MediaQueryList, "addListener" | "removeListener">;
+vi.stubGlobal("matchMedia", (query: string): MediaQueryStub => ({
   matches: false,
   media: query,
   onchange: null,
   addEventListener: () => undefined,
   removeEventListener: () => undefined,
-  addListener: () => undefined,
-  removeListener: () => undefined,
   dispatchEvent: () => false,
 }));
 

@@ -39,7 +39,7 @@ request_timeout = "1m"
 
 [kei]
 binary = '@KEI_BINARY@'
-version = "0.25.3"
+version = "0.26.0"
 checkpoint_alert_cycles = 3
 config = '@KEI_CONFIG@'
 
@@ -118,7 +118,7 @@ func TestLoadValid(t *testing.T) {
 			MinFreePercent: 15,
 		},
 		ICloud: ICloud{AppleID: "someone@example.com", IncludeHidden: new(true), RequestTimeout: Duration(time.Minute)},
-		Kei:    Kei{Binary: testKeiBinary, Version: "0.25.3", Config: testKeiConfig, CheckpointAlertCycles: 3},
+		Kei:    Kei{Binary: testKeiBinary, Version: "0.26.0", Config: testKeiConfig, CheckpointAlertCycles: 3},
 		FFmpeg: FFmpeg{
 			FFprobe: testFFprobeBin, FFmpeg: testFFmpegBin, Version: "9.0.2",
 			ProbeTimeout: Duration(5 * time.Minute), Renderers: 4, RenderTimeout: Duration(2 * time.Minute),

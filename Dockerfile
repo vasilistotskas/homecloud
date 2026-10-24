@@ -14,15 +14,15 @@
 # pnpm's own image at the version ui/package.json's packageManager names (bump
 # both together, with pnpm self-update; Dependabot leaves this image alone),
 # which installs the Node.js that ui/package.json's devEngines.runtime pins.
-FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.9.1@sha256:77123fd40a39db0eb8be6bddfcf0cea15e000122b9221ccce2e4415be29050f2 AS ui
+FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.15.0@sha256:d6148daf3ad2af8fa4ecd1aa06db73da32b2e37f63088987eea2fb375ee7f320 AS ui
 WORKDIR /src/ui
-COPY ui/package.json ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
+COPY ui/package.json ui/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY ui/ ./
 RUN pnpm build
 
 # homecloud and homecloud-agent: pure Go, cross-compiled for the target.
-FROM --platform=$BUILDPLATFORM golang:1.27.2-trixie@sha256:e58d6f83b3416618d8bcac2b3dde1b7f7e3c4a77d25e88637f8bbae81536c48d AS go
+FROM --platform=$BUILDPLATFORM golang:1.27.3-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
@@ -35,12 +35,12 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-X main.version=${VERSION}" -o /out/ ./cmd/homecloud ./cmd/homecloud-agent
 
 # kei, the iCloud Photos downloader: its release binary, checked against the
-# release's published SHA-256 (kei v0.25.3 SHA256SUMS.txt).
-FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS kei
+# release's published SHA-256 (kei v0.26.0 SHA256SUMS.txt).
+FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS kei
 ARG TARGETARCH
-ARG KEI_VERSION=0.25.3
-ARG KEI_SHA256_AMD64=a476613e2c7d795530ee214a71dff94491a91c69f6add941437da7b5e4ad9c76
-ARG KEI_SHA256_ARM64=44582a9236515d3327e66812a1ce8bcf74e33a1a9eecad946acdd1bf4443c0cf
+ARG KEI_VERSION=0.26.0
+ARG KEI_SHA256_AMD64=64375e0a8f924b9b20aee0dcafc5bc941df1cb8ead4b814a1d514065ad221cb4
+ARG KEI_SHA256_ARM64=53ecd1261bc2cc6e900758d326a158d5e4985e5a5e890c54100c373cf830a937
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 RUN set -eu; \
     case "$TARGETARCH" in \
@@ -58,7 +58,7 @@ RUN set -eu; \
 # libjxl (JPEG XL previews in DNG 1.7 files) and zlib (PNG); autodetection is
 # off so nothing else slips in. Only ffmpeg and ffprobe are built, without
 # network support.
-FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS ffmpeg
+FROM --platform=$BUILDPLATFORM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS ffmpeg
 ARG BUILDARCH
 ARG TARGETARCH
 ARG FFMPEG_VERSION=9.0.2
@@ -99,7 +99,7 @@ RUN set -eu; \
     make install
 
 # The runtime: Debian 13 (kei needs glibc 2.39 or newer).
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+FROM debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
 # smartctl reads the archive drives' health (drive_health.source = "smartctl")
 # in the smartctl sidecar, a container of its own (`homecloud smartctl serve`,
 # deploy/compose.yaml); the agent's container has neither the drives nor any
