@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
+  <!-- The installer's and uninstaller's page header (NSIS headerImage, 150x57),
+       on the white the header has: app-icon.svg at 40 px and the name. -->
+  <rect width="150" height="57" fill="#ffffff"/>
+  <g transform="translate(8 8.5) scale(0.0391)">
+    <rect width="1024" height="1024" rx="224" fill="#0f6cbd"/>
+    <path d="M332 620h372a134 134 0 0 0 12-267 196 196 0 0 0-380 50 112 112 0 0 0-4 217z" fill="#ffffff"/>
+    <rect x="252" y="684" width="520" height="104" rx="36" fill="#ffffff" opacity="0.92"/>
+    <circle cx="704" cy="736" r="18" fill="#0f6cbd"/>
+  </g>
+  <text x="56" y="34" font-family="Segoe UI" font-size="16" font-weight="600" fill="#0f6cbd">homecloud</text>
+</svg>

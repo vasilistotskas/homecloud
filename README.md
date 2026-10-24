@@ -414,6 +414,17 @@ pnpm --dir desktop tauri build --bundles nsis   # per-user installer, no admin r
 & "desktop\src-tauri\target\release\bundle\nsis\homecloud Desktop_0.1.0_x64-setup.exe"
 ```
 
+The installer's images are drawn in `desktop/installer/*.svg` from `desktop/app-icon.svg`, which
+the app icons are generated from. NSIS needs them as 24-bit BMPs:
+- `sidebar.svg` is 164×314, for the Welcome and Finish pages;
+- `header.svg` is 150×57, for every other page of the installer and uninstaller.
+
+After changing an SVG, render it at its own size and save the BMP next to it. For example:
+1. Render it with headless Chrome:
+   `chrome --headless --window-size=164,314 --screenshot=sidebar.png sidebar.svg`
+2. Save that as a 24-bit BMP, e.g. with Pillow:
+   `Image.open("sidebar.png").convert("RGB").save("sidebar.bmp")`.
+
 ## Configuration
 
 `config.toml` is found in this order: `--config`, then `HOMECLOUD_CONFIG`, then

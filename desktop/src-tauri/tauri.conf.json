@@ -38,10 +38,15 @@
     "targets": ["nsis", "deb", "appimage"],
     "category": "Utility",
     "shortDescription": "Your iCloud archive on your own drive",
+    "publisher": "Vasilis Totskas",
+    "copyright": "Copyright © 2026 Vasilis Totskas",
+    "homepage": "https://github.com/vasilistotskas/homecloud",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico", "icons/icon.png"],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "headerImage": "../installer/header.bmp",
+        "sidebarImage": "../installer/sidebar.bmp"
       },
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
