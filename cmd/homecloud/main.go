@@ -14,7 +14,8 @@ import (
 	"slices"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 
 	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
 	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
@@ -421,12 +422,12 @@ func loginCode(ctx context.Context, purpose agentv3.LoginCodePurpose) (*agentv3.
 	if err != nil {
 		return nil, err
 	}
-	client := agentv3connect.NewAgentServiceClient(http.DefaultClient, ep.URL, connect.WithInterceptors(auth.Bearer(ep.Token)))
-	res, err := client.CreateLoginCode(ctx, connect.NewRequest(&agentv3.CreateLoginCodeRequest{Purpose: purpose}))
+	client := agentv3connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, ep.URL), auth.Bearer(ep.Token)))
+	res, err := client.CreateLoginCode(ctx, &agentv3.CreateLoginCodeRequest{Purpose: purpose})
 	if err != nil {
 		return nil, fmt.Errorf("request login code: %w", err)
 	}
-	return res.Msg, nil
+	return res, nil
 }
 
 // runOpen asks the running agent for a one-time sign-in code and opens the

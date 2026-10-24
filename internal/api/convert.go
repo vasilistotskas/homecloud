@@ -3,14 +3,13 @@ package api
 import (
 	"encoding/base64"
 	"encoding/json/v2"
-	"errors"
 	"fmt"
 	"math"
 	"path"
 	"strconv"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
@@ -26,7 +25,7 @@ import (
 func pageSize(size int32, def int) (int, error) {
 	switch {
 	case size < 0 || size > maxPageSize:
-		return 0, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("page_size must be 0..%d", maxPageSize))
+		return 0, connect.Errorf(connect.CodeInvalidArgument, "page_size must be 0..%d", maxPageSize)
 	case size == 0:
 		return def, nil
 	}
@@ -44,11 +43,11 @@ func page(requested int32, token string) (int, int64, error) {
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
-		return 0, 0, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
+		return 0, 0, connect.NewError(connect.CodeInvalidArgument, "malformed page_token")
 	}
 	before, err := strconv.ParseInt(string(raw), 10, 64)
 	if err != nil || before <= 0 {
-		return 0, 0, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
+		return 0, 0, connect.NewError(connect.CodeInvalidArgument, "malformed page_token")
 	}
 	return size, before, nil
 }

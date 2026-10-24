@@ -9,92 +9,246 @@
 package agentv3connect
 
 import (
-	connect "connectrpc.com/connect"
+	connect "connectrpc.com/connect/v2"
 	context "context"
-	errors "errors"
 	v3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
-	http "net/http"
-	strings "strings"
+	sync "sync"
 )
-
-// This is a compile-time assertion to ensure that this generated file and the connect package are
-// compatible. If you get a compiler error that this constant is not defined, this code was
-// generated with a version of connect newer than the one compiled into your binary. You can fix the
-// problem by either regenerating this code with an older version of connect or updating the connect
-// version compiled into your binary.
-const _ = connect.IsAtLeastVersion1_13_0
 
 const (
 	// AgentServiceName is the fully-qualified name of the AgentService service.
 	AgentServiceName = "homecloud.agent.v3.AgentService"
 )
 
-// These constants are the fully-qualified names of the RPCs defined in this package. They're
-// exposed at runtime as Spec.Procedure and as the final two segments of the HTTP route.
+// These constants are the procedure names of the RPCs defined in this package. They're exposed at
+// runtime as Spec.Procedure and as the final two segments of the HTTP route.
 //
 // Note that these are different from the fully-qualified method names used by
 // google.golang.org/protobuf/reflect/protoreflect. To convert from these constants to
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
-	// AgentServiceGetInfoProcedure is the fully-qualified name of the AgentService's GetInfo RPC.
+	// AgentServiceGetInfoProcedure is the procedure name of the AgentService's GetInfo RPC.
 	AgentServiceGetInfoProcedure = "/homecloud.agent.v3.AgentService/GetInfo"
-	// AgentServiceGetOverviewProcedure is the fully-qualified name of the AgentService's GetOverview
-	// RPC.
+	// AgentServiceGetOverviewProcedure is the procedure name of the AgentService's GetOverview RPC.
 	AgentServiceGetOverviewProcedure = "/homecloud.agent.v3.AgentService/GetOverview"
-	// AgentServiceWatchOverviewProcedure is the fully-qualified name of the AgentService's
-	// WatchOverview RPC.
+	// AgentServiceWatchOverviewProcedure is the procedure name of the AgentService's WatchOverview RPC.
 	AgentServiceWatchOverviewProcedure = "/homecloud.agent.v3.AgentService/WatchOverview"
-	// AgentServiceListRunsProcedure is the fully-qualified name of the AgentService's ListRuns RPC.
+	// AgentServiceListRunsProcedure is the procedure name of the AgentService's ListRuns RPC.
 	AgentServiceListRunsProcedure = "/homecloud.agent.v3.AgentService/ListRuns"
-	// AgentServiceListEventsProcedure is the fully-qualified name of the AgentService's ListEvents RPC.
+	// AgentServiceListEventsProcedure is the procedure name of the AgentService's ListEvents RPC.
 	AgentServiceListEventsProcedure = "/homecloud.agent.v3.AgentService/ListEvents"
-	// AgentServiceListAssetsProcedure is the fully-qualified name of the AgentService's ListAssets RPC.
+	// AgentServiceListAssetsProcedure is the procedure name of the AgentService's ListAssets RPC.
 	AgentServiceListAssetsProcedure = "/homecloud.agent.v3.AgentService/ListAssets"
-	// AgentServiceGetSafeToDeleteProcedure is the fully-qualified name of the AgentService's
-	// GetSafeToDelete RPC.
+	// AgentServiceGetSafeToDeleteProcedure is the procedure name of the AgentService's GetSafeToDelete
+	// RPC.
 	AgentServiceGetSafeToDeleteProcedure = "/homecloud.agent.v3.AgentService/GetSafeToDelete"
-	// AgentServiceListSafeToDeleteProcedure is the fully-qualified name of the AgentService's
+	// AgentServiceListSafeToDeleteProcedure is the procedure name of the AgentService's
 	// ListSafeToDelete RPC.
 	AgentServiceListSafeToDeleteProcedure = "/homecloud.agent.v3.AgentService/ListSafeToDelete"
-	// AgentServiceListQuarantineProcedure is the fully-qualified name of the AgentService's
-	// ListQuarantine RPC.
+	// AgentServiceListQuarantineProcedure is the procedure name of the AgentService's ListQuarantine
+	// RPC.
 	AgentServiceListQuarantineProcedure = "/homecloud.agent.v3.AgentService/ListQuarantine"
-	// AgentServiceGetAssetProcedure is the fully-qualified name of the AgentService's GetAsset RPC.
+	// AgentServiceGetAssetProcedure is the procedure name of the AgentService's GetAsset RPC.
 	AgentServiceGetAssetProcedure = "/homecloud.agent.v3.AgentService/GetAsset"
-	// AgentServiceReleaseQuarantineProcedure is the fully-qualified name of the AgentService's
+	// AgentServiceReleaseQuarantineProcedure is the procedure name of the AgentService's
 	// ReleaseQuarantine RPC.
 	AgentServiceReleaseQuarantineProcedure = "/homecloud.agent.v3.AgentService/ReleaseQuarantine"
-	// AgentServiceRepairQuarantineProcedure is the fully-qualified name of the AgentService's
+	// AgentServiceRepairQuarantineProcedure is the procedure name of the AgentService's
 	// RepairQuarantine RPC.
 	AgentServiceRepairQuarantineProcedure = "/homecloud.agent.v3.AgentService/RepairQuarantine"
-	// AgentServiceStartSyncProcedure is the fully-qualified name of the AgentService's StartSync RPC.
+	// AgentServiceStartSyncProcedure is the procedure name of the AgentService's StartSync RPC.
 	AgentServiceStartSyncProcedure = "/homecloud.agent.v3.AgentService/StartSync"
-	// AgentServiceSendTestNotificationProcedure is the fully-qualified name of the AgentService's
+	// AgentServiceSendTestNotificationProcedure is the procedure name of the AgentService's
 	// SendTestNotification RPC.
 	AgentServiceSendTestNotificationProcedure = "/homecloud.agent.v3.AgentService/SendTestNotification"
-	// AgentServiceGetSettingsProcedure is the fully-qualified name of the AgentService's GetSettings
-	// RPC.
+	// AgentServiceGetSettingsProcedure is the procedure name of the AgentService's GetSettings RPC.
 	AgentServiceGetSettingsProcedure = "/homecloud.agent.v3.AgentService/GetSettings"
-	// AgentServiceCreateLoginCodeProcedure is the fully-qualified name of the AgentService's
-	// CreateLoginCode RPC.
+	// AgentServiceCreateLoginCodeProcedure is the procedure name of the AgentService's CreateLoginCode
+	// RPC.
 	AgentServiceCreateLoginCodeProcedure = "/homecloud.agent.v3.AgentService/CreateLoginCode"
-	// AgentServiceExchangeLoginCodeProcedure is the fully-qualified name of the AgentService's
+	// AgentServiceExchangeLoginCodeProcedure is the procedure name of the AgentService's
 	// ExchangeLoginCode RPC.
 	AgentServiceExchangeLoginCodeProcedure = "/homecloud.agent.v3.AgentService/ExchangeLoginCode"
-	// AgentServicePairDeviceProcedure is the fully-qualified name of the AgentService's PairDevice RPC.
+	// AgentServicePairDeviceProcedure is the procedure name of the AgentService's PairDevice RPC.
 	AgentServicePairDeviceProcedure = "/homecloud.agent.v3.AgentService/PairDevice"
-	// AgentServiceListDevicesProcedure is the fully-qualified name of the AgentService's ListDevices
-	// RPC.
+	// AgentServiceListDevicesProcedure is the procedure name of the AgentService's ListDevices RPC.
 	AgentServiceListDevicesProcedure = "/homecloud.agent.v3.AgentService/ListDevices"
-	// AgentServiceRevokeDeviceProcedure is the fully-qualified name of the AgentService's RevokeDevice
-	// RPC.
+	// AgentServiceRevokeDeviceProcedure is the procedure name of the AgentService's RevokeDevice RPC.
 	AgentServiceRevokeDeviceProcedure = "/homecloud.agent.v3.AgentService/RevokeDevice"
-	// AgentServiceSignOutProcedure is the fully-qualified name of the AgentService's SignOut RPC.
+	// AgentServiceSignOutProcedure is the procedure name of the AgentService's SignOut RPC.
 	AgentServiceSignOutProcedure = "/homecloud.agent.v3.AgentService/SignOut"
-	// AgentServiceSignOutBrowsersProcedure is the fully-qualified name of the AgentService's
-	// SignOutBrowsers RPC.
+	// AgentServiceSignOutBrowsersProcedure is the procedure name of the AgentService's SignOutBrowsers
+	// RPC.
 	AgentServiceSignOutBrowsersProcedure = "/homecloud.agent.v3.AgentService/SignOutBrowsers"
+)
+
+var (
+	agentServiceGetInfoSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("GetInfo"),
+			Procedure:        AgentServiceGetInfoProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceGetOverviewSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("GetOverview"),
+			Procedure:        AgentServiceGetOverviewProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceWatchOverviewSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeServer,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("WatchOverview"),
+			Procedure:  AgentServiceWatchOverviewProcedure,
+		}
+	})
+	agentServiceListRunsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListRuns"),
+			Procedure:        AgentServiceListRunsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceListEventsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListEvents"),
+			Procedure:        AgentServiceListEventsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceListAssetsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListAssets"),
+			Procedure:        AgentServiceListAssetsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceGetSafeToDeleteSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("GetSafeToDelete"),
+			Procedure:        AgentServiceGetSafeToDeleteProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceListSafeToDeleteSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListSafeToDelete"),
+			Procedure:        AgentServiceListSafeToDeleteProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceListQuarantineSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListQuarantine"),
+			Procedure:        AgentServiceListQuarantineProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceGetAssetSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("GetAsset"),
+			Procedure:        AgentServiceGetAssetProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceReleaseQuarantineSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ReleaseQuarantine"),
+			Procedure:  AgentServiceReleaseQuarantineProcedure,
+		}
+	})
+	agentServiceRepairQuarantineSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("RepairQuarantine"),
+			Procedure:  AgentServiceRepairQuarantineProcedure,
+		}
+	})
+	agentServiceStartSyncSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("StartSync"),
+			Procedure:  AgentServiceStartSyncProcedure,
+		}
+	})
+	agentServiceSendTestNotificationSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("SendTestNotification"),
+			Procedure:  AgentServiceSendTestNotificationProcedure,
+		}
+	})
+	agentServiceGetSettingsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("GetSettings"),
+			Procedure:        AgentServiceGetSettingsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceCreateLoginCodeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("CreateLoginCode"),
+			Procedure:  AgentServiceCreateLoginCodeProcedure,
+		}
+	})
+	agentServiceExchangeLoginCodeSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ExchangeLoginCode"),
+			Procedure:  AgentServiceExchangeLoginCodeProcedure,
+		}
+	})
+	agentServicePairDeviceSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("PairDevice"),
+			Procedure:  AgentServicePairDeviceProcedure,
+		}
+	})
+	agentServiceListDevicesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListDevices"),
+			Procedure:        AgentServiceListDevicesProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceRevokeDeviceSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("RevokeDevice"),
+			Procedure:  AgentServiceRevokeDeviceProcedure,
+		}
+	})
+	agentServiceSignOutSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("SignOut"),
+			Procedure:  AgentServiceSignOutProcedure,
+		}
+	})
+	agentServiceSignOutBrowsersSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("SignOutBrowsers"),
+			Procedure:  AgentServiceSignOutBrowsersProcedure,
+		}
+	})
 )
 
 // AgentServiceClient is a client for the homecloud.agent.v3.AgentService service.
@@ -102,354 +256,88 @@ type AgentServiceClient interface {
 	// GetInfo identifies the agent. Incompatible API changes get a new proto
 	// package (homecloud.agent.v3), so an outdated client fails with
 	// Unimplemented; api_version is informational, for display and support.
-	GetInfo(context.Context, *connect.Request[v3.GetInfoRequest]) (*connect.Response[v3.GetInfoResponse], error)
+	GetInfo(context.Context, *v3.GetInfoRequest) (*v3.GetInfoResponse, error)
 	// GetOverview returns the current archive overview.
-	GetOverview(context.Context, *connect.Request[v3.GetOverviewRequest]) (*connect.Response[v3.GetOverviewResponse], error)
+	GetOverview(context.Context, *v3.GetOverviewRequest) (*v3.GetOverviewResponse, error)
 	// WatchOverview sends the current overview, then a new one whenever it changes.
-	WatchOverview(context.Context, *connect.Request[v3.WatchOverviewRequest]) (*connect.ServerStreamForClient[v3.WatchOverviewResponse], error)
+	WatchOverview(context.Context, *v3.WatchOverviewRequest) (AgentServiceWatchOverviewClientStream, error)
 	// ListRuns pages through recorded runs, newest first.
-	ListRuns(context.Context, *connect.Request[v3.ListRunsRequest]) (*connect.Response[v3.ListRunsResponse], error)
+	ListRuns(context.Context, *v3.ListRunsRequest) (*v3.ListRunsResponse, error)
 	// ListEvents pages through the append-only audit log, newest first.
-	ListEvents(context.Context, *connect.Request[v3.ListEventsRequest]) (*connect.Response[v3.ListEventsResponse], error)
+	ListEvents(context.Context, *v3.ListEventsRequest) (*v3.ListEventsResponse, error)
 	// ListAssets pages through the archive, newest first, for the library browser.
-	ListAssets(context.Context, *connect.Request[v3.ListAssetsRequest]) (*connect.Response[v3.ListAssetsResponse], error)
+	ListAssets(context.Context, *v3.ListAssetsRequest) (*v3.ListAssetsResponse, error)
 	// GetSafeToDelete reports the iCloud Photos items the owner may delete in
 	// Apple's Photos app without losing them, totalled by month. Read only:
 	// homecloud deletes nothing.
-	GetSafeToDelete(context.Context, *connect.Request[v3.GetSafeToDeleteRequest]) (*connect.Response[v3.GetSafeToDeleteResponse], error)
+	GetSafeToDelete(context.Context, *v3.GetSafeToDeleteRequest) (*v3.GetSafeToDeleteResponse, error)
 	// ListSafeToDelete pages through the items GetSafeToDelete counts, newest first.
-	ListSafeToDelete(context.Context, *connect.Request[v3.ListSafeToDeleteRequest]) (*connect.Response[v3.ListSafeToDeleteResponse], error)
+	ListSafeToDelete(context.Context, *v3.ListSafeToDeleteRequest) (*v3.ListSafeToDeleteResponse, error)
 	// ListQuarantine lists quarantined assets with their failing renditions.
-	ListQuarantine(context.Context, *connect.Request[v3.ListQuarantineRequest]) (*connect.Response[v3.ListQuarantineResponse], error)
+	ListQuarantine(context.Context, *v3.ListQuarantineRequest) (*v3.ListQuarantineResponse, error)
 	// GetAsset returns one asset with every rendition and its verification evidence.
-	GetAsset(context.Context, *connect.Request[v3.GetAssetRequest]) (*connect.Response[v3.GetAssetResponse], error)
+	GetAsset(context.Context, *v3.GetAssetRequest) (*v3.GetAssetResponse, error)
 	// ReleaseQuarantine returns a quarantined asset to verification. The reason
 	// is required and recorded in the audit log.
-	ReleaseQuarantine(context.Context, *connect.Request[v3.ReleaseQuarantineRequest]) (*connect.Response[v3.ReleaseQuarantineResponse], error)
+	ReleaseQuarantine(context.Context, *v3.ReleaseQuarantineRequest) (*v3.ReleaseQuarantineResponse, error)
 	// RepairQuarantine downloads the failing files of a quarantined asset again:
 	// the next cycle moves each one into the archive's Damaged folder and has
 	// kei download it; the asset leaves quarantine once every file is back, and
 	// every check runs again. A cycle starts now when the agent is idle.
-	RepairQuarantine(context.Context, *connect.Request[v3.RepairQuarantineRequest]) (*connect.Response[v3.RepairQuarantineResponse], error)
+	RepairQuarantine(context.Context, *v3.RepairQuarantineRequest) (*v3.RepairQuarantineResponse, error)
 	// StartSync asks the agent to run a cycle now.
-	StartSync(context.Context, *connect.Request[v3.StartSyncRequest]) (*connect.Response[v3.StartSyncResponse], error)
+	StartSync(context.Context, *v3.StartSyncRequest) (*v3.StartSyncResponse, error)
 	// SendTestNotification sends a test alert through the configured channel.
-	SendTestNotification(context.Context, *connect.Request[v3.SendTestNotificationRequest]) (*connect.Response[v3.SendTestNotificationResponse], error)
+	SendTestNotification(context.Context, *v3.SendTestNotificationRequest) (*v3.SendTestNotificationResponse, error)
 	// GetSettings returns the agent's effective configuration.
-	GetSettings(context.Context, *connect.Request[v3.GetSettingsRequest]) (*connect.Response[v3.GetSettingsResponse], error)
+	GetSettings(context.Context, *v3.GetSettingsRequest) (*v3.GetSettingsResponse, error)
 	// CreateLoginCode issues a short-lived, single-use code for one purpose: a
 	// browser exchanges a sign-in code for a session, a device pairs with a
 	// pairing code. Requires the agent token.
-	CreateLoginCode(context.Context, *connect.Request[v3.CreateLoginCodeRequest]) (*connect.Response[v3.CreateLoginCodeResponse], error)
+	CreateLoginCode(context.Context, *v3.CreateLoginCodeRequest) (*v3.CreateLoginCodeResponse, error)
 	// ExchangeLoginCode trades a sign-in code for a session cookie. Callable
 	// without credentials: the code is the credential.
-	ExchangeLoginCode(context.Context, *connect.Request[v3.ExchangeLoginCodeRequest]) (*connect.Response[v3.ExchangeLoginCodeResponse], error)
+	ExchangeLoginCode(context.Context, *v3.ExchangeLoginCodeRequest) (*v3.ExchangeLoginCodeResponse, error)
 	// PairDevice trades a pairing code for a device token, which the device
 	// keeps and sends as its bearer token until it is revoked. Callable without
 	// credentials: the code is the credential.
-	PairDevice(context.Context, *connect.Request[v3.PairDeviceRequest]) (*connect.Response[v3.PairDeviceResponse], error)
+	PairDevice(context.Context, *v3.PairDeviceRequest) (*v3.PairDeviceResponse, error)
 	// ListDevices lists the paired devices that are not revoked, and counts the
 	// open browser sessions.
-	ListDevices(context.Context, *connect.Request[v3.ListDevicesRequest]) (*connect.Response[v3.ListDevicesResponse], error)
+	ListDevices(context.Context, *v3.ListDevicesRequest) (*v3.ListDevicesResponse, error)
 	// RevokeDevice ends a paired device's access at once.
-	RevokeDevice(context.Context, *connect.Request[v3.RevokeDeviceRequest]) (*connect.Response[v3.RevokeDeviceResponse], error)
+	RevokeDevice(context.Context, *v3.RevokeDeviceRequest) (*v3.RevokeDeviceResponse, error)
 	// SignOut ends the calling browser session and clears its cookie.
-	SignOut(context.Context, *connect.Request[v3.SignOutRequest]) (*connect.Response[v3.SignOutResponse], error)
+	SignOut(context.Context, *v3.SignOutRequest) (*v3.SignOutResponse, error)
 	// SignOutBrowsers ends every browser session, the caller's too.
-	SignOutBrowsers(context.Context, *connect.Request[v3.SignOutBrowsersRequest]) (*connect.Response[v3.SignOutBrowsersResponse], error)
+	SignOutBrowsers(context.Context, *v3.SignOutBrowsersRequest) (*v3.SignOutBrowsersResponse, error)
 }
 
-// NewAgentServiceClient constructs a client for the homecloud.agent.v3.AgentService service. By
-// default, it uses the Connect protocol with the binary Protobuf Codec, asks for gzipped responses,
-// and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply the
-// connect.WithGRPC() or connect.WithGRPCWeb() options.
-//
-// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
-// http://api.acme.com or https://acme.com/grpc).
-func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AgentServiceClient {
-	baseURL = strings.TrimRight(baseURL, "/")
-	agentServiceMethods := v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods()
-	return &agentServiceClient{
-		getInfo: connect.NewClient[v3.GetInfoRequest, v3.GetInfoResponse](
-			httpClient,
-			baseURL+AgentServiceGetInfoProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("GetInfo")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		getOverview: connect.NewClient[v3.GetOverviewRequest, v3.GetOverviewResponse](
-			httpClient,
-			baseURL+AgentServiceGetOverviewProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("GetOverview")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		watchOverview: connect.NewClient[v3.WatchOverviewRequest, v3.WatchOverviewResponse](
-			httpClient,
-			baseURL+AgentServiceWatchOverviewProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("WatchOverview")),
-			connect.WithClientOptions(opts...),
-		),
-		listRuns: connect.NewClient[v3.ListRunsRequest, v3.ListRunsResponse](
-			httpClient,
-			baseURL+AgentServiceListRunsProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("ListRuns")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		listEvents: connect.NewClient[v3.ListEventsRequest, v3.ListEventsResponse](
-			httpClient,
-			baseURL+AgentServiceListEventsProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("ListEvents")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		listAssets: connect.NewClient[v3.ListAssetsRequest, v3.ListAssetsResponse](
-			httpClient,
-			baseURL+AgentServiceListAssetsProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("ListAssets")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		getSafeToDelete: connect.NewClient[v3.GetSafeToDeleteRequest, v3.GetSafeToDeleteResponse](
-			httpClient,
-			baseURL+AgentServiceGetSafeToDeleteProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("GetSafeToDelete")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		listSafeToDelete: connect.NewClient[v3.ListSafeToDeleteRequest, v3.ListSafeToDeleteResponse](
-			httpClient,
-			baseURL+AgentServiceListSafeToDeleteProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("ListSafeToDelete")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		listQuarantine: connect.NewClient[v3.ListQuarantineRequest, v3.ListQuarantineResponse](
-			httpClient,
-			baseURL+AgentServiceListQuarantineProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("ListQuarantine")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		getAsset: connect.NewClient[v3.GetAssetRequest, v3.GetAssetResponse](
-			httpClient,
-			baseURL+AgentServiceGetAssetProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("GetAsset")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		releaseQuarantine: connect.NewClient[v3.ReleaseQuarantineRequest, v3.ReleaseQuarantineResponse](
-			httpClient,
-			baseURL+AgentServiceReleaseQuarantineProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("ReleaseQuarantine")),
-			connect.WithClientOptions(opts...),
-		),
-		repairQuarantine: connect.NewClient[v3.RepairQuarantineRequest, v3.RepairQuarantineResponse](
-			httpClient,
-			baseURL+AgentServiceRepairQuarantineProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("RepairQuarantine")),
-			connect.WithClientOptions(opts...),
-		),
-		startSync: connect.NewClient[v3.StartSyncRequest, v3.StartSyncResponse](
-			httpClient,
-			baseURL+AgentServiceStartSyncProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("StartSync")),
-			connect.WithClientOptions(opts...),
-		),
-		sendTestNotification: connect.NewClient[v3.SendTestNotificationRequest, v3.SendTestNotificationResponse](
-			httpClient,
-			baseURL+AgentServiceSendTestNotificationProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("SendTestNotification")),
-			connect.WithClientOptions(opts...),
-		),
-		getSettings: connect.NewClient[v3.GetSettingsRequest, v3.GetSettingsResponse](
-			httpClient,
-			baseURL+AgentServiceGetSettingsProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("GetSettings")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		createLoginCode: connect.NewClient[v3.CreateLoginCodeRequest, v3.CreateLoginCodeResponse](
-			httpClient,
-			baseURL+AgentServiceCreateLoginCodeProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("CreateLoginCode")),
-			connect.WithClientOptions(opts...),
-		),
-		exchangeLoginCode: connect.NewClient[v3.ExchangeLoginCodeRequest, v3.ExchangeLoginCodeResponse](
-			httpClient,
-			baseURL+AgentServiceExchangeLoginCodeProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("ExchangeLoginCode")),
-			connect.WithClientOptions(opts...),
-		),
-		pairDevice: connect.NewClient[v3.PairDeviceRequest, v3.PairDeviceResponse](
-			httpClient,
-			baseURL+AgentServicePairDeviceProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("PairDevice")),
-			connect.WithClientOptions(opts...),
-		),
-		listDevices: connect.NewClient[v3.ListDevicesRequest, v3.ListDevicesResponse](
-			httpClient,
-			baseURL+AgentServiceListDevicesProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("ListDevices")),
-			connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-			connect.WithClientOptions(opts...),
-		),
-		revokeDevice: connect.NewClient[v3.RevokeDeviceRequest, v3.RevokeDeviceResponse](
-			httpClient,
-			baseURL+AgentServiceRevokeDeviceProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("RevokeDevice")),
-			connect.WithClientOptions(opts...),
-		),
-		signOut: connect.NewClient[v3.SignOutRequest, v3.SignOutResponse](
-			httpClient,
-			baseURL+AgentServiceSignOutProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("SignOut")),
-			connect.WithClientOptions(opts...),
-		),
-		signOutBrowsers: connect.NewClient[v3.SignOutBrowsersRequest, v3.SignOutBrowsersResponse](
-			httpClient,
-			baseURL+AgentServiceSignOutBrowsersProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("SignOutBrowsers")),
-			connect.WithClientOptions(opts...),
-		),
+// NewAgentServiceClient constructs a client for the homecloud.agent.v3.AgentService service.
+// Multiple service clients may share a single connect.Client.
+func NewAgentServiceClient(client *connect.Client) AgentServiceClient {
+	return &agentServiceClient{client: client}
+}
+
+// AgentServiceWatchOverviewClientStream is the client stream for the AgentService's WatchOverview
+// RPC.
+type AgentServiceWatchOverviewClientStream struct {
+	stream connect.ClientStream
+}
+
+// Receive returns the next response message from the server.
+func (s AgentServiceWatchOverviewClientStream) Receive() (*v3.WatchOverviewResponse, error) {
+	var res v3.WatchOverviewResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
 	}
+	return &res, nil
 }
 
-// agentServiceClient implements AgentServiceClient.
-type agentServiceClient struct {
-	getInfo              *connect.Client[v3.GetInfoRequest, v3.GetInfoResponse]
-	getOverview          *connect.Client[v3.GetOverviewRequest, v3.GetOverviewResponse]
-	watchOverview        *connect.Client[v3.WatchOverviewRequest, v3.WatchOverviewResponse]
-	listRuns             *connect.Client[v3.ListRunsRequest, v3.ListRunsResponse]
-	listEvents           *connect.Client[v3.ListEventsRequest, v3.ListEventsResponse]
-	listAssets           *connect.Client[v3.ListAssetsRequest, v3.ListAssetsResponse]
-	getSafeToDelete      *connect.Client[v3.GetSafeToDeleteRequest, v3.GetSafeToDeleteResponse]
-	listSafeToDelete     *connect.Client[v3.ListSafeToDeleteRequest, v3.ListSafeToDeleteResponse]
-	listQuarantine       *connect.Client[v3.ListQuarantineRequest, v3.ListQuarantineResponse]
-	getAsset             *connect.Client[v3.GetAssetRequest, v3.GetAssetResponse]
-	releaseQuarantine    *connect.Client[v3.ReleaseQuarantineRequest, v3.ReleaseQuarantineResponse]
-	repairQuarantine     *connect.Client[v3.RepairQuarantineRequest, v3.RepairQuarantineResponse]
-	startSync            *connect.Client[v3.StartSyncRequest, v3.StartSyncResponse]
-	sendTestNotification *connect.Client[v3.SendTestNotificationRequest, v3.SendTestNotificationResponse]
-	getSettings          *connect.Client[v3.GetSettingsRequest, v3.GetSettingsResponse]
-	createLoginCode      *connect.Client[v3.CreateLoginCodeRequest, v3.CreateLoginCodeResponse]
-	exchangeLoginCode    *connect.Client[v3.ExchangeLoginCodeRequest, v3.ExchangeLoginCodeResponse]
-	pairDevice           *connect.Client[v3.PairDeviceRequest, v3.PairDeviceResponse]
-	listDevices          *connect.Client[v3.ListDevicesRequest, v3.ListDevicesResponse]
-	revokeDevice         *connect.Client[v3.RevokeDeviceRequest, v3.RevokeDeviceResponse]
-	signOut              *connect.Client[v3.SignOutRequest, v3.SignOutResponse]
-	signOutBrowsers      *connect.Client[v3.SignOutBrowsersRequest, v3.SignOutBrowsersResponse]
-}
-
-// GetInfo calls homecloud.agent.v3.AgentService.GetInfo.
-func (c *agentServiceClient) GetInfo(ctx context.Context, req *connect.Request[v3.GetInfoRequest]) (*connect.Response[v3.GetInfoResponse], error) {
-	return c.getInfo.CallUnary(ctx, req)
-}
-
-// GetOverview calls homecloud.agent.v3.AgentService.GetOverview.
-func (c *agentServiceClient) GetOverview(ctx context.Context, req *connect.Request[v3.GetOverviewRequest]) (*connect.Response[v3.GetOverviewResponse], error) {
-	return c.getOverview.CallUnary(ctx, req)
-}
-
-// WatchOverview calls homecloud.agent.v3.AgentService.WatchOverview.
-func (c *agentServiceClient) WatchOverview(ctx context.Context, req *connect.Request[v3.WatchOverviewRequest]) (*connect.ServerStreamForClient[v3.WatchOverviewResponse], error) {
-	return c.watchOverview.CallServerStream(ctx, req)
-}
-
-// ListRuns calls homecloud.agent.v3.AgentService.ListRuns.
-func (c *agentServiceClient) ListRuns(ctx context.Context, req *connect.Request[v3.ListRunsRequest]) (*connect.Response[v3.ListRunsResponse], error) {
-	return c.listRuns.CallUnary(ctx, req)
-}
-
-// ListEvents calls homecloud.agent.v3.AgentService.ListEvents.
-func (c *agentServiceClient) ListEvents(ctx context.Context, req *connect.Request[v3.ListEventsRequest]) (*connect.Response[v3.ListEventsResponse], error) {
-	return c.listEvents.CallUnary(ctx, req)
-}
-
-// ListAssets calls homecloud.agent.v3.AgentService.ListAssets.
-func (c *agentServiceClient) ListAssets(ctx context.Context, req *connect.Request[v3.ListAssetsRequest]) (*connect.Response[v3.ListAssetsResponse], error) {
-	return c.listAssets.CallUnary(ctx, req)
-}
-
-// GetSafeToDelete calls homecloud.agent.v3.AgentService.GetSafeToDelete.
-func (c *agentServiceClient) GetSafeToDelete(ctx context.Context, req *connect.Request[v3.GetSafeToDeleteRequest]) (*connect.Response[v3.GetSafeToDeleteResponse], error) {
-	return c.getSafeToDelete.CallUnary(ctx, req)
-}
-
-// ListSafeToDelete calls homecloud.agent.v3.AgentService.ListSafeToDelete.
-func (c *agentServiceClient) ListSafeToDelete(ctx context.Context, req *connect.Request[v3.ListSafeToDeleteRequest]) (*connect.Response[v3.ListSafeToDeleteResponse], error) {
-	return c.listSafeToDelete.CallUnary(ctx, req)
-}
-
-// ListQuarantine calls homecloud.agent.v3.AgentService.ListQuarantine.
-func (c *agentServiceClient) ListQuarantine(ctx context.Context, req *connect.Request[v3.ListQuarantineRequest]) (*connect.Response[v3.ListQuarantineResponse], error) {
-	return c.listQuarantine.CallUnary(ctx, req)
-}
-
-// GetAsset calls homecloud.agent.v3.AgentService.GetAsset.
-func (c *agentServiceClient) GetAsset(ctx context.Context, req *connect.Request[v3.GetAssetRequest]) (*connect.Response[v3.GetAssetResponse], error) {
-	return c.getAsset.CallUnary(ctx, req)
-}
-
-// ReleaseQuarantine calls homecloud.agent.v3.AgentService.ReleaseQuarantine.
-func (c *agentServiceClient) ReleaseQuarantine(ctx context.Context, req *connect.Request[v3.ReleaseQuarantineRequest]) (*connect.Response[v3.ReleaseQuarantineResponse], error) {
-	return c.releaseQuarantine.CallUnary(ctx, req)
-}
-
-// RepairQuarantine calls homecloud.agent.v3.AgentService.RepairQuarantine.
-func (c *agentServiceClient) RepairQuarantine(ctx context.Context, req *connect.Request[v3.RepairQuarantineRequest]) (*connect.Response[v3.RepairQuarantineResponse], error) {
-	return c.repairQuarantine.CallUnary(ctx, req)
-}
-
-// StartSync calls homecloud.agent.v3.AgentService.StartSync.
-func (c *agentServiceClient) StartSync(ctx context.Context, req *connect.Request[v3.StartSyncRequest]) (*connect.Response[v3.StartSyncResponse], error) {
-	return c.startSync.CallUnary(ctx, req)
-}
-
-// SendTestNotification calls homecloud.agent.v3.AgentService.SendTestNotification.
-func (c *agentServiceClient) SendTestNotification(ctx context.Context, req *connect.Request[v3.SendTestNotificationRequest]) (*connect.Response[v3.SendTestNotificationResponse], error) {
-	return c.sendTestNotification.CallUnary(ctx, req)
-}
-
-// GetSettings calls homecloud.agent.v3.AgentService.GetSettings.
-func (c *agentServiceClient) GetSettings(ctx context.Context, req *connect.Request[v3.GetSettingsRequest]) (*connect.Response[v3.GetSettingsResponse], error) {
-	return c.getSettings.CallUnary(ctx, req)
-}
-
-// CreateLoginCode calls homecloud.agent.v3.AgentService.CreateLoginCode.
-func (c *agentServiceClient) CreateLoginCode(ctx context.Context, req *connect.Request[v3.CreateLoginCodeRequest]) (*connect.Response[v3.CreateLoginCodeResponse], error) {
-	return c.createLoginCode.CallUnary(ctx, req)
-}
-
-// ExchangeLoginCode calls homecloud.agent.v3.AgentService.ExchangeLoginCode.
-func (c *agentServiceClient) ExchangeLoginCode(ctx context.Context, req *connect.Request[v3.ExchangeLoginCodeRequest]) (*connect.Response[v3.ExchangeLoginCodeResponse], error) {
-	return c.exchangeLoginCode.CallUnary(ctx, req)
-}
-
-// PairDevice calls homecloud.agent.v3.AgentService.PairDevice.
-func (c *agentServiceClient) PairDevice(ctx context.Context, req *connect.Request[v3.PairDeviceRequest]) (*connect.Response[v3.PairDeviceResponse], error) {
-	return c.pairDevice.CallUnary(ctx, req)
-}
-
-// ListDevices calls homecloud.agent.v3.AgentService.ListDevices.
-func (c *agentServiceClient) ListDevices(ctx context.Context, req *connect.Request[v3.ListDevicesRequest]) (*connect.Response[v3.ListDevicesResponse], error) {
-	return c.listDevices.CallUnary(ctx, req)
-}
-
-// RevokeDevice calls homecloud.agent.v3.AgentService.RevokeDevice.
-func (c *agentServiceClient) RevokeDevice(ctx context.Context, req *connect.Request[v3.RevokeDeviceRequest]) (*connect.Response[v3.RevokeDeviceResponse], error) {
-	return c.revokeDevice.CallUnary(ctx, req)
-}
-
-// SignOut calls homecloud.agent.v3.AgentService.SignOut.
-func (c *agentServiceClient) SignOut(ctx context.Context, req *connect.Request[v3.SignOutRequest]) (*connect.Response[v3.SignOutResponse], error) {
-	return c.signOut.CallUnary(ctx, req)
-}
-
-// SignOutBrowsers calls homecloud.agent.v3.AgentService.SignOutBrowsers.
-func (c *agentServiceClient) SignOutBrowsers(ctx context.Context, req *connect.Request[v3.SignOutBrowsersRequest]) (*connect.Response[v3.SignOutBrowsersResponse], error) {
-	return c.signOutBrowsers.CallUnary(ctx, req)
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s AgentServiceWatchOverviewClientStream) Close() error {
+	return s.stream.Close()
 }
 
 // AgentServiceHandler is an implementation of the homecloud.agent.v3.AgentService service.
@@ -457,352 +345,638 @@ type AgentServiceHandler interface {
 	// GetInfo identifies the agent. Incompatible API changes get a new proto
 	// package (homecloud.agent.v3), so an outdated client fails with
 	// Unimplemented; api_version is informational, for display and support.
-	GetInfo(context.Context, *connect.Request[v3.GetInfoRequest]) (*connect.Response[v3.GetInfoResponse], error)
+	GetInfo(context.Context, *v3.GetInfoRequest) (*v3.GetInfoResponse, error)
 	// GetOverview returns the current archive overview.
-	GetOverview(context.Context, *connect.Request[v3.GetOverviewRequest]) (*connect.Response[v3.GetOverviewResponse], error)
+	GetOverview(context.Context, *v3.GetOverviewRequest) (*v3.GetOverviewResponse, error)
 	// WatchOverview sends the current overview, then a new one whenever it changes.
-	WatchOverview(context.Context, *connect.Request[v3.WatchOverviewRequest], *connect.ServerStream[v3.WatchOverviewResponse]) error
+	WatchOverview(context.Context, *v3.WatchOverviewRequest, AgentServiceWatchOverviewServerStream) error
 	// ListRuns pages through recorded runs, newest first.
-	ListRuns(context.Context, *connect.Request[v3.ListRunsRequest]) (*connect.Response[v3.ListRunsResponse], error)
+	ListRuns(context.Context, *v3.ListRunsRequest) (*v3.ListRunsResponse, error)
 	// ListEvents pages through the append-only audit log, newest first.
-	ListEvents(context.Context, *connect.Request[v3.ListEventsRequest]) (*connect.Response[v3.ListEventsResponse], error)
+	ListEvents(context.Context, *v3.ListEventsRequest) (*v3.ListEventsResponse, error)
 	// ListAssets pages through the archive, newest first, for the library browser.
-	ListAssets(context.Context, *connect.Request[v3.ListAssetsRequest]) (*connect.Response[v3.ListAssetsResponse], error)
+	ListAssets(context.Context, *v3.ListAssetsRequest) (*v3.ListAssetsResponse, error)
 	// GetSafeToDelete reports the iCloud Photos items the owner may delete in
 	// Apple's Photos app without losing them, totalled by month. Read only:
 	// homecloud deletes nothing.
-	GetSafeToDelete(context.Context, *connect.Request[v3.GetSafeToDeleteRequest]) (*connect.Response[v3.GetSafeToDeleteResponse], error)
+	GetSafeToDelete(context.Context, *v3.GetSafeToDeleteRequest) (*v3.GetSafeToDeleteResponse, error)
 	// ListSafeToDelete pages through the items GetSafeToDelete counts, newest first.
-	ListSafeToDelete(context.Context, *connect.Request[v3.ListSafeToDeleteRequest]) (*connect.Response[v3.ListSafeToDeleteResponse], error)
+	ListSafeToDelete(context.Context, *v3.ListSafeToDeleteRequest) (*v3.ListSafeToDeleteResponse, error)
 	// ListQuarantine lists quarantined assets with their failing renditions.
-	ListQuarantine(context.Context, *connect.Request[v3.ListQuarantineRequest]) (*connect.Response[v3.ListQuarantineResponse], error)
+	ListQuarantine(context.Context, *v3.ListQuarantineRequest) (*v3.ListQuarantineResponse, error)
 	// GetAsset returns one asset with every rendition and its verification evidence.
-	GetAsset(context.Context, *connect.Request[v3.GetAssetRequest]) (*connect.Response[v3.GetAssetResponse], error)
+	GetAsset(context.Context, *v3.GetAssetRequest) (*v3.GetAssetResponse, error)
 	// ReleaseQuarantine returns a quarantined asset to verification. The reason
 	// is required and recorded in the audit log.
-	ReleaseQuarantine(context.Context, *connect.Request[v3.ReleaseQuarantineRequest]) (*connect.Response[v3.ReleaseQuarantineResponse], error)
+	ReleaseQuarantine(context.Context, *v3.ReleaseQuarantineRequest) (*v3.ReleaseQuarantineResponse, error)
 	// RepairQuarantine downloads the failing files of a quarantined asset again:
 	// the next cycle moves each one into the archive's Damaged folder and has
 	// kei download it; the asset leaves quarantine once every file is back, and
 	// every check runs again. A cycle starts now when the agent is idle.
-	RepairQuarantine(context.Context, *connect.Request[v3.RepairQuarantineRequest]) (*connect.Response[v3.RepairQuarantineResponse], error)
+	RepairQuarantine(context.Context, *v3.RepairQuarantineRequest) (*v3.RepairQuarantineResponse, error)
 	// StartSync asks the agent to run a cycle now.
-	StartSync(context.Context, *connect.Request[v3.StartSyncRequest]) (*connect.Response[v3.StartSyncResponse], error)
+	StartSync(context.Context, *v3.StartSyncRequest) (*v3.StartSyncResponse, error)
 	// SendTestNotification sends a test alert through the configured channel.
-	SendTestNotification(context.Context, *connect.Request[v3.SendTestNotificationRequest]) (*connect.Response[v3.SendTestNotificationResponse], error)
+	SendTestNotification(context.Context, *v3.SendTestNotificationRequest) (*v3.SendTestNotificationResponse, error)
 	// GetSettings returns the agent's effective configuration.
-	GetSettings(context.Context, *connect.Request[v3.GetSettingsRequest]) (*connect.Response[v3.GetSettingsResponse], error)
+	GetSettings(context.Context, *v3.GetSettingsRequest) (*v3.GetSettingsResponse, error)
 	// CreateLoginCode issues a short-lived, single-use code for one purpose: a
 	// browser exchanges a sign-in code for a session, a device pairs with a
 	// pairing code. Requires the agent token.
-	CreateLoginCode(context.Context, *connect.Request[v3.CreateLoginCodeRequest]) (*connect.Response[v3.CreateLoginCodeResponse], error)
+	CreateLoginCode(context.Context, *v3.CreateLoginCodeRequest) (*v3.CreateLoginCodeResponse, error)
 	// ExchangeLoginCode trades a sign-in code for a session cookie. Callable
 	// without credentials: the code is the credential.
-	ExchangeLoginCode(context.Context, *connect.Request[v3.ExchangeLoginCodeRequest]) (*connect.Response[v3.ExchangeLoginCodeResponse], error)
+	ExchangeLoginCode(context.Context, *v3.ExchangeLoginCodeRequest) (*v3.ExchangeLoginCodeResponse, error)
 	// PairDevice trades a pairing code for a device token, which the device
 	// keeps and sends as its bearer token until it is revoked. Callable without
 	// credentials: the code is the credential.
-	PairDevice(context.Context, *connect.Request[v3.PairDeviceRequest]) (*connect.Response[v3.PairDeviceResponse], error)
+	PairDevice(context.Context, *v3.PairDeviceRequest) (*v3.PairDeviceResponse, error)
 	// ListDevices lists the paired devices that are not revoked, and counts the
 	// open browser sessions.
-	ListDevices(context.Context, *connect.Request[v3.ListDevicesRequest]) (*connect.Response[v3.ListDevicesResponse], error)
+	ListDevices(context.Context, *v3.ListDevicesRequest) (*v3.ListDevicesResponse, error)
 	// RevokeDevice ends a paired device's access at once.
-	RevokeDevice(context.Context, *connect.Request[v3.RevokeDeviceRequest]) (*connect.Response[v3.RevokeDeviceResponse], error)
+	RevokeDevice(context.Context, *v3.RevokeDeviceRequest) (*v3.RevokeDeviceResponse, error)
 	// SignOut ends the calling browser session and clears its cookie.
-	SignOut(context.Context, *connect.Request[v3.SignOutRequest]) (*connect.Response[v3.SignOutResponse], error)
+	SignOut(context.Context, *v3.SignOutRequest) (*v3.SignOutResponse, error)
 	// SignOutBrowsers ends every browser session, the caller's too.
-	SignOutBrowsers(context.Context, *connect.Request[v3.SignOutBrowsersRequest]) (*connect.Response[v3.SignOutBrowsersResponse], error)
+	SignOutBrowsers(context.Context, *v3.SignOutBrowsersRequest) (*v3.SignOutBrowsersResponse, error)
 }
 
-// NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
-// path on which to mount the handler and the handler itself.
-//
-// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
-// and JSON codecs. They also support gzip compression.
-func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	agentServiceMethods := v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods()
-	agentServiceGetInfoHandler := connect.NewUnaryHandler(
-		AgentServiceGetInfoProcedure,
-		svc.GetInfo,
-		connect.WithSchema(agentServiceMethods.ByName("GetInfo")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
+// RegisterAgentServiceHandler registers svc as the homecloud.agent.v3.AgentService implementation
+// on server.
+func RegisterAgentServiceHandler(server *connect.Server, svc AgentServiceHandler) {
+	adapter := agentServiceHandler{svc: svc}
+	server.Register(
+		connect.Method{Spec: agentServiceGetInfoSpec(), Handler: adapter.getInfo},
+		connect.Method{Spec: agentServiceGetOverviewSpec(), Handler: adapter.getOverview},
+		connect.Method{Spec: agentServiceWatchOverviewSpec(), Handler: adapter.watchOverview},
+		connect.Method{Spec: agentServiceListRunsSpec(), Handler: adapter.listRuns},
+		connect.Method{Spec: agentServiceListEventsSpec(), Handler: adapter.listEvents},
+		connect.Method{Spec: agentServiceListAssetsSpec(), Handler: adapter.listAssets},
+		connect.Method{Spec: agentServiceGetSafeToDeleteSpec(), Handler: adapter.getSafeToDelete},
+		connect.Method{Spec: agentServiceListSafeToDeleteSpec(), Handler: adapter.listSafeToDelete},
+		connect.Method{Spec: agentServiceListQuarantineSpec(), Handler: adapter.listQuarantine},
+		connect.Method{Spec: agentServiceGetAssetSpec(), Handler: adapter.getAsset},
+		connect.Method{Spec: agentServiceReleaseQuarantineSpec(), Handler: adapter.releaseQuarantine},
+		connect.Method{Spec: agentServiceRepairQuarantineSpec(), Handler: adapter.repairQuarantine},
+		connect.Method{Spec: agentServiceStartSyncSpec(), Handler: adapter.startSync},
+		connect.Method{Spec: agentServiceSendTestNotificationSpec(), Handler: adapter.sendTestNotification},
+		connect.Method{Spec: agentServiceGetSettingsSpec(), Handler: adapter.getSettings},
+		connect.Method{Spec: agentServiceCreateLoginCodeSpec(), Handler: adapter.createLoginCode},
+		connect.Method{Spec: agentServiceExchangeLoginCodeSpec(), Handler: adapter.exchangeLoginCode},
+		connect.Method{Spec: agentServicePairDeviceSpec(), Handler: adapter.pairDevice},
+		connect.Method{Spec: agentServiceListDevicesSpec(), Handler: adapter.listDevices},
+		connect.Method{Spec: agentServiceRevokeDeviceSpec(), Handler: adapter.revokeDevice},
+		connect.Method{Spec: agentServiceSignOutSpec(), Handler: adapter.signOut},
+		connect.Method{Spec: agentServiceSignOutBrowsersSpec(), Handler: adapter.signOutBrowsers},
 	)
-	agentServiceGetOverviewHandler := connect.NewUnaryHandler(
-		AgentServiceGetOverviewProcedure,
-		svc.GetOverview,
-		connect.WithSchema(agentServiceMethods.ByName("GetOverview")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceWatchOverviewHandler := connect.NewServerStreamHandler(
-		AgentServiceWatchOverviewProcedure,
-		svc.WatchOverview,
-		connect.WithSchema(agentServiceMethods.ByName("WatchOverview")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceListRunsHandler := connect.NewUnaryHandler(
-		AgentServiceListRunsProcedure,
-		svc.ListRuns,
-		connect.WithSchema(agentServiceMethods.ByName("ListRuns")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceListEventsHandler := connect.NewUnaryHandler(
-		AgentServiceListEventsProcedure,
-		svc.ListEvents,
-		connect.WithSchema(agentServiceMethods.ByName("ListEvents")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceListAssetsHandler := connect.NewUnaryHandler(
-		AgentServiceListAssetsProcedure,
-		svc.ListAssets,
-		connect.WithSchema(agentServiceMethods.ByName("ListAssets")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceGetSafeToDeleteHandler := connect.NewUnaryHandler(
-		AgentServiceGetSafeToDeleteProcedure,
-		svc.GetSafeToDelete,
-		connect.WithSchema(agentServiceMethods.ByName("GetSafeToDelete")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceListSafeToDeleteHandler := connect.NewUnaryHandler(
-		AgentServiceListSafeToDeleteProcedure,
-		svc.ListSafeToDelete,
-		connect.WithSchema(agentServiceMethods.ByName("ListSafeToDelete")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceListQuarantineHandler := connect.NewUnaryHandler(
-		AgentServiceListQuarantineProcedure,
-		svc.ListQuarantine,
-		connect.WithSchema(agentServiceMethods.ByName("ListQuarantine")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceGetAssetHandler := connect.NewUnaryHandler(
-		AgentServiceGetAssetProcedure,
-		svc.GetAsset,
-		connect.WithSchema(agentServiceMethods.ByName("GetAsset")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceReleaseQuarantineHandler := connect.NewUnaryHandler(
-		AgentServiceReleaseQuarantineProcedure,
-		svc.ReleaseQuarantine,
-		connect.WithSchema(agentServiceMethods.ByName("ReleaseQuarantine")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceRepairQuarantineHandler := connect.NewUnaryHandler(
-		AgentServiceRepairQuarantineProcedure,
-		svc.RepairQuarantine,
-		connect.WithSchema(agentServiceMethods.ByName("RepairQuarantine")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceStartSyncHandler := connect.NewUnaryHandler(
-		AgentServiceStartSyncProcedure,
-		svc.StartSync,
-		connect.WithSchema(agentServiceMethods.ByName("StartSync")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceSendTestNotificationHandler := connect.NewUnaryHandler(
-		AgentServiceSendTestNotificationProcedure,
-		svc.SendTestNotification,
-		connect.WithSchema(agentServiceMethods.ByName("SendTestNotification")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceGetSettingsHandler := connect.NewUnaryHandler(
-		AgentServiceGetSettingsProcedure,
-		svc.GetSettings,
-		connect.WithSchema(agentServiceMethods.ByName("GetSettings")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceCreateLoginCodeHandler := connect.NewUnaryHandler(
-		AgentServiceCreateLoginCodeProcedure,
-		svc.CreateLoginCode,
-		connect.WithSchema(agentServiceMethods.ByName("CreateLoginCode")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceExchangeLoginCodeHandler := connect.NewUnaryHandler(
-		AgentServiceExchangeLoginCodeProcedure,
-		svc.ExchangeLoginCode,
-		connect.WithSchema(agentServiceMethods.ByName("ExchangeLoginCode")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServicePairDeviceHandler := connect.NewUnaryHandler(
-		AgentServicePairDeviceProcedure,
-		svc.PairDevice,
-		connect.WithSchema(agentServiceMethods.ByName("PairDevice")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceListDevicesHandler := connect.NewUnaryHandler(
-		AgentServiceListDevicesProcedure,
-		svc.ListDevices,
-		connect.WithSchema(agentServiceMethods.ByName("ListDevices")),
-		connect.WithIdempotency(connect.IdempotencyNoSideEffects),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceRevokeDeviceHandler := connect.NewUnaryHandler(
-		AgentServiceRevokeDeviceProcedure,
-		svc.RevokeDevice,
-		connect.WithSchema(agentServiceMethods.ByName("RevokeDevice")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceSignOutHandler := connect.NewUnaryHandler(
-		AgentServiceSignOutProcedure,
-		svc.SignOut,
-		connect.WithSchema(agentServiceMethods.ByName("SignOut")),
-		connect.WithHandlerOptions(opts...),
-	)
-	agentServiceSignOutBrowsersHandler := connect.NewUnaryHandler(
-		AgentServiceSignOutBrowsersProcedure,
-		svc.SignOutBrowsers,
-		connect.WithSchema(agentServiceMethods.ByName("SignOutBrowsers")),
-		connect.WithHandlerOptions(opts...),
-	)
-	return "/homecloud.agent.v3.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case AgentServiceGetInfoProcedure:
-			agentServiceGetInfoHandler.ServeHTTP(w, r)
-		case AgentServiceGetOverviewProcedure:
-			agentServiceGetOverviewHandler.ServeHTTP(w, r)
-		case AgentServiceWatchOverviewProcedure:
-			agentServiceWatchOverviewHandler.ServeHTTP(w, r)
-		case AgentServiceListRunsProcedure:
-			agentServiceListRunsHandler.ServeHTTP(w, r)
-		case AgentServiceListEventsProcedure:
-			agentServiceListEventsHandler.ServeHTTP(w, r)
-		case AgentServiceListAssetsProcedure:
-			agentServiceListAssetsHandler.ServeHTTP(w, r)
-		case AgentServiceGetSafeToDeleteProcedure:
-			agentServiceGetSafeToDeleteHandler.ServeHTTP(w, r)
-		case AgentServiceListSafeToDeleteProcedure:
-			agentServiceListSafeToDeleteHandler.ServeHTTP(w, r)
-		case AgentServiceListQuarantineProcedure:
-			agentServiceListQuarantineHandler.ServeHTTP(w, r)
-		case AgentServiceGetAssetProcedure:
-			agentServiceGetAssetHandler.ServeHTTP(w, r)
-		case AgentServiceReleaseQuarantineProcedure:
-			agentServiceReleaseQuarantineHandler.ServeHTTP(w, r)
-		case AgentServiceRepairQuarantineProcedure:
-			agentServiceRepairQuarantineHandler.ServeHTTP(w, r)
-		case AgentServiceStartSyncProcedure:
-			agentServiceStartSyncHandler.ServeHTTP(w, r)
-		case AgentServiceSendTestNotificationProcedure:
-			agentServiceSendTestNotificationHandler.ServeHTTP(w, r)
-		case AgentServiceGetSettingsProcedure:
-			agentServiceGetSettingsHandler.ServeHTTP(w, r)
-		case AgentServiceCreateLoginCodeProcedure:
-			agentServiceCreateLoginCodeHandler.ServeHTTP(w, r)
-		case AgentServiceExchangeLoginCodeProcedure:
-			agentServiceExchangeLoginCodeHandler.ServeHTTP(w, r)
-		case AgentServicePairDeviceProcedure:
-			agentServicePairDeviceHandler.ServeHTTP(w, r)
-		case AgentServiceListDevicesProcedure:
-			agentServiceListDevicesHandler.ServeHTTP(w, r)
-		case AgentServiceRevokeDeviceProcedure:
-			agentServiceRevokeDeviceHandler.ServeHTTP(w, r)
-		case AgentServiceSignOutProcedure:
-			agentServiceSignOutHandler.ServeHTTP(w, r)
-		case AgentServiceSignOutBrowsersProcedure:
-			agentServiceSignOutBrowsersHandler.ServeHTTP(w, r)
-		default:
-			http.NotFound(w, r)
-		}
-	})
+}
+
+// AgentServiceWatchOverviewServerStream is the server stream for the AgentService's WatchOverview
+// RPC.
+type AgentServiceWatchOverviewServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s AgentServiceWatchOverviewServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s AgentServiceWatchOverviewServerStream) Send(res *v3.WatchOverviewResponse) error {
+	return s.stream.Send(res)
 }
 
 // UnimplementedAgentServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedAgentServiceHandler struct{}
 
-func (UnimplementedAgentServiceHandler) GetInfo(context.Context, *connect.Request[v3.GetInfoRequest]) (*connect.Response[v3.GetInfoResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.GetInfo is not implemented"))
+func (UnimplementedAgentServiceHandler) GetInfo(context.Context, *v3.GetInfoRequest) (*v3.GetInfoResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.GetInfo is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) GetOverview(context.Context, *connect.Request[v3.GetOverviewRequest]) (*connect.Response[v3.GetOverviewResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.GetOverview is not implemented"))
+func (UnimplementedAgentServiceHandler) GetOverview(context.Context, *v3.GetOverviewRequest) (*v3.GetOverviewResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.GetOverview is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) WatchOverview(context.Context, *connect.Request[v3.WatchOverviewRequest], *connect.ServerStream[v3.WatchOverviewResponse]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.WatchOverview is not implemented"))
+func (UnimplementedAgentServiceHandler) WatchOverview(context.Context, *v3.WatchOverviewRequest, AgentServiceWatchOverviewServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.WatchOverview is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) ListRuns(context.Context, *connect.Request[v3.ListRunsRequest]) (*connect.Response[v3.ListRunsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ListRuns is not implemented"))
+func (UnimplementedAgentServiceHandler) ListRuns(context.Context, *v3.ListRunsRequest) (*v3.ListRunsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListRuns is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) ListEvents(context.Context, *connect.Request[v3.ListEventsRequest]) (*connect.Response[v3.ListEventsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ListEvents is not implemented"))
+func (UnimplementedAgentServiceHandler) ListEvents(context.Context, *v3.ListEventsRequest) (*v3.ListEventsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListEvents is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) ListAssets(context.Context, *connect.Request[v3.ListAssetsRequest]) (*connect.Response[v3.ListAssetsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ListAssets is not implemented"))
+func (UnimplementedAgentServiceHandler) ListAssets(context.Context, *v3.ListAssetsRequest) (*v3.ListAssetsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListAssets is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) GetSafeToDelete(context.Context, *connect.Request[v3.GetSafeToDeleteRequest]) (*connect.Response[v3.GetSafeToDeleteResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.GetSafeToDelete is not implemented"))
+func (UnimplementedAgentServiceHandler) GetSafeToDelete(context.Context, *v3.GetSafeToDeleteRequest) (*v3.GetSafeToDeleteResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.GetSafeToDelete is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) ListSafeToDelete(context.Context, *connect.Request[v3.ListSafeToDeleteRequest]) (*connect.Response[v3.ListSafeToDeleteResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ListSafeToDelete is not implemented"))
+func (UnimplementedAgentServiceHandler) ListSafeToDelete(context.Context, *v3.ListSafeToDeleteRequest) (*v3.ListSafeToDeleteResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListSafeToDelete is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) ListQuarantine(context.Context, *connect.Request[v3.ListQuarantineRequest]) (*connect.Response[v3.ListQuarantineResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ListQuarantine is not implemented"))
+func (UnimplementedAgentServiceHandler) ListQuarantine(context.Context, *v3.ListQuarantineRequest) (*v3.ListQuarantineResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListQuarantine is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) GetAsset(context.Context, *connect.Request[v3.GetAssetRequest]) (*connect.Response[v3.GetAssetResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.GetAsset is not implemented"))
+func (UnimplementedAgentServiceHandler) GetAsset(context.Context, *v3.GetAssetRequest) (*v3.GetAssetResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.GetAsset is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) ReleaseQuarantine(context.Context, *connect.Request[v3.ReleaseQuarantineRequest]) (*connect.Response[v3.ReleaseQuarantineResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ReleaseQuarantine is not implemented"))
+func (UnimplementedAgentServiceHandler) ReleaseQuarantine(context.Context, *v3.ReleaseQuarantineRequest) (*v3.ReleaseQuarantineResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ReleaseQuarantine is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) RepairQuarantine(context.Context, *connect.Request[v3.RepairQuarantineRequest]) (*connect.Response[v3.RepairQuarantineResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.RepairQuarantine is not implemented"))
+func (UnimplementedAgentServiceHandler) RepairQuarantine(context.Context, *v3.RepairQuarantineRequest) (*v3.RepairQuarantineResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.RepairQuarantine is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) StartSync(context.Context, *connect.Request[v3.StartSyncRequest]) (*connect.Response[v3.StartSyncResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.StartSync is not implemented"))
+func (UnimplementedAgentServiceHandler) StartSync(context.Context, *v3.StartSyncRequest) (*v3.StartSyncResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.StartSync is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) SendTestNotification(context.Context, *connect.Request[v3.SendTestNotificationRequest]) (*connect.Response[v3.SendTestNotificationResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.SendTestNotification is not implemented"))
+func (UnimplementedAgentServiceHandler) SendTestNotification(context.Context, *v3.SendTestNotificationRequest) (*v3.SendTestNotificationResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.SendTestNotification is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) GetSettings(context.Context, *connect.Request[v3.GetSettingsRequest]) (*connect.Response[v3.GetSettingsResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.GetSettings is not implemented"))
+func (UnimplementedAgentServiceHandler) GetSettings(context.Context, *v3.GetSettingsRequest) (*v3.GetSettingsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.GetSettings is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) CreateLoginCode(context.Context, *connect.Request[v3.CreateLoginCodeRequest]) (*connect.Response[v3.CreateLoginCodeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.CreateLoginCode is not implemented"))
+func (UnimplementedAgentServiceHandler) CreateLoginCode(context.Context, *v3.CreateLoginCodeRequest) (*v3.CreateLoginCodeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.CreateLoginCode is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) ExchangeLoginCode(context.Context, *connect.Request[v3.ExchangeLoginCodeRequest]) (*connect.Response[v3.ExchangeLoginCodeResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ExchangeLoginCode is not implemented"))
+func (UnimplementedAgentServiceHandler) ExchangeLoginCode(context.Context, *v3.ExchangeLoginCodeRequest) (*v3.ExchangeLoginCodeResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ExchangeLoginCode is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) PairDevice(context.Context, *connect.Request[v3.PairDeviceRequest]) (*connect.Response[v3.PairDeviceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.PairDevice is not implemented"))
+func (UnimplementedAgentServiceHandler) PairDevice(context.Context, *v3.PairDeviceRequest) (*v3.PairDeviceResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.PairDevice is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) ListDevices(context.Context, *connect.Request[v3.ListDevicesRequest]) (*connect.Response[v3.ListDevicesResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.ListDevices is not implemented"))
+func (UnimplementedAgentServiceHandler) ListDevices(context.Context, *v3.ListDevicesRequest) (*v3.ListDevicesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListDevices is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) RevokeDevice(context.Context, *connect.Request[v3.RevokeDeviceRequest]) (*connect.Response[v3.RevokeDeviceResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.RevokeDevice is not implemented"))
+func (UnimplementedAgentServiceHandler) RevokeDevice(context.Context, *v3.RevokeDeviceRequest) (*v3.RevokeDeviceResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.RevokeDevice is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) SignOut(context.Context, *connect.Request[v3.SignOutRequest]) (*connect.Response[v3.SignOutResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.SignOut is not implemented"))
+func (UnimplementedAgentServiceHandler) SignOut(context.Context, *v3.SignOutRequest) (*v3.SignOutResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.SignOut is not implemented")
 }
 
-func (UnimplementedAgentServiceHandler) SignOutBrowsers(context.Context, *connect.Request[v3.SignOutBrowsersRequest]) (*connect.Response[v3.SignOutBrowsersResponse], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("homecloud.agent.v3.AgentService.SignOutBrowsers is not implemented"))
+func (UnimplementedAgentServiceHandler) SignOutBrowsers(context.Context, *v3.SignOutBrowsersRequest) (*v3.SignOutBrowsersResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.SignOutBrowsers is not implemented")
+}
+
+type agentServiceClient struct {
+	client *connect.Client
+}
+
+func (c *agentServiceClient) GetInfo(ctx context.Context, req *v3.GetInfoRequest) (*v3.GetInfoResponse, error) {
+	var res v3.GetInfoResponse
+	if err := c.client.CallUnary(ctx, agentServiceGetInfoSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) GetOverview(ctx context.Context, req *v3.GetOverviewRequest) (*v3.GetOverviewResponse, error) {
+	var res v3.GetOverviewResponse
+	if err := c.client.CallUnary(ctx, agentServiceGetOverviewSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) WatchOverview(ctx context.Context, req *v3.WatchOverviewRequest) (AgentServiceWatchOverviewClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, agentServiceWatchOverviewSpec(), req)
+	if err != nil {
+		return AgentServiceWatchOverviewClientStream{}, err
+	}
+	return AgentServiceWatchOverviewClientStream{stream: stream}, nil
+}
+
+func (c *agentServiceClient) ListRuns(ctx context.Context, req *v3.ListRunsRequest) (*v3.ListRunsResponse, error) {
+	var res v3.ListRunsResponse
+	if err := c.client.CallUnary(ctx, agentServiceListRunsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListEvents(ctx context.Context, req *v3.ListEventsRequest) (*v3.ListEventsResponse, error) {
+	var res v3.ListEventsResponse
+	if err := c.client.CallUnary(ctx, agentServiceListEventsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListAssets(ctx context.Context, req *v3.ListAssetsRequest) (*v3.ListAssetsResponse, error) {
+	var res v3.ListAssetsResponse
+	if err := c.client.CallUnary(ctx, agentServiceListAssetsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) GetSafeToDelete(ctx context.Context, req *v3.GetSafeToDeleteRequest) (*v3.GetSafeToDeleteResponse, error) {
+	var res v3.GetSafeToDeleteResponse
+	if err := c.client.CallUnary(ctx, agentServiceGetSafeToDeleteSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListSafeToDelete(ctx context.Context, req *v3.ListSafeToDeleteRequest) (*v3.ListSafeToDeleteResponse, error) {
+	var res v3.ListSafeToDeleteResponse
+	if err := c.client.CallUnary(ctx, agentServiceListSafeToDeleteSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListQuarantine(ctx context.Context, req *v3.ListQuarantineRequest) (*v3.ListQuarantineResponse, error) {
+	var res v3.ListQuarantineResponse
+	if err := c.client.CallUnary(ctx, agentServiceListQuarantineSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) GetAsset(ctx context.Context, req *v3.GetAssetRequest) (*v3.GetAssetResponse, error) {
+	var res v3.GetAssetResponse
+	if err := c.client.CallUnary(ctx, agentServiceGetAssetSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ReleaseQuarantine(ctx context.Context, req *v3.ReleaseQuarantineRequest) (*v3.ReleaseQuarantineResponse, error) {
+	var res v3.ReleaseQuarantineResponse
+	if err := c.client.CallUnary(ctx, agentServiceReleaseQuarantineSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) RepairQuarantine(ctx context.Context, req *v3.RepairQuarantineRequest) (*v3.RepairQuarantineResponse, error) {
+	var res v3.RepairQuarantineResponse
+	if err := c.client.CallUnary(ctx, agentServiceRepairQuarantineSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) StartSync(ctx context.Context, req *v3.StartSyncRequest) (*v3.StartSyncResponse, error) {
+	var res v3.StartSyncResponse
+	if err := c.client.CallUnary(ctx, agentServiceStartSyncSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) SendTestNotification(ctx context.Context, req *v3.SendTestNotificationRequest) (*v3.SendTestNotificationResponse, error) {
+	var res v3.SendTestNotificationResponse
+	if err := c.client.CallUnary(ctx, agentServiceSendTestNotificationSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) GetSettings(ctx context.Context, req *v3.GetSettingsRequest) (*v3.GetSettingsResponse, error) {
+	var res v3.GetSettingsResponse
+	if err := c.client.CallUnary(ctx, agentServiceGetSettingsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) CreateLoginCode(ctx context.Context, req *v3.CreateLoginCodeRequest) (*v3.CreateLoginCodeResponse, error) {
+	var res v3.CreateLoginCodeResponse
+	if err := c.client.CallUnary(ctx, agentServiceCreateLoginCodeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ExchangeLoginCode(ctx context.Context, req *v3.ExchangeLoginCodeRequest) (*v3.ExchangeLoginCodeResponse, error) {
+	var res v3.ExchangeLoginCodeResponse
+	if err := c.client.CallUnary(ctx, agentServiceExchangeLoginCodeSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) PairDevice(ctx context.Context, req *v3.PairDeviceRequest) (*v3.PairDeviceResponse, error) {
+	var res v3.PairDeviceResponse
+	if err := c.client.CallUnary(ctx, agentServicePairDeviceSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListDevices(ctx context.Context, req *v3.ListDevicesRequest) (*v3.ListDevicesResponse, error) {
+	var res v3.ListDevicesResponse
+	if err := c.client.CallUnary(ctx, agentServiceListDevicesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) RevokeDevice(ctx context.Context, req *v3.RevokeDeviceRequest) (*v3.RevokeDeviceResponse, error) {
+	var res v3.RevokeDeviceResponse
+	if err := c.client.CallUnary(ctx, agentServiceRevokeDeviceSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) SignOut(ctx context.Context, req *v3.SignOutRequest) (*v3.SignOutResponse, error) {
+	var res v3.SignOutResponse
+	if err := c.client.CallUnary(ctx, agentServiceSignOutSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) SignOutBrowsers(ctx context.Context, req *v3.SignOutBrowsersRequest) (*v3.SignOutBrowsersResponse, error) {
+	var res v3.SignOutBrowsersResponse
+	if err := c.client.CallUnary(ctx, agentServiceSignOutBrowsersSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+type agentServiceHandler struct{ svc AgentServiceHandler }
+
+func (h agentServiceHandler) getInfo(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.GetInfoRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetInfo(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) getOverview(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.GetOverviewRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetOverview(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) watchOverview(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.WatchOverviewRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	return h.svc.WatchOverview(ctx, &req, AgentServiceWatchOverviewServerStream{stream: stream})
+}
+
+func (h agentServiceHandler) listRuns(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListRunsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListRuns(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listEvents(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListEventsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListEvents(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listAssets(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListAssetsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListAssets(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) getSafeToDelete(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.GetSafeToDeleteRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetSafeToDelete(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listSafeToDelete(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListSafeToDeleteRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListSafeToDelete(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listQuarantine(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListQuarantineRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListQuarantine(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) getAsset(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.GetAssetRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetAsset(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) releaseQuarantine(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ReleaseQuarantineRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ReleaseQuarantine(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) repairQuarantine(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.RepairQuarantineRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RepairQuarantine(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) startSync(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.StartSyncRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.StartSync(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) sendTestNotification(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.SendTestNotificationRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SendTestNotification(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) getSettings(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.GetSettingsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetSettings(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) createLoginCode(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.CreateLoginCodeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CreateLoginCode(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) exchangeLoginCode(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ExchangeLoginCodeRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ExchangeLoginCode(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) pairDevice(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.PairDeviceRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.PairDevice(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listDevices(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListDevicesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListDevices(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) revokeDevice(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.RevokeDeviceRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RevokeDevice(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) signOut(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.SignOutRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SignOut(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) signOutBrowsers(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.SignOutBrowsersRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.SignOutBrowsers(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
 }

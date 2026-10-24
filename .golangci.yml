@@ -47,10 +47,13 @@ linters:
       # Errors from this module's own packages already carry context at their source.
       ignore-package-globs:
         - github.com/vasilistotskas/homecloud/*
-      # connect.NewError creates the API's error from our own message; there
-      # is no external error to wrap (wrapcheck 2.13 reports *connect.Error).
+      # These create the API's error from our own message (and keep the cause
+      # for the server); there is no external error to wrap (wrapcheck 2.13
+      # reports *connect.Error).
       extra-ignore-sigs:
-        - connectrpc.com/connect.NewError(
+        - connectrpc.com/connect/v2.NewError(
+        - connectrpc.com/connect/v2.Errorf(
+        - (*connectrpc.com/connect/v2.Error).WithCause(
     govet:
       enable-all: true
       disable:

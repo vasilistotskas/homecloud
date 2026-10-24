@@ -3,7 +3,7 @@ module github.com/vasilistotskas/homecloud
 go 1.27.3
 
 require (
-	connectrpc.com/connect v1.21.1
+	connectrpc.com/connect/v2 v2.0.2
 	connectrpc.com/cors v0.1.0
 	github.com/godbus/dbus/v5 v5.2.4
 	github.com/google/go-cmp v0.7.0
@@ -33,7 +33,6 @@ require (
 	buf.build/go/standard v0.1.1-0.20260325175353-2b287e071df5 // indirect
 	cel.dev/cel-go v0.32.0 // indirect
 	cel.dev/expr v0.25.3 // indirect
-	connectrpc.com/connect/v2 v2.0.1 // indirect
 	connectrpc.com/otelconnect v0.11.0 // indirect
 	github.com/Microsoft/go-winio v0.6.3 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
@@ -112,7 +111,7 @@ require (
 )
 
 tool (
-	connectrpc.com/connect/cmd/protoc-gen-connect-go
+	connectrpc.com/connect/v2/cmd/protoc-gen-connect-go
 	github.com/bufbuild/buf/cmd/buf
 	github.com/josephspurrier/goversioninfo/cmd/goversioninfo
 	google.golang.org/protobuf/cmd/protoc-gen-go

@@ -3,37 +3,21 @@ package auth
 import (
 	"context"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 )
 
-// Bearer is a client interceptor that sends token on every unary and
-// streaming call.
-type Bearer string
-
-var _ connect.Interceptor = Bearer("")
-
-func (b Bearer) header() string { return "Bearer " + string(b) }
-
-// WrapUnary implements connect.Interceptor.
-func (b Bearer) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
-	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
-		if req.Spec().IsClient {
-			req.Header().Set("Authorization", b.header())
+// Bearer returns a client interceptor that sends token on every call, unary
+// and streaming alike.
+func Bearer(token string) connect.ClientInterceptor {
+	header := "Bearer " + token
+	return func(next connect.ClientFunc) connect.ClientFunc {
+		return func(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
+			// connect.Client attaches a CallInfo to every call before its
+			// interceptors run.
+			if info, ok := connect.CallInfoForClientContext(ctx); ok {
+				info.RequestHeader().Set("Authorization", header)
+			}
+			return next(ctx, spec)
 		}
-		return next(ctx, req)
 	}
-}
-
-// WrapStreamingClient implements connect.Interceptor.
-func (b Bearer) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
-		conn := next(ctx, spec)
-		conn.RequestHeader().Set("Authorization", b.header())
-		return conn
-	}
-}
-
-// WrapStreamingHandler implements connect.Interceptor; servers are unaffected.
-func (Bearer) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
-	return next
 }

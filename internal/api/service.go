@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	agentv3 "github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3"
@@ -124,22 +124,22 @@ func New(d Deps) *Service {
 }
 
 // GetInfo implements AgentService.
-func (s *Service) GetInfo(context.Context, *connect.Request[agentv3.GetInfoRequest]) (*connect.Response[agentv3.GetInfoResponse], error) {
-	return connect.NewResponse(&agentv3.GetInfoResponse{
+func (s *Service) GetInfo(context.Context, *agentv3.GetInfoRequest) (*agentv3.GetInfoResponse, error) {
+	return &agentv3.GetInfoResponse{
 		AgentVersion: s.agentVersion,
 		ApiVersion:   Version,
 		Os:           runtime.GOOS,
-	}), nil
+	}, nil
 }
 
 // GetOverview implements AgentService.
-func (s *Service) GetOverview(ctx context.Context, _ *connect.Request[agentv3.GetOverviewRequest]) (*connect.Response[agentv3.GetOverviewResponse], error) {
+func (s *Service) GetOverview(ctx context.Context, _ *agentv3.GetOverviewRequest) (*agentv3.GetOverviewResponse, error) {
 	st, _ := s.agent.Hub().Snapshot()
 	ov, err := s.overview(ctx, st)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&agentv3.GetOverviewResponse{Overview: ov}), nil
+	return &agentv3.GetOverviewResponse{Overview: ov}, nil
 }
 
 // overviewInterval is the minimum time between updates on one overview
@@ -159,14 +159,14 @@ func (s *Service) stillAllowed(ctx context.Context, p auth.Principal) error {
 	case err != nil:
 		return internal(err)
 	case !ok:
-		return connect.NewError(connect.CodeUnauthenticated, errors.New("access ended"))
+		return connect.NewError(connect.CodeUnauthenticated, "access ended")
 	}
 	return nil
 }
 
 // WatchOverview implements AgentService. The stream lasts as long as the
 // caller's access does.
-func (s *Service) WatchOverview(ctx context.Context, _ *connect.Request[agentv3.WatchOverviewRequest], stream *connect.ServerStream[agentv3.WatchOverviewResponse]) error {
+func (s *Service) WatchOverview(ctx context.Context, _ *agentv3.WatchOverviewRequest, stream agentv3connect.AgentServiceWatchOverviewServerStream) error {
 	p, _ := auth.PrincipalFrom(ctx)
 	recheck := time.NewTicker(accessRecheck)
 	defer recheck.Stop()
@@ -352,24 +352,24 @@ func (s *Service) lastRun(ctx context.Context, kind string) (*agentv3.Run, error
 // the configured volume is missing or another volume is mounted in its place.
 func (s *Service) archiveSpace() (platform.Space, error) {
 	if err := s.agent.CheckArchive(); err != nil {
-		return platform.Space{}, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("archive drive not available: %w", err))
+		return platform.Space{}, connect.Errorf(connect.CodeFailedPrecondition, "archive drive not available: %v", err).WithCause(err)
 	}
 	space, err := platform.DiskSpace(s.cfg.Storage.Root)
 	if err != nil {
-		return platform.Space{}, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("archive drive not available: %w", err))
+		return platform.Space{}, connect.Errorf(connect.CodeFailedPrecondition, "archive drive not available: %v", err).WithCause(err)
 	}
 	return space, nil
 }
 
 // ListRuns implements AgentService.
-func (s *Service) ListRuns(ctx context.Context, req *connect.Request[agentv3.ListRunsRequest]) (*connect.Response[agentv3.ListRunsResponse], error) {
-	size, before, err := page(req.Msg.GetPageSize(), req.Msg.GetPageToken())
+func (s *Service) ListRuns(ctx context.Context, req *agentv3.ListRunsRequest) (*agentv3.ListRunsResponse, error) {
+	size, before, err := page(req.GetPageSize(), req.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
-	kind, ok := runKinds[req.Msg.GetKind()]
+	kind, ok := runKinds[req.GetKind()]
 	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unknown run kind %v", req.Msg.GetKind()))
+		return nil, connect.Errorf(connect.CodeInvalidArgument, "unknown run kind %v", req.GetKind())
 	}
 	runs, err := s.db.Runs(ctx, kind, before, size)
 	if err != nil {
@@ -386,27 +386,27 @@ func (s *Service) ListRuns(ctx context.Context, req *connect.Request[agentv3.Lis
 	if len(runs) == size {
 		res.NextPageToken = encodePageToken(runs[len(runs)-1].ID)
 	}
-	return connect.NewResponse(res), nil
+	return res, nil
 }
 
 // ListEvents implements AgentService.
-func (s *Service) ListEvents(ctx context.Context, req *connect.Request[agentv3.ListEventsRequest]) (*connect.Response[agentv3.ListEventsResponse], error) {
-	if len(req.Msg.GetKinds()) == 0 {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("at least one event kind is required"))
+func (s *Service) ListEvents(ctx context.Context, req *agentv3.ListEventsRequest) (*agentv3.ListEventsResponse, error) {
+	if len(req.GetKinds()) == 0 {
+		return nil, connect.NewError(connect.CodeInvalidArgument, "at least one event kind is required")
 	}
-	kinds := make([]string, 0, len(req.Msg.GetKinds()))
-	for _, k := range req.Msg.GetKinds() {
+	kinds := make([]string, 0, len(req.GetKinds()))
+	for _, k := range req.GetKinds() {
 		name, ok := eventKindNames[k]
 		if !ok {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("unsupported event kind %v", k))
+			return nil, connect.Errorf(connect.CodeInvalidArgument, "unsupported event kind %v", k)
 		}
 		kinds = append(kinds, name)
 	}
-	size, before, err := page(req.Msg.GetPageSize(), req.Msg.GetPageToken())
+	size, before, err := page(req.GetPageSize(), req.GetPageToken())
 	if err != nil {
 		return nil, err
 	}
-	events, err := s.db.Events(ctx, ledger.EventQuery{Kinds: kinds, Text: strings.TrimSpace(req.Msg.GetQuery())}, before, size)
+	events, err := s.db.Events(ctx, ledger.EventQuery{Kinds: kinds, Text: strings.TrimSpace(req.GetQuery())}, before, size)
 	if err != nil {
 		return nil, internal(err)
 	}
@@ -421,11 +421,11 @@ func (s *Service) ListEvents(ctx context.Context, req *connect.Request[agentv3.L
 	if len(events) == size {
 		res.NextPageToken = encodePageToken(events[len(events)-1].ID)
 	}
-	return connect.NewResponse(res), nil
+	return res, nil
 }
 
 // ListQuarantine implements AgentService.
-func (s *Service) ListQuarantine(ctx context.Context, _ *connect.Request[agentv3.ListQuarantineRequest]) (*connect.Response[agentv3.ListQuarantineResponse], error) {
+func (s *Service) ListQuarantine(ctx context.Context, _ *agentv3.ListQuarantineRequest) (*agentv3.ListQuarantineResponse, error) {
 	items, err := s.db.Quarantined(ctx)
 	if err != nil {
 		return nil, internal(err)
@@ -456,14 +456,14 @@ func (s *Service) ListQuarantine(ctx context.Context, _ *connect.Request[agentv3
 		}
 		qa.Failures = append(qa.Failures, f)
 	}
-	return connect.NewResponse(res), nil
+	return res, nil
 }
 
 // GetAsset implements AgentService.
-func (s *Service) GetAsset(ctx context.Context, req *connect.Request[agentv3.GetAssetRequest]) (*connect.Response[agentv3.GetAssetResponse], error) {
-	d, err := s.db.Asset(ctx, req.Msg.GetLibrary(), req.Msg.GetAssetId())
+func (s *Service) GetAsset(ctx context.Context, req *agentv3.GetAssetRequest) (*agentv3.GetAssetResponse, error) {
+	d, err := s.db.Asset(ctx, req.GetLibrary(), req.GetAssetId())
 	if errors.Is(err, ledger.ErrNotFound) {
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
 	}
 	if err != nil {
 		return nil, internal(err)
@@ -472,21 +472,21 @@ func (s *Service) GetAsset(ctx context.Context, req *connect.Request[agentv3.Get
 	if err != nil {
 		return nil, internal(err)
 	}
-	return connect.NewResponse(&agentv3.GetAssetResponse{Asset: a}), nil
+	return &agentv3.GetAssetResponse{Asset: a}, nil
 }
 
 // ReleaseQuarantine implements AgentService.
-func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[agentv3.ReleaseQuarantineRequest]) (*connect.Response[agentv3.ReleaseQuarantineResponse], error) {
-	m := req.Msg
+func (s *Service) ReleaseQuarantine(ctx context.Context, req *agentv3.ReleaseQuarantineRequest) (*agentv3.ReleaseQuarantineResponse, error) {
+	m := req
 	reason := strings.TrimSpace(m.GetReason())
 	err := s.db.ReleaseQuarantine(ctx, m.GetLibrary(), m.GetAssetId(), reason, s.now())
 	switch {
 	case errors.Is(err, ledger.ErrReasonRequired):
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	case errors.Is(err, ledger.ErrNotFound):
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
 	case errors.Is(err, ledger.ErrNotQuarantined), errors.Is(err, ledger.ErrRepairInProgress):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case err != nil:
 		return nil, internal(err)
 	}
@@ -494,18 +494,18 @@ func (s *Service) ReleaseQuarantine(ctx context.Context, req *connect.Request[ag
 	s.log.InfoContext(ctx, "asset released from quarantine", "library", m.GetLibrary(), "asset", m.GetAssetId(),
 		"reason", reason, "principal", principal(ctx))
 	s.agent.Hub().Changed()
-	return connect.NewResponse(&agentv3.ReleaseQuarantineResponse{}), nil
+	return &agentv3.ReleaseQuarantineResponse{}, nil
 }
 
 // RepairQuarantine implements AgentService.
-func (s *Service) RepairQuarantine(ctx context.Context, req *connect.Request[agentv3.RepairQuarantineRequest]) (*connect.Response[agentv3.RepairQuarantineResponse], error) {
-	m := req.Msg
+func (s *Service) RepairQuarantine(ctx context.Context, req *agentv3.RepairQuarantineRequest) (*agentv3.RepairQuarantineResponse, error) {
+	m := req
 	err := s.db.RequestRepair(ctx, m.GetLibrary(), m.GetAssetId(), s.now())
 	switch {
 	case errors.Is(err, ledger.ErrNotFound):
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
 	case errors.Is(err, ledger.ErrNotQuarantined), errors.Is(err, ledger.ErrRepairInProgress):
-		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err.Error()).WithCause(err)
 	case err != nil:
 		return nil, internal(err)
 	}
@@ -513,29 +513,29 @@ func (s *Service) RepairQuarantine(ctx context.Context, req *connect.Request[age
 	s.log.InfoContext(ctx, "quarantine repair requested", "library", m.GetLibrary(), "asset", m.GetAssetId(),
 		"cycle_started", started, "principal", principal(ctx))
 	s.agent.Hub().Changed()
-	return connect.NewResponse(&agentv3.RepairQuarantineResponse{}), nil
+	return &agentv3.RepairQuarantineResponse{}, nil
 }
 
 // StartSync implements AgentService.
-func (s *Service) StartSync(ctx context.Context, _ *connect.Request[agentv3.StartSyncRequest]) (*connect.Response[agentv3.StartSyncResponse], error) {
+func (s *Service) StartSync(ctx context.Context, _ *agentv3.StartSyncRequest) (*agentv3.StartSyncResponse, error) {
 	started := s.agent.RequestCycle()
 	s.log.InfoContext(ctx, "sync requested", "started", started, "principal", principal(ctx))
-	return connect.NewResponse(&agentv3.StartSyncResponse{Started: started}), nil
+	return &agentv3.StartSyncResponse{Started: started}, nil
 }
 
 // SendTestNotification implements AgentService.
-func (s *Service) SendTestNotification(ctx context.Context, _ *connect.Request[agentv3.SendTestNotificationRequest]) (*connect.Response[agentv3.SendTestNotificationResponse], error) {
+func (s *Service) SendTestNotification(ctx context.Context, _ *agentv3.SendTestNotificationRequest) (*agentv3.SendTestNotificationResponse, error) {
 	if err := s.notify.Send(ctx, notify.TestMsg()); err != nil {
-		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("send test notification: %w", err))
+		return nil, connect.Errorf(connect.CodeUnavailable, "send test notification: %v", err).WithCause(err)
 	}
 	s.log.InfoContext(ctx, "alert sent", "title", notify.TestMsg().Title, "principal", principal(ctx))
-	return connect.NewResponse(&agentv3.SendTestNotificationResponse{}), nil
+	return &agentv3.SendTestNotificationResponse{}, nil
 }
 
 // GetSettings implements AgentService.
-func (s *Service) GetSettings(context.Context, *connect.Request[agentv3.GetSettingsRequest]) (*connect.Response[agentv3.GetSettingsResponse], error) {
+func (s *Service) GetSettings(context.Context, *agentv3.GetSettingsRequest) (*agentv3.GetSettingsResponse, error) {
 	c := s.cfg
-	return connect.NewResponse(&agentv3.GetSettingsResponse{Settings: &agentv3.Settings{
+	return &agentv3.GetSettingsResponse{Settings: &agentv3.Settings{
 		ConfigPath:                       s.configPath,
 		StorageRoot:                      c.Storage.Root,
 		StorageArchiveId:                 c.Storage.ArchiveID,
@@ -567,7 +567,7 @@ func (s *Service) GetSettings(context.Context, *connect.Request[agentv3.GetSetti
 		Cli:                              s.cli,
 		AppleId:                          c.ICloud.AppleID,
 		IncludeHidden:                    *c.ICloud.IncludeHidden,
-	}}), nil
+	}}, nil
 }
 
 // loginCodePurposes maps the API's code purposes to package auth's.
@@ -578,40 +578,44 @@ var loginCodePurposes = map[agentv3.LoginCodePurpose]auth.Purpose{
 
 // CreateLoginCode implements AgentService. Package web only lets bearer-token
 // callers reach it.
-func (s *Service) CreateLoginCode(ctx context.Context, req *connect.Request[agentv3.CreateLoginCodeRequest]) (*connect.Response[agentv3.CreateLoginCodeResponse], error) {
-	purpose, ok := loginCodePurposes[req.Msg.GetPurpose()]
+func (s *Service) CreateLoginCode(ctx context.Context, req *agentv3.CreateLoginCodeRequest) (*agentv3.CreateLoginCodeResponse, error) {
+	purpose, ok := loginCodePurposes[req.GetPurpose()]
 	if !ok {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("a login code needs a purpose: sign-in or pairing"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "a login code needs a purpose: sign-in or pairing")
 	}
 	code, exp, err := s.auth.NewLoginCode(purpose)
 	if err != nil {
 		return nil, internal(err)
 	}
-	s.log.InfoContext(ctx, "login code issued", "purpose", req.Msg.GetPurpose().String(), "expires", exp)
-	return connect.NewResponse(&agentv3.CreateLoginCodeResponse{Code: code, ExpiresAt: timestamppb.New(exp)}), nil
+	s.log.InfoContext(ctx, "login code issued", "purpose", req.GetPurpose().String(), "expires", exp)
+	return &agentv3.CreateLoginCodeResponse{Code: code, ExpiresAt: timestamppb.New(exp)}, nil
 }
 
 // codeError is a refused login code as the API reports it.
 func codeError(err error) error {
 	switch {
 	case errors.Is(err, auth.ErrTooManyAttempts):
-		return connect.NewError(connect.CodeResourceExhausted, err)
+		return connect.NewError(connect.CodeResourceExhausted, err.Error()).WithCause(err)
 	case errors.Is(err, auth.ErrInvalidCode):
-		return connect.NewError(connect.CodePermissionDenied, err)
+		return connect.NewError(connect.CodePermissionDenied, err.Error()).WithCause(err)
 	}
 	return internal(err)
 }
 
 // ExchangeLoginCode implements AgentService.
-func (s *Service) ExchangeLoginCode(ctx context.Context, req *connect.Request[agentv3.ExchangeLoginCodeRequest]) (*connect.Response[agentv3.ExchangeLoginCodeResponse], error) {
-	cookie, err := s.auth.Exchange(req.Msg.GetCode())
+func (s *Service) ExchangeLoginCode(ctx context.Context, req *agentv3.ExchangeLoginCodeRequest) (*agentv3.ExchangeLoginCodeResponse, error) {
+	info, err := callInfo(ctx)
 	if err != nil {
-		s.log.WarnContext(ctx, "sign-in refused", "err", err, "remote", req.Peer().Addr)
+		return nil, err
+	}
+	cookie, err := s.auth.Exchange(req.GetCode())
+	if err != nil {
+		s.log.WarnContext(ctx, "sign-in refused", "err", err, "remote", peer(ctx))
 		return nil, codeError(err)
 	}
-	s.log.InfoContext(ctx, "browser signed in", "remote", req.Peer().Addr)
-	res := connect.NewResponse(&agentv3.ExchangeLoginCodeResponse{})
-	res.Header().Set("Set-Cookie", cookie.String())
+	s.log.InfoContext(ctx, "browser signed in", "remote", peer(ctx))
+	res := &agentv3.ExchangeLoginCodeResponse{}
+	info.ResponseHeader().Set("Set-Cookie", cookie.String())
 	return res, nil
 }
 
@@ -620,17 +624,17 @@ const maxDeviceName = 64
 
 // PairDevice implements AgentService. A new pairing is alerted: a device keeps
 // its access until it is revoked, so the owner hears of every one.
-func (s *Service) PairDevice(ctx context.Context, req *connect.Request[agentv3.PairDeviceRequest]) (*connect.Response[agentv3.PairDeviceResponse], error) {
-	name := strings.TrimSpace(req.Msg.GetName())
+func (s *Service) PairDevice(ctx context.Context, req *agentv3.PairDeviceRequest) (*agentv3.PairDeviceResponse, error) {
+	name := strings.TrimSpace(req.GetName())
 	if n := utf8.RuneCountInString(name); n == 0 || n > maxDeviceName || !utf8.ValidString(name) {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("name must be 1-%d characters", maxDeviceName))
+		return nil, connect.Errorf(connect.CodeInvalidArgument, "name must be 1-%d characters", maxDeviceName)
 	}
-	id, token, err := s.auth.Pair(ctx, req.Msg.GetCode(), name)
+	id, token, err := s.auth.Pair(ctx, req.GetCode(), name)
 	if err != nil {
-		s.log.WarnContext(ctx, "pairing refused", "err", err, "remote", req.Peer().Addr)
+		s.log.WarnContext(ctx, "pairing refused", "err", err, "remote", peer(ctx))
 		return nil, codeError(err)
 	}
-	s.log.InfoContext(ctx, "device paired", "device", id, "name", name, "remote", req.Peer().Addr)
+	s.log.InfoContext(ctx, "device paired", "device", id, "name", name, "remote", peer(ctx))
 	if notifyErr := s.notify.Send(ctx, notify.Msg{
 		Title:    "homecloud: a device was paired",
 		Body:     "A device can now use homecloud until it is revoked. If it was not you, revoke it in Settings → Paired devices.",
@@ -641,11 +645,11 @@ func (s *Service) PairDevice(ctx context.Context, req *connect.Request[agentv3.P
 	} else {
 		s.log.InfoContext(ctx, "alert sent", "title", "homecloud: a device was paired")
 	}
-	return connect.NewResponse(&agentv3.PairDeviceResponse{DeviceId: id, Token: token}), nil
+	return &agentv3.PairDeviceResponse{DeviceId: id, Token: token}, nil
 }
 
 // ListDevices implements AgentService.
-func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[agentv3.ListDevicesRequest]) (*connect.Response[agentv3.ListDevicesResponse], error) {
+func (s *Service) ListDevices(ctx context.Context, _ *agentv3.ListDevicesRequest) (*agentv3.ListDevicesResponse, error) {
 	devices, err := s.db.PairedDevices(ctx)
 	if err != nil {
 		return nil, internal(err)
@@ -656,44 +660,52 @@ func (s *Service) ListDevices(ctx context.Context, _ *connect.Request[agentv3.Li
 			Id: d.ID, Name: d.Name, PairedAt: timestamppb.New(d.PairedAt), LastSeenAt: timestamppb.New(d.LastSeenAt),
 		})
 	}
-	return connect.NewResponse(res), nil
+	return res, nil
 }
 
 // RevokeDevice implements AgentService. The device's open streams and media
 // links stop working too (auth.Valid).
-func (s *Service) RevokeDevice(ctx context.Context, req *connect.Request[agentv3.RevokeDeviceRequest]) (*connect.Response[agentv3.RevokeDeviceResponse], error) {
-	err := s.db.RevokePairedDevice(ctx, req.Msg.GetDeviceId(), s.now())
+func (s *Service) RevokeDevice(ctx context.Context, req *agentv3.RevokeDeviceRequest) (*agentv3.RevokeDeviceResponse, error) {
+	err := s.db.RevokePairedDevice(ctx, req.GetDeviceId(), s.now())
 	if errors.Is(err, ledger.ErrNotFound) {
-		return nil, connect.NewError(connect.CodeNotFound, err)
+		return nil, connect.NewError(connect.CodeNotFound, err.Error()).WithCause(err)
 	}
 	if err != nil {
 		return nil, internal(err)
 	}
-	s.log.InfoContext(ctx, "device revoked", "device", req.Msg.GetDeviceId(), "principal", principal(ctx))
-	return connect.NewResponse(&agentv3.RevokeDeviceResponse{}), nil
+	s.log.InfoContext(ctx, "device revoked", "device", req.GetDeviceId(), "principal", principal(ctx))
+	return &agentv3.RevokeDeviceResponse{}, nil
 }
 
 // SignOut implements AgentService: it ends the calling browser session.
-func (s *Service) SignOut(ctx context.Context, _ *connect.Request[agentv3.SignOutRequest]) (*connect.Response[agentv3.SignOutResponse], error) {
+func (s *Service) SignOut(ctx context.Context, _ *agentv3.SignOutRequest) (*agentv3.SignOutResponse, error) {
+	info, err := callInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
 	p, _ := auth.PrincipalFrom(ctx)
 	if p.Kind != auth.KindSession {
-		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("only a browser session signs out; revoke a paired device instead"))
+		return nil, connect.NewError(connect.CodeFailedPrecondition, "only a browser session signs out; revoke a paired device instead")
 	}
 	s.auth.SignOut(p.ID)
 	s.log.InfoContext(ctx, "browser signed out", "principal", p)
-	res := connect.NewResponse(&agentv3.SignOutResponse{})
-	res.Header().Set("Set-Cookie", s.auth.ClearedCookie().String())
+	res := &agentv3.SignOutResponse{}
+	info.ResponseHeader().Set("Set-Cookie", s.auth.ClearedCookie().String())
 	return res, nil
 }
 
 // SignOutBrowsers implements AgentService: it ends every browser session,
 // the caller's too when it is one.
-func (s *Service) SignOutBrowsers(ctx context.Context, _ *connect.Request[agentv3.SignOutBrowsersRequest]) (*connect.Response[agentv3.SignOutBrowsersResponse], error) {
+func (s *Service) SignOutBrowsers(ctx context.Context, _ *agentv3.SignOutBrowsersRequest) (*agentv3.SignOutBrowsersResponse, error) {
+	info, err := callInfo(ctx)
+	if err != nil {
+		return nil, err
+	}
 	n := s.auth.SignOutAll()
 	s.log.InfoContext(ctx, "all browsers signed out", "sessions", n, "principal", principal(ctx))
-	res := connect.NewResponse(&agentv3.SignOutBrowsersResponse{Ended: int32(n)}) //nolint:gosec // sessions number a few
+	res := &agentv3.SignOutBrowsersResponse{Ended: int32(n)} //nolint:gosec // sessions number a few
 	if p, _ := auth.PrincipalFrom(ctx); p.Kind == auth.KindSession {
-		res.Header().Set("Set-Cookie", s.auth.ClearedCookie().String())
+		info.ResponseHeader().Set("Set-Cookie", s.auth.ClearedCookie().String())
 	}
 	return res, nil
 }
@@ -704,20 +716,38 @@ func principal(ctx context.Context) auth.Principal {
 	return p
 }
 
+// callInfo is the server-side call information in ctx (response headers,
+// the peer); every call the API server dispatches carries one.
+func callInfo(ctx context.Context) (*connect.CallInfo, error) {
+	info, ok := connect.CallInfoForServerContext(ctx)
+	if !ok {
+		return nil, connect.NewError(connect.CodeInternal, "no call information")
+	}
+	return info, nil
+}
+
+// peer is the network address of the caller in ctx, as logs name it.
+func peer(ctx context.Context) string {
+	if info, ok := connect.CallInfoForServerContext(ctx); ok {
+		return info.PeerAddr
+	}
+	return ""
+}
+
 func internal(err error) error {
-	return connect.NewError(connect.CodeInternal, err)
+	return connect.NewError(connect.CodeInternal, err.Error()).WithCause(err)
 }
 
 // ListAssets implements AgentService.
-func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv3.ListAssetsRequest]) (*connect.Response[agentv3.ListAssetsResponse], error) {
-	m := req.Msg
+func (s *Service) ListAssets(ctx context.Context, req *agentv3.ListAssetsRequest) (*agentv3.ListAssetsResponse, error) {
+	m := req
 	size, err := pageSize(m.GetPageSize(), defaultLibraryPage)
 	if err != nil {
 		return nil, err
 	}
 	q := ledger.LibraryQuery{HiddenDir: s.hiddenDir, Hidden: m.GetHidden(), Limit: size}
 	if q.Kind, err = assetKindFilter(m.GetKind()); err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		return nil, connect.NewError(connect.CodeInvalidArgument, err.Error()).WithCause(err)
 	}
 	if q.After, err = libraryCursor(m.GetPageToken()); err != nil {
 		return nil, err
@@ -741,7 +771,7 @@ func (s *Service) ListAssets(ctx context.Context, req *connect.Request[agentv3.L
 			return nil, err
 		}
 	}
-	return connect.NewResponse(res), nil
+	return res, nil
 }
 
 // libraryCursor decodes a page token of the library's order; nil for the first page.
@@ -751,11 +781,11 @@ func libraryCursor(token string) (*ledger.LibraryCursor, error) {
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "malformed page_token")
 	}
 	c, err := ledger.DecodeCursor(raw)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("malformed page_token"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "malformed page_token")
 	}
 	return &c, nil
 }
@@ -780,16 +810,16 @@ func (s *Service) safeToDelete(ctx context.Context) (app.SafeToDelete, error) {
 }
 
 // GetSafeToDelete implements AgentService.
-func (s *Service) GetSafeToDelete(ctx context.Context, req *connect.Request[agentv3.GetSafeToDeleteRequest]) (*connect.Response[agentv3.GetSafeToDeleteResponse], error) {
-	zone := req.Msg.GetTimeZone()
+func (s *Service) GetSafeToDelete(ctx context.Context, req *agentv3.GetSafeToDeleteRequest) (*agentv3.GetSafeToDeleteResponse, error) {
+	zone := req.GetTimeZone()
 	// LoadLocation reads "" as UTC and "Local" as the agent's own zone; the
 	// months must be the viewer's.
 	if zone == "" || zone == "Local" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("time_zone must name an IANA time zone"))
+		return nil, connect.NewError(connect.CodeInvalidArgument, "time_zone must name an IANA time zone")
 	}
 	loc, err := time.LoadLocation(zone)
 	if err != nil {
-		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("time_zone: %w", err))
+		return nil, connect.Errorf(connect.CodeInvalidArgument, "time_zone: %v", err).WithCause(err)
 	}
 	r, err := s.safeToDelete(ctx)
 	if err != nil {
@@ -811,13 +841,13 @@ func (s *Service) GetSafeToDelete(ctx context.Context, req *connect.Request[agen
 			Assets: int64(m.Assets), Bytes: m.Bytes,
 		})
 	}
-	return connect.NewResponse(&agentv3.GetSafeToDeleteResponse{Report: out}), nil
+	return &agentv3.GetSafeToDeleteResponse{Report: out}, nil
 }
 
 // ListSafeToDelete implements AgentService. Each page judges the archive
 // again and continues after the last item of the previous one.
-func (s *Service) ListSafeToDelete(ctx context.Context, req *connect.Request[agentv3.ListSafeToDeleteRequest]) (*connect.Response[agentv3.ListSafeToDeleteResponse], error) {
-	m := req.Msg
+func (s *Service) ListSafeToDelete(ctx context.Context, req *agentv3.ListSafeToDeleteRequest) (*agentv3.ListSafeToDeleteResponse, error) {
+	m := req
 	size, err := pageSize(m.GetPageSize(), defaultLibraryPage)
 	if err != nil {
 		return nil, err
@@ -861,7 +891,7 @@ func (s *Service) ListSafeToDelete(ctx context.Context, req *connect.Request[age
 			return nil, err
 		}
 	}
-	return connect.NewResponse(res), nil
+	return res, nil
 }
 
 func (s *Service) libraryItem(p auth.Principal, a ledger.LibraryAsset) (*agentv3.LibraryItem, error) {

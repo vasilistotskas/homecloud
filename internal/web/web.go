@@ -28,7 +28,8 @@ import (
 	"sync"
 	"time"
 
-	"connectrpc.com/connect"
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
 	connectcors "connectrpc.com/cors"
 
 	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
@@ -116,13 +117,16 @@ func Handler(o Options) (http.Handler, error) {
 		}
 	}
 
-	// No request compression: no client sends any, and a small compressed
-	// body could make the agent inflate a large one before anyone signed in.
-	apiPath, apiHandler := agentv3connect.NewAgentServiceHandler(o.Service,
-		connect.WithReadMaxBytes(maxRequestBytes), connect.WithCompression("gzip", nil, nil),
-		connect.WithInterceptors(faults{log: o.Log}))
+	api := connect.NewServer(faults(o.Log))
+	agentv3connect.RegisterAgentServiceHandler(api, o.Service)
 	mux := http.NewServeMux()
-	mux.Handle(apiPath, http.MaxBytesHandler(authenticate(o.Auth, csrf, signIn, browser, o.Log, apiHandler), maxRequestBytes))
+	// Every API route, the catch-all for unknown methods included, is capped
+	// and authenticated. No compression: no client sends any, and a small
+	// compressed body could make the agent inflate a large one before anyone
+	// signed in.
+	connecthttp.Mount(guardedMux{mux: mux, wrap: func(h http.Handler) http.Handler {
+		return http.MaxBytesHandler(authenticate(o.Auth, csrf, signIn, browser, o.Log, h), maxRequestBytes)
+	}}, api, connecthttp.WithReadMaxBytes(maxRequestBytes), connecthttp.WithCompressors())
 	app := serveApp(o.App)
 	mux.Handle("GET /{$}", toBrowserAddr(o.Listen, browser, app))
 	mux.Handle("GET /assets/", app)
@@ -226,9 +230,9 @@ func secureHeaders(next http.Handler) http.Handler {
 func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, signIn []string, browser string,
 	log *slog.Logger, next http.Handler,
 ) http.Handler {
-	errs := connect.NewErrorWriter()
+	errs := connecthttp.NewErrorWriter()
 	deny := func(w http.ResponseWriter, r *http.Request, code connect.Code, msg string) {
-		if err := errs.Write(w, r, connect.NewError(code, errors.New(msg))); err != nil {
+		if err := errs.Write(w, r, connect.NewError(code, msg)); err != nil {
 			http.Error(w, msg, http.StatusInternalServerError)
 		}
 	}
@@ -282,6 +286,16 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, signI
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	})
+}
+
+// guardedMux registers each route connecthttp.Mount hands it behind wrap.
+type guardedMux struct {
+	mux  *http.ServeMux
+	wrap func(http.Handler) http.Handler
+}
+
+func (g guardedMux) Handle(pattern string, h http.Handler) {
+	g.mux.Handle(pattern, g.wrap(h))
 }
 
 // Serve serves h on ln until ctx ends. Streaming responses (WatchOverview) are
