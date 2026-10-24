@@ -30,6 +30,8 @@ import {
   CloudArchiveRegular,
   HardDriveRegular,
   HeartPulseRegular,
+  HistoryRegular,
+  ImageOffRegular,
   KeyRegular,
   PhoneRegular,
   PlugDisconnectedRegular,
@@ -42,6 +44,7 @@ import { useOverview } from "../api/overviewContext";
 import { useStartSync } from "../api/sync";
 import { usePlatform } from "../app/platformContext";
 import { href, navigate } from "../app/router";
+import { today, viewerTimeZone } from "../calendar";
 import { CommandDialog, type CommandState } from "../components/CommandDialog";
 import { LoadError } from "../components/LoadError";
 import {
@@ -78,6 +81,7 @@ import {
   type Overview,
   type Settings,
 } from "../gen/homecloud/agent/v3/agent_pb";
+import { onThisDayView } from "./libraryView";
 
 const useStyles = makeStyles({
   hero: {
@@ -115,6 +119,28 @@ const useStyles = makeStyles({
     gap: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalL}`,
   },
   muted: { color: tokens.colorNeutralForeground3 },
+  memories: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))",
+    gap: tokens.spacingHorizontalS,
+  },
+  memory: {
+    display: "flex",
+    flexDirection: "column",
+    gap: tokens.spacingVerticalXXS,
+    color: tokens.colorNeutralForeground2,
+    textDecorationLine: "none",
+  },
+  memoryImage: {
+    aspectRatio: "1",
+    width: "100%",
+    objectFit: "cover",
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground5,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   section: { display: "flex", flexDirection: "column", gap: tokens.spacingVerticalXS },
   sectionHeader: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS, flexWrap: "wrap" },
   bar: {
@@ -201,6 +227,7 @@ export function OverviewPage() {
         <IPhoneBackupCard overview={overview} settings={env.settings} />
         <ICloudDriveCard overview={overview} env={env} />
       </div>
+      <OnThisDayCard />
       <RecentSyncs lastCycleId={overview.lastCycle?.id} />
     </Page>
   );
@@ -783,6 +810,64 @@ function RecentSyncs({ lastCycleId }: { lastCycleId: bigint | undefined }) {
       </div>
       {runs.isError && <LoadError what="recent syncs" error={runs.error} onRetry={() => void runs.refetch()} />}
       {runs.data?.runs.length === 0 && <Text className={table.muted}>No syncs yet.</Text>}
+    </Card>
+  );
+}
+
+/** How many of the photos taken on this day in earlier years the overview shows. */
+const onThisDayPreview = 6;
+
+/** A few photos taken on this day in earlier years; nothing while there are none. */
+function OnThisDayCard() {
+  const styles = useStyles();
+  const platform = usePlatform();
+  const q = useQuery(AgentService.method.listAssets, {
+    pageSize: onThisDayPreview,
+    onThisDay: today(),
+    timeZone: viewerTimeZone,
+  });
+  if (q.isPending || (q.isSuccess && q.data.items.length === 0)) {
+    return null;
+  }
+  const all = href("/library", { view: onThisDayView });
+  return (
+    <Card>
+      <CardHeader
+        image={<HistoryRegular fontSize={20} />}
+        header={<Subtitle2 as="h2">On this day</Subtitle2>}
+        action={<Link href={all}>See all</Link>}
+      />
+      {q.isError ? (
+        <LoadError what="this day in earlier years" error={q.error} onRetry={() => void q.refetch()} />
+      ) : (
+        <div className={styles.memories}>
+          {q.data.items.map((item) => {
+            const year = toDate(item.createdAt)?.getFullYear();
+            return (
+              <a
+                key={`${item.asset?.library ?? ""}/${item.asset?.assetId ?? ""}`}
+                href={all}
+                className={styles.memory}
+                aria-label={`${item.asset?.filename ?? "Item"}, ${String(year ?? "date unknown")}`}
+              >
+                {item.thumbnailUrl === "" ? (
+                  <span className={styles.memoryImage}>
+                    <ImageOffRegular fontSize={24} aria-hidden />
+                  </span>
+                ) : (
+                  <img
+                    className={styles.memoryImage}
+                    src={platform.mediaUrl(item.thumbnailUrl)}
+                    alt=""
+                    loading="lazy"
+                  />
+                )}
+                <Caption1>{year}</Caption1>
+              </a>
+            );
+          })}
+        </div>
+      )}
     </Card>
   );
 }

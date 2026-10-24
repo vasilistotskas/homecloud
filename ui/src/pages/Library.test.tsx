@@ -1,5 +1,5 @@
 import { create } from "@bufbuild/protobuf";
-import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { timestampDate, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { createRouterTransport } from "@connectrpc/connect";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -55,6 +55,7 @@ describe("Library", () => {
                 ],
               };
         },
+        listCaptureMonths: () => ({}),
         getAsset: () => create(GetAssetResponseSchema),
       });
     });
@@ -127,6 +128,92 @@ describe("Library", () => {
     expect(await screen.findByRole("menuitemradio", { name: "Compact" })).toHaveAttribute("aria-checked", "true");
   });
 
+  it("shows the photos taken on this day in earlier years, by year, from a link", async () => {
+    const requests: { day: string; zone: string }[] = [];
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { archive: { files: 3n, bytes: 1024n } }) };
+          await new Promise(() => undefined);
+        },
+        listAssets: (req) => {
+          const d = req.onThisDay;
+          requests.push({ day: d === undefined ? "" : `${d.year}-${d.month}-${d.day}`, zone: req.timeZone });
+          return d === undefined
+            ? { items: [item("NEW", new Date(2026, 9, 3), AssetKind.PHOTO)] }
+            : {
+                items: [
+                  item("Y24", new Date(2024, d.month - 1, d.day), AssetKind.PHOTO),
+                  item("Y22", new Date(2022, d.month - 1, d.day), AssetKind.VIDEO),
+                ],
+              };
+        },
+        listCaptureMonths: () => ({}),
+        getAsset: () => create(GetAssetResponseSchema),
+      });
+    });
+    window.location.hash = "#/library?view=on-this-day";
+    render(<App transport={transport} platform={desktopLike} />);
+
+    expect(await screen.findByRole("region", { name: "2024" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "2022" })).toBeInTheDocument();
+    const now = new Date();
+    expect(requests[0]).toEqual({
+      day: `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`,
+      zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    });
+    expect(screen.getByRole("combobox", { name: "Go to month" })).toBeDisabled();
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "On this day" }));
+    expect(await screen.findByRole("button", { name: /NEW.HEIC/ })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#/library");
+  });
+
+  it("starts at the month chosen, from the months that have photos", async () => {
+    const before: (Date | undefined)[] = [];
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, { archive: { files: 3n, bytes: 1024n } }) };
+          await new Promise(() => undefined);
+        },
+        listAssets: (req) => {
+          const t = req.takenBefore === undefined ? undefined : timestampDate(req.takenBefore);
+          before.push(t);
+          return t === undefined
+            ? { items: [item("NEW", new Date(2026, 9, 3), AssetKind.PHOTO)] }
+            : { items: [item("JUNE", new Date(2023, 5, 20), AssetKind.PHOTO)] };
+        },
+        listCaptureMonths: (req) => {
+          expect(req.timeZone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+          return {
+            months: [
+              { year: 2026, month: 10, assets: 1n },
+              { year: 2023, month: 6, assets: 42n },
+            ],
+          };
+        },
+        getAsset: () => create(GetAssetResponseSchema),
+      });
+    });
+    window.location.hash = "#/library";
+    render(<App transport={transport} platform={desktopLike} />);
+    const user = userEvent.setup();
+    expect(await screen.findByRole("button", { name: /NEW.HEIC/ })).toBeInTheDocument();
+
+    const picker = screen.getByRole("combobox", { name: "Go to month" });
+    await waitFor(() => {
+      expect(picker).toBeEnabled();
+    });
+    await user.click(picker);
+    await user.click(await screen.findByRole("option", { name: /June 2023 · 42/ }));
+
+    expect(await screen.findByRole("button", { name: /JUNE.HEIC/ })).toBeInTheDocument();
+    expect(before.at(-1)).toEqual(new Date(2023, 6, 1));
+    expect(window.location.hash).toBe("#/library?month=2023-06");
+    expect(picker).toHaveTextContent("June 2023");
+  });
+
   it("can close and reopen the details panel", async () => {
     window.location.hash = "#/library";
     render(<App transport={library([["A1"]])} platform={desktopLike} />);
@@ -156,6 +243,7 @@ function library(pages: string[][]) {
           nextPageToken: page + 1 < pages.length ? String(page + 1) : "",
         };
       },
+      listCaptureMonths: () => ({}),
       getAsset: () => create(GetAssetResponseSchema),
     });
   });

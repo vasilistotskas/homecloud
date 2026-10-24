@@ -15,6 +15,7 @@ import { CopyRegular, FolderOpenRegular, ImageOffRegular } from "@fluentui/react
 import { useEffect, useRef } from "react";
 
 import { usePlatform } from "../app/platformContext";
+import { viewerTimeZone } from "../calendar";
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { useNotify } from "../components/toast";
@@ -60,8 +61,6 @@ const useStyles = makeStyles({
   sentinel: { height: "1px" },
 });
 
-/** The viewer's time zone: the agent totals the months in it, as this page groups the items. */
-const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 const dayFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
@@ -100,7 +99,7 @@ function byMonth(items: SafeToDeleteItem[]): MonthGroup[] {
 
 export function SafeToDeletePage() {
   const styles = useStyles();
-  const report = useQuery(AgentService.method.getSafeToDelete, { timeZone });
+  const report = useQuery(AgentService.method.getSafeToDelete, { timeZone: viewerTimeZone });
   const r = report.data?.report;
   return (
     <Page

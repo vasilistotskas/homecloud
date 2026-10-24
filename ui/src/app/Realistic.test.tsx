@@ -8,7 +8,10 @@ import { expect, it } from "vitest";
 import {
   AgentService,
   AppleAccountState,
+  AssetKind,
+  AssetState,
   DownloadOutcome,
+  LibraryItemSchema,
   ListRunsResponseSchema,
   OverviewSchema,
   Phase,
@@ -53,8 +56,23 @@ it("renders a realistic overview in StrictMode without looping", async () => {
       },
       getSettings: () => ({ settings: create(SettingsSchema, { syncIntervalSeconds: 3600n }) }),
       listRuns: () => create(ListRunsResponseSchema, { runs: [run] }),
+      listAssets: (req) => {
+        onThisDay.push(req.onThisDay === undefined ? "" : `${req.onThisDay.month}-${req.onThisDay.day}`);
+        return {
+          items: [
+            create(LibraryItemSchema, {
+              asset: { library: "PrimarySync", assetId: "M1", filename: "IMG_0001.HEIC" },
+              kind: AssetKind.PHOTO,
+              createdAt: timestampFromDate(new Date(2023, 5, 20, 12)),
+              state: AssetState.VERIFIED,
+              thumbnailUrl: "/media/thumb/PrimarySync/M1/original?sig=x",
+            }),
+          ],
+        };
+      },
     });
   });
+  const onThisDay: string[] = [];
   render(
     <StrictMode>
       <App transport={transport} platform={browser} />
@@ -62,4 +80,9 @@ it("renders a realistic overview in StrictMode without looping", async () => {
   );
   expect(await screen.findByText("Your archive is complete and verified")).toBeInTheDocument();
   expect(await screen.findByText("Up to date")).toBeInTheDocument();
+  const memory = await screen.findByRole("link", { name: "IMG_0001.HEIC, 2023" });
+  expect(memory.getAttribute("href")).toBe("#/library?view=on-this-day");
+  const now = new Date();
+  expect(onThisDay[0]).toBe(`${now.getMonth() + 1}-${now.getDate()}`);
+  expect(screen.queryByText(/Couldn.t load/)).not.toBeInTheDocument();
 });

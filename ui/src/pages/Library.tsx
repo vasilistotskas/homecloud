@@ -1,3 +1,4 @@
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { useInfiniteQuery, useQuery } from "@connectrpc/connect-query";
 import {
   Badge,
@@ -10,6 +11,7 @@ import {
   DialogSurface,
   DialogTitle,
   DialogTrigger,
+  Dropdown,
   makeStyles,
   Menu,
   MenuGroup,
@@ -21,6 +23,7 @@ import {
   mergeClasses,
   MessageBar,
   MessageBarBody,
+  Option,
   Spinner,
   Subtitle1,
   Subtitle2,
@@ -36,6 +39,7 @@ import {
   DismissRegular,
   EyeOffRegular,
   FolderOpenRegular,
+  HistoryRegular,
   ImageOffRegular,
   InfoRegular,
   LiveRegular,
@@ -48,7 +52,9 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useOverview } from "../api/overviewContext";
 import { narrowWindow } from "../app/breakpoints";
 import { usePlatform } from "../app/platformContext";
+import { navigate, useLocation } from "../app/router";
 import { readStored, storageKeys, writeStored } from "../app/storage";
+import { endOfMonth, monthParam, parseMonthParam, today, viewerTimeZone, type Day } from "../calendar";
 import { LoadError } from "../components/LoadError";
 import { Page } from "../components/Page";
 import { mediaLabel } from "../components/labels";
@@ -56,6 +62,7 @@ import { useNotify } from "../components/toast";
 import { useCopy } from "../components/useCopy";
 import { formatBytes, formatCount, formatWhen, toDate } from "../format";
 import { AgentService, AssetKind, AssetState, type LibraryItem } from "../gen/homecloud/agent/v3/agent_pb";
+import { onThisDayView } from "./libraryView";
 
 const useStyles = makeStyles({
   filtersRow: {
@@ -248,6 +255,7 @@ const kinds = [
 ] as const;
 
 const monthFormat = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+const dayOfYearFormat = new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric" });
 
 const densities = { compact: "Compact", normal: "Normal", spacious: "Spacious" } as const;
 type GridDensity = keyof typeof densities;
@@ -256,12 +264,17 @@ function isDensity(v: unknown): v is GridDensity {
   return typeof v === "string" && Object.hasOwn(densities, v);
 }
 
-/** Groups consecutive items (newest first) by the month they were taken. */
-function byMonth(items: LibraryItem[]): { title: string; items: LibraryItem[] }[] {
+/** Groups consecutive items (newest first) by the month, or the year, they were taken. */
+function byPeriod(items: LibraryItem[], period: "month" | "year"): { title: string; items: LibraryItem[] }[] {
   const groups: { title: string; items: LibraryItem[] }[] = [];
   for (const item of items) {
     const taken = toDate(item.createdAt);
-    const title = taken === undefined ? "Date unknown" : monthFormat.format(taken);
+    const title =
+      taken === undefined
+        ? "Date unknown"
+        : period === "month"
+          ? monthFormat.format(taken)
+          : String(taken.getFullYear());
     const last = groups.at(-1);
     if (last?.title === title) {
       last.items.push(item);
@@ -279,9 +292,29 @@ export function LibraryPage() {
   const [kind, setKind] = useState<AssetKind>(AssetKind.UNSPECIFIED);
   const [hidden, setHidden] = useState(false);
   const [selected, setSelected] = useState<string | undefined>(undefined);
+  // The view and the month to start at live in the address, so a link can open them.
+  const loc = useLocation();
+  const onThisDay = loc.search.get("view") === onThisDayView;
+  const month = onThisDay ? undefined : parseMonthParam(loc.search.get("month"));
+  const day: Day = today();
+  const showView = (search: Record<string, string> | undefined) => {
+    navigate("/library", { replace: true, search });
+    setSelected(undefined);
+  };
+  const months = useQuery(
+    AgentService.method.listCaptureMonths,
+    { kind, hidden, timeZone: viewerTimeZone },
+    { enabled: !onThisDay },
+  );
   const q = useInfiniteQuery(
     AgentService.method.listAssets,
-    { pageToken: "", kind, hidden },
+    {
+      pageToken: "",
+      kind,
+      hidden,
+      ...(onThisDay && { onThisDay: day, timeZone: viewerTimeZone }),
+      ...(month !== undefined && { takenBefore: timestampFromDate(endOfMonth(month.year, month.month)) }),
+    },
     {
       pageParamKey: "pageToken",
       getNextPageParam: (last) => (last.nextPageToken === "" ? undefined : last.nextPageToken),
@@ -370,6 +403,36 @@ export function LibraryPage() {
           >
             Hidden
           </ToggleButton>
+          <ToggleButton
+            icon={<HistoryRegular />}
+            checked={onThisDay}
+            onClick={() => {
+              showView(onThisDay ? undefined : { view: onThisDayView });
+            }}
+          >
+            On this day
+          </ToggleButton>
+          <Dropdown
+            aria-label="Go to month"
+            disabled={onThisDay || !months.isSuccess}
+            value={month === undefined ? "Newest" : monthFormat.format(new Date(month.year, month.month - 1))}
+            selectedOptions={[month === undefined ? "" : monthParam(month.year, month.month)]}
+            onOptionSelect={(_, data) => {
+              showView(
+                data.optionValue === undefined || data.optionValue === "" ? undefined : { month: data.optionValue },
+              );
+            }}
+          >
+            <Option value="">Newest</Option>
+            {(months.data?.months ?? []).map((m) => {
+              const label = monthFormat.format(new Date(m.year, m.month - 1));
+              return (
+                <Option key={monthParam(m.year, m.month)} value={monthParam(m.year, m.month)} text={label}>
+                  {label} · {formatCount(m.assets)}
+                </Option>
+              );
+            })}
+          </Dropdown>
         </div>
         <div className={styles.viewOptions}>
           <ToggleButton
@@ -417,17 +480,24 @@ export function LibraryPage() {
       </div>
       {q.isPending && <Spinner label="Loading the library…" />}
       {q.isError && <LoadError what="the library" error={q.error} onRetry={() => void q.refetch()} />}
+      {months.isError && <LoadError what="the months" error={months.error} onRetry={() => void months.refetch()} />}
       {q.isSuccess && items.length === 0 && (
         <MessageBar intent="info">
           <MessageBarBody>
-            {hidden ? "No hidden photos are archived." : "Nothing here yet. New items appear after the next sync."}
+            {onThisDay
+              ? `Nothing was taken on ${dayOfYearFormat.format(new Date(day.year, day.month - 1, day.day))} in earlier years.`
+              : month !== undefined
+                ? `Nothing was taken in or before ${monthFormat.format(new Date(month.year, month.month - 1))}.`
+                : hidden
+                  ? "No hidden photos are archived."
+                  : "Nothing here yet. New items appear after the next sync."}
           </MessageBarBody>
         </MessageBar>
       )}
       {current !== undefined && (
         <div className={styles.split}>
           <div className={styles.grid} {...arrowKeys}>
-            {byMonth(items).map((group) => (
+            {byPeriod(items, onThisDay ? "year" : "month").map((group) => (
               <section key={group.title} className={styles.month} aria-label={group.title}>
                 <Subtitle2 as="h2">{group.title}</Subtitle2>
                 <div className={mergeClasses(styles.tiles, styles[density])}>
