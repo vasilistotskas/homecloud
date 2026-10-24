@@ -36,6 +36,7 @@ min_free_percent = 15
 apple_id = "someone@example.com"
 include_hidden = true
 request_timeout = "1m"
+quiet_after = "336h"
 
 [kei]
 binary = '@KEI_BINARY@'
@@ -117,7 +118,7 @@ func TestLoadValid(t *testing.T) {
 			ArchiveID:      testArchiveID,
 			MinFreePercent: 15,
 		},
-		ICloud: ICloud{AppleID: "someone@example.com", IncludeHidden: new(true), RequestTimeout: Duration(time.Minute)},
+		ICloud: ICloud{AppleID: "someone@example.com", IncludeHidden: new(true), RequestTimeout: Duration(time.Minute), QuietAfter: Duration(336 * time.Hour)},
 		Kei:    Kei{Binary: testKeiBinary, Version: "0.26.0", Config: testKeiConfig, CheckpointAlertCycles: 3},
 		FFmpeg: FFmpeg{
 			FFprobe: testFFprobeBin, FFmpeg: testFFmpegBin, Version: "9.0.2",
@@ -213,6 +214,8 @@ func TestValidate(t *testing.T) {
 		{"alerts repeat too often", func(c *Config) { c.Notify.RepeatEvery = Duration(time.Minute) }, "notify.repeat_every"},
 		{"no iphone backup dirs", func(c *Config) { c.IPhoneBackup.Dirs = nil }, "iphone_backup.dirs"},
 		{"icloud requests time out too soon", func(c *Config) { c.ICloud.RequestTimeout = Duration(time.Second) }, "icloud.request_timeout"},
+		{"icloud quiet too soon", func(c *Config) { c.ICloud.QuietAfter = Duration(time.Hour) }, "icloud.quiet_after"},
+		{"icloud quiet after more than a year", func(c *Config) { c.ICloud.QuietAfter = Duration(8761 * time.Hour) }, "icloud.quiet_after"},
 		{"probe timeout too long", func(c *Config) { c.FFmpeg.ProbeTimeout = Duration(2 * time.Hour) }, "ffmpeg.probe_timeout"},
 		{"no renderers", func(c *Config) { c.FFmpeg.Renderers = 0 }, "ffmpeg.renderers"},
 		{"render timeout too short", func(c *Config) { c.FFmpeg.RenderTimeout = Duration(time.Second) }, "ffmpeg.render_timeout"},

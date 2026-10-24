@@ -170,6 +170,12 @@ export function SettingsPage() {
           <Text>{formatInterval(s.syncIntervalSeconds)}</Text>
         </Row>
         <Row
+          label="Alert when iCloud Photos goes quiet"
+          detail="When nothing new is added for this long, the phone may have stopped uploading (icloud.quiet_after)"
+        >
+          <Text>{formatSpan(s.icloudQuietAfterSeconds)}</Text>
+        </Row>
+        <Row
           label="Alert when syncs keep re-listing"
           detail="After this many syncs in a row in which the downloader kept its place in iCloud Photos; one is normal (kei.checkpoint_alert_cycles)"
         >

@@ -1,4 +1,5 @@
 import { create } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -13,6 +14,7 @@ import {
   ListRunsResponseSchema,
   OverviewSchema,
   Phase,
+  PhotosActivity,
   RunResult,
   SettingsSchema,
 } from "../gen/homecloud/agent/v3/agent_pb";
@@ -427,6 +429,40 @@ describe("App", () => {
       String.raw`& 'C:\Program Files\homecloud\homecloud.exe' 'icloud' 'login' '--config' 'C:\cfg\config.toml'`,
     );
   });
+
+  it.each([
+    { activity: PhotosActivity.QUIET, shown: true },
+    { activity: PhotosActivity.ACTIVE, shown: false },
+  ])(
+    "warns when iCloud Photos has received nothing new for too long ($activity: $shown)",
+    async ({ activity, shown }) => {
+      const newest = new Date(2026, 3, 17, 9, 50);
+      const transport = createRouterTransport(({ service }) => {
+        service(AgentService, {
+          async *watchOverview() {
+            yield {
+              overview: create(OverviewSchema, {
+                assets: { verified: 10n },
+                icloudPhotos: { newestAddedAt: timestampFromDate(newest), activity },
+              }),
+            };
+            await never();
+          },
+          getSettings: () => ({ settings }),
+          listRuns: () => create(ListRunsResponseSchema),
+        });
+      });
+      render(<App transport={transport} platform={browser} />);
+      expect(await screen.findByText("Newest in iCloud Photos")).toBeInTheDocument();
+      if (shown) {
+        expect(screen.getByText(/^Nothing new in iCloud Photos since/)).toBeInTheDocument();
+        expect(screen.getByText(/iCloud storage isn't full/)).toBeInTheDocument();
+      } else {
+        expect(screen.queryByText(/^Nothing new in iCloud Photos since/)).not.toBeInTheDocument();
+        expect(screen.getByText("Your archive is complete and verified")).toBeInTheDocument();
+      }
+    },
+  );
 
   it.each([
     { blockedCycles: 2n, shown: false },

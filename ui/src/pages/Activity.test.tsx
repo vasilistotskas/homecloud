@@ -15,6 +15,7 @@ import {
   IPhoneBackupState,
   ListRunsResponseSchema,
   OverviewSchema,
+  PhotosActivity,
   QuarantineRepairStep,
   RunKind,
   RunResult,
@@ -220,6 +221,44 @@ describe("Activity", () => {
         "iCloud Drive/c.pdf; the previous copy is kept at D:/Archive/Drive/.versions/20261006T120000Z/iCloud Drive/c.pdf",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("describes iCloud Photos activity events", async () => {
+    const transport = createRouterTransport(({ service }) => {
+      service(AgentService, {
+        async *watchOverview() {
+          yield { overview: create(OverviewSchema, {}) };
+          await never();
+        },
+        getSettings: () => ({ settings: create(SettingsSchema, {}) }),
+        listRuns: () => create(ListRunsResponseSchema),
+        listEvents: (req) =>
+          create(ListEventsResponseSchema, {
+            events: req.kinds.includes(EventKind.PHOTOS_ACTIVITY_CHANGED)
+              ? [
+                  {
+                    id: 8n,
+                    at: { seconds: 1_790_000_000n },
+                    detail: {
+                      case: "photosActivityChanged",
+                      value: {
+                        from: PhotosActivity.ACTIVE,
+                        to: PhotosActivity.QUIET,
+                        newestAddedAt: { seconds: 1_776_419_413n },
+                        quietAfterSeconds: 14n * 24n * 3600n,
+                      },
+                    },
+                  },
+                ]
+              : [],
+          }),
+      });
+    });
+    window.location.hash = "#/activity";
+    render(<App transport={transport} platform={browser} />);
+    await userEvent.setup().click(await screen.findByRole("tab", { name: "Events" }));
+    expect(await screen.findByText("iCloud Photos quiet")).toBeInTheDocument();
+    expect(screen.getByText(/^Nothing was added to iCloud Photos since .*, longer than 2 weeks\./)).toBeInTheDocument();
   });
 
   it("keeps the selected tab in the address", async () => {

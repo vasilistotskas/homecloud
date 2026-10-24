@@ -76,6 +76,13 @@ func (r Report) Troubled() bool {
 		s.EnumerationErrors > 0 || s.EnumerationIncomplete || s.InventoryDropAssets > 0 || s.StateWriteFailures > 0
 }
 
+// ListedCompletely reports whether the sync listed every change in iCloud
+// Photos since its checkpoint: whatever was added there is in kei's state.
+func (r Report) ListedCompletely() bool {
+	s := r.Stats
+	return s.EnumerationErrors == 0 && !s.EnumerationIncomplete && s.InventoryDropAssets == 0 && !s.Interrupted
+}
+
 // ReportPath is where kei writes its sync report: next to its configuration.
 func ReportPath(cfg config.Kei) string {
 	return filepath.Join(filepath.Dir(cfg.Config), reportFile)

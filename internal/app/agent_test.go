@@ -224,9 +224,12 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 	n := &recordingNotifier{}
 	cfg := &config.Config{
 		Storage: config.Storage{Root: filepath.Dir(manifest)},
-		ICloud:  config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden, RequestTimeout: config.Duration(time.Minute)},
-		Verify:  config.Verify{Workers: 2},
-		Kei:     config.Kei{Binary: exe, Config: filepath.Join(t.TempDir(), "kei.toml"), CheckpointAlertCycles: 3},
+		ICloud: config.ICloud{
+			AppleID: "someone@example.com", IncludeHidden: &includeHidden, RequestTimeout: config.Duration(time.Minute),
+			QuietAfter: config.Duration(14 * 24 * time.Hour),
+		},
+		Verify: config.Verify{Workers: 2},
+		Kei:    config.Kei{Binary: exe, Config: filepath.Join(t.TempDir(), "kei.toml"), CheckpointAlertCycles: 3},
 		Schedule: config.Schedule{
 			SyncInterval:  config.Duration(time.Hour),
 			ScrubInterval: config.Duration(168 * time.Hour),
@@ -536,6 +539,80 @@ func TestCycleLogsWhatKeiDid(t *testing.T) {
 // kei wrote no report neither counts nor resets that. kei.checkpoint_alert_cycles
 // in a row alert once (then every notify.repeat_every), and a sync that saves
 // the checkpoint resets the count.
+func TestCycleAlertsWhenICloudPhotosGoesQuiet(t *testing.T) {
+	// The fixture's only photo was added to iCloud on 2022-06-03.
+	added := time.Date(2022, 6, 3, 10, 0, 1, 0, time.UTC)
+	clock := added.Add(10 * 24 * time.Hour)
+	agent, notes := newTestAgent(t, fixture(t, false), "0", &clock)
+	ctx := context.Background()
+	quietAlerts := func() int {
+		n := 0
+		for _, m := range notes.msgs {
+			if strings.Contains(m.Title, "no new photos") {
+				n++
+			}
+		}
+		return n
+	}
+	// The report's timestamp is after every cycle below starts, so each one reads it as its own.
+	report := func(listed bool) string {
+		return fmt.Sprintf(`{"version":"3","timestamp":"2023-01-01T00:00:00Z","status":"success","stats":{"assets_seen":1,"enumeration_incomplete":%t}}`, !listed)
+	}
+	cycle := func(syncExit, keiReport string) {
+		t.Helper()
+		t.Setenv("HOMECLOUD_FAKE_KEI_SYNC_EXIT", syncExit)
+		t.Setenv("HOMECLOUD_FAKE_KEI_REPORT", keiReport)
+		_ = agent.Cycle(ctx) // a kei failure fails the cycle; what was judged is what is checked
+	}
+	last := func() ledger.PhotosActivity {
+		t.Helper()
+		a, err := agent.db.LastPhotosActivity(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+
+	cycle("0", report(true))
+	if last() != ledger.PhotosActive || quietAlerts() != 0 {
+		t.Fatalf("10 days after the last addition: %q, %d alerts; want active and none", last(), quietAlerts())
+	}
+
+	clock = added.Add(20 * 24 * time.Hour)
+	cycle("0", report(false))
+	if last() != ledger.PhotosActive || quietAlerts() != 0 {
+		t.Fatalf("a sync that did not list everything judged the library: %q, %d alerts", last(), quietAlerts())
+	}
+	cycle("1", "")
+	if last() != ledger.PhotosActive || quietAlerts() != 0 {
+		t.Fatalf("a failed sync judged the library: %q, %d alerts", last(), quietAlerts())
+	}
+
+	cycle("0", report(true))
+	if last() != ledger.PhotosQuiet || quietAlerts() != 1 {
+		t.Fatalf("20 days after the last addition: %q, %d alerts; want quiet and one alert", last(), quietAlerts())
+	}
+	for _, m := range notes.msgs {
+		if strings.Contains(m.Title, "no new photos") && (!strings.Contains(m.Body, "20 days") || strings.Contains(m.Body, "IMG_0001")) {
+			t.Fatalf("alert = %q; want the days, and no file name", m.Body)
+		}
+	}
+	clock = clock.Add(time.Hour)
+	cycle("0", report(true))
+	if quietAlerts() != 1 {
+		t.Fatalf("an hour later: %d alerts, want the repeat to wait for notify.repeat_every", quietAlerts())
+	}
+	clock = clock.Add(25 * time.Hour)
+	cycle("0", report(true))
+	if quietAlerts() != 2 {
+		t.Fatalf("a day later: %d alerts, want it repeated", quietAlerts())
+	}
+	events, err := agent.db.Events(ctx, ledger.EventQuery{Kinds: []string{ledger.EventPhotosActivityChanged}}, 0, 10)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("events = %v, %v; want active, then quiet", events, err)
+	}
+}
+
 func TestCycleAlertsWhenKeiKeepsItsCheckpoint(t *testing.T) {
 	clock := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
 	agent, notes := newTestAgent(t, fixture(t, false), "0", &clock)

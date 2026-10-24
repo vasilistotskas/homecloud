@@ -41,13 +41,14 @@ import {
   type BadgeColor,
 } from "../components/labels";
 import { runRow } from "../components/runs";
-import { formatBytes, formatCount, formatWhen, toDate } from "../format";
+import { formatBytes, formatCount, formatSpan, formatWhen, toDate } from "../format";
 import {
   AgentService,
   DriveFileChange,
   DriveSyncOutcome,
   EventKind,
   IPhoneBackupCopyChange,
+  PhotosActivity,
   QuarantineRepairStep,
   RunKind,
   type DriveFileEvent,
@@ -388,6 +389,7 @@ const filters = {
       EventKind.QUARANTINE_RELEASED,
       ...repairEventKinds,
       EventKind.DRIVE_HEALTH_CHANGED,
+      EventKind.PHOTOS_ACTIVITY_CHANGED,
       ...iphoneEventKinds,
       ...driveEventKinds,
     ],
@@ -398,6 +400,7 @@ const filters = {
   changed: { label: "Changed in iCloud", kinds: [EventKind.RENDITION_CHANGED] },
   moved: { label: "Moved", kinds: [EventKind.RENDITION_MOVED] },
   drive: { label: "Drive health", kinds: [EventKind.DRIVE_HEALTH_CHANGED] },
+  photos: { label: "iCloud Photos activity", kinds: [EventKind.PHOTOS_ACTIVITY_CHANGED] },
   iphone: { label: "iPhone backups", kinds: iphoneEventKinds },
   icloudDrive: { label: "iCloud Drive", kinds: driveEventKinds },
   states: { label: "State changes", kinds: [EventKind.STATE_CHANGED] },
@@ -461,6 +464,22 @@ function describe(
     case "driveHealthChanged": {
       const b = healthBadge[e.detail.value.to];
       return { kind: "Drive health", color: b.color, text: [b.label, ...e.detail.value.reasons].join(": ") };
+    }
+    case "photosActivityChanged": {
+      const c = e.detail.value;
+      const newest = toDate(c.newestAddedAt);
+      const since = newest === undefined ? "?" : formatWhen(newest);
+      return c.to === PhotosActivity.QUIET
+        ? {
+            kind: "iCloud Photos quiet",
+            color: "warning",
+            text: `Nothing was added to iCloud Photos since ${since}, longer than ${formatSpan(c.quietAfterSeconds)}. The phone may have stopped uploading.`,
+          }
+        : {
+            kind: "iCloud Photos active",
+            color: "success",
+            text: `iCloud Photos receives new items; the newest was added ${since}.`,
+          };
     }
     case "iphoneBackupChanged": {
       const c = e.detail.value;

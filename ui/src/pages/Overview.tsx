@@ -70,6 +70,7 @@ import {
   DriveSyncOutcome,
   HealthState,
   Phase,
+  PhotosActivity,
   RunKind,
   RunResult,
   type DriveHealth,
@@ -406,10 +407,21 @@ function Hero({ overview, env }: { overview: Overview; env: Env }) {
   const driveSync = overview.lastDriveSync?.driveSync;
   const minFree = overview.storage?.minFreePercent ?? 0;
   const damaged = scrub?.scrub?.drive?.damaged ?? 0n;
+  const photos = overview.icloudPhotos;
 
   // Danger outranks every warning; within each, the order is how much the
   // problem threatens the archive.
   const problems: Problem[] = [];
+  if (photos?.activity === PhotosActivity.QUIET) {
+    const newest = toDate(photos.newestAddedAt);
+    problems.push({
+      rank: 68,
+      tone: "warning",
+      icon: <PhoneRegular />,
+      title: `Nothing new in iCloud Photos since ${newest === undefined ? "a while" : formatWhen(newest)}`,
+      body: "Photos taken since then may be only on your phone. On the iPhone, check that iCloud Photos is on (Settings → your name → iCloud → Photos) and that iCloud storage isn't full.",
+    });
+  }
   if (storage === HealthState.FAILING || storage === HealthState.WARNING) {
     problems.push({
       rank: 100,
@@ -727,6 +739,7 @@ function AccountCard({ overview }: { overview: Overview }) {
   const styles = useStyles();
   const badge = accountBadge[overview.appleAccount?.state ?? AppleAccountState.UNSPECIFIED];
   const last = toDate(overview.lastCycle?.finishedAt);
+  const newest = toDate(overview.icloudPhotos?.newestAddedAt);
   return (
     <Card>
       <CardHeader
@@ -741,6 +754,8 @@ function AccountCard({ overview }: { overview: Overview }) {
       <div className={styles.facts}>
         <Text className={styles.muted}>Last sync</Text>
         <Text>{last === undefined ? "Not yet" : formatWhen(last)}</Text>
+        <Text className={styles.muted}>Newest in iCloud Photos</Text>
+        <Text>{newest === undefined ? "Nothing yet" : `Added ${formatWhen(newest)}`}</Text>
       </div>
     </Card>
   );

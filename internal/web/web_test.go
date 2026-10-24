@@ -141,7 +141,7 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 	renderer := thumbs.New(config.FFmpeg{}, filepath.Join(t.TempDir(), "thumbs"), slog.New(slog.DiscardHandler))
 	cfg := &config.Config{
 		Storage:      config.Storage{Root: t.TempDir(), MinFreePercent: 15},
-		ICloud:       config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden},
+		ICloud:       config.ICloud{AppleID: "someone@example.com", IncludeHidden: &includeHidden, QuietAfter: config.Duration(14 * 24 * time.Hour)},
 		Web:          config.Web{Listen: listen, PublicOrigin: &publicOrigin},
 		Schedule:     config.Schedule{SyncInterval: config.Duration(time.Hour)},
 		SafeToDelete: config.SafeToDelete{MinAge: config.Duration(365 * 24 * time.Hour)},
@@ -887,6 +887,48 @@ func TestOnThisDayAndCaptureMonths(t *testing.T) {
 	}
 	if _, err := e.client.ListCaptureMonths(ctx, &agentv3.ListCaptureMonthsRequest{TimeZone: "Local"}); code(err) != connect.CodeInvalidArgument {
 		t.Fatalf("capture months in the agent's own zone = %v, want invalid_argument", err)
+	}
+}
+
+func TestOverviewAndEventsOfICloudPhotosActivity(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	ov, err := e.client.GetOverview(ctx, &agentv3.GetOverviewRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := ov.GetOverview().GetIcloudPhotos(); p.GetNewestAddedAt() != nil ||
+		p.GetActivity() != agentv3.PhotosActivity_PHOTOS_ACTIVITY_UNSPECIFIED {
+		t.Fatalf("empty archive = %v; want no addition, not judged", p)
+	}
+
+	added := t0.Add(-40 * 24 * time.Hour)
+	seedArchived(t, e.db, "OLD", added.Add(-time.Hour), added)
+	if _, _, err = e.db.RecordPhotosActivity(ctx, ledger.PhotosQuiet, added, 14*24*time.Hour, t0); err != nil {
+		t.Fatal(err)
+	}
+	ov, err = e.client.GetOverview(ctx, &agentv3.GetOverviewRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := ov.GetOverview().GetIcloudPhotos(); !p.GetNewestAddedAt().AsTime().Equal(added) ||
+		p.GetActivity() != agentv3.PhotosActivity_PHOTOS_ACTIVITY_QUIET {
+		t.Fatalf("overview = %v; want the addition and quiet", p)
+	}
+
+	events, err := e.client.ListEvents(ctx, &agentv3.ListEventsRequest{Kinds: []agentv3.EventKind{agentv3.EventKind_EVENT_KIND_PHOTOS_ACTIVITY_CHANGED}})
+	if err != nil || len(events.GetEvents()) != 1 {
+		t.Fatalf("events = %v, %v", events, err)
+	}
+	c := events.GetEvents()[0].GetPhotosActivityChanged()
+	if c.GetFrom() != agentv3.PhotosActivity_PHOTOS_ACTIVITY_UNSPECIFIED || c.GetTo() != agentv3.PhotosActivity_PHOTOS_ACTIVITY_QUIET ||
+		!c.GetNewestAddedAt().AsTime().Equal(added) || c.GetQuietAfterSeconds() != 14*24*3600 {
+		t.Fatalf("event = %v", c)
+	}
+
+	settings, err := e.client.GetSettings(ctx, &agentv3.GetSettingsRequest{})
+	if err != nil || settings.GetSettings().GetIcloudQuietAfterSeconds() != 14*24*3600 {
+		t.Fatalf("settings = %v, %v; want icloud.quiet_after", settings, err)
 	}
 }
 

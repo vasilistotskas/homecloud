@@ -27,6 +27,9 @@ const (
 	EventRepairAbandoned = "quarantine_repair_abandoned"
 	// EventDriveHealthChanged: the archive drive's health verdict changed.
 	EventDriveHealthChanged = "drive_health_changed"
+	// EventPhotosActivityChanged: iCloud Photos started or stopped receiving
+	// new items within icloud.quiet_after (ledger.PhotosActivity).
+	EventPhotosActivityChanged = "photos_activity_changed"
 	// EventIPhoneBackupChanged: a device's local backup changed state (subject: its UDID).
 	EventIPhoneBackupChanged = "iphone_backup_changed"
 	// EventIPhoneBackupCopied: a finished backup was copied into the archive.

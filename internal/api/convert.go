@@ -333,6 +333,7 @@ var eventKindNames = map[agentv3.EventKind]string{
 	agentv3.EventKind_EVENT_KIND_QUARANTINED:                 ledger.EventQuarantined,
 	agentv3.EventKind_EVENT_KIND_QUARANTINE_RELEASED:         ledger.EventQuarantineReleased,
 	agentv3.EventKind_EVENT_KIND_DRIVE_HEALTH_CHANGED:        ledger.EventDriveHealthChanged,
+	agentv3.EventKind_EVENT_KIND_PHOTOS_ACTIVITY_CHANGED:     ledger.EventPhotosActivityChanged,
 	agentv3.EventKind_EVENT_KIND_RENDITION_MOVED:             ledger.EventRenditionMoved,
 	agentv3.EventKind_EVENT_KIND_IPHONE_BACKUP_CHANGED:       ledger.EventIPhoneBackupChanged,
 	agentv3.EventKind_EVENT_KIND_DRIVE_FILE_ARCHIVED:         ledger.EventDriveFileArchived,
@@ -384,6 +385,13 @@ var assetStates = map[ledger.AssetState]agentv3.AssetState{
 	ledger.StateDownloaded:  agentv3.AssetState_ASSET_STATE_DOWNLOADED,
 	ledger.StateVerified:    agentv3.AssetState_ASSET_STATE_VERIFIED,
 	ledger.StateQuarantined: agentv3.AssetState_ASSET_STATE_QUARANTINED,
+}
+
+// photosActivities maps the ledger's iCloud Photos activity; "" is not judged yet.
+var photosActivities = map[ledger.PhotosActivity]agentv3.PhotosActivity{
+	"":                  agentv3.PhotosActivity_PHOTOS_ACTIVITY_UNSPECIFIED,
+	ledger.PhotosActive: agentv3.PhotosActivity_PHOTOS_ACTIVITY_ACTIVE,
+	ledger.PhotosQuiet:  agentv3.PhotosActivity_PHOTOS_ACTIVITY_QUIET,
 }
 
 var tiers = map[ledger.Tier]agentv3.Tier{
@@ -494,6 +502,22 @@ func eventToProto(e ledger.Event) (*agentv3.Event, error) {
 				c.To, err = healthState(d.To)
 			}
 			out.Detail = &agentv3.Event_DriveHealthChanged{DriveHealthChanged: c}
+		}
+	case ledger.EventPhotosActivityChanged:
+		var d struct {
+			From              ledger.PhotosActivity `json:"from"`
+			To                ledger.PhotosActivity `json:"to"`
+			NewestAddedAt     time.Time             `json:"newest_added_at"`
+			QuietAfterSeconds int64                 `json:"quiet_after_seconds"`
+		}
+		if err = json.Unmarshal([]byte(e.Detail), &d); err == nil {
+			c := &agentv3.PhotosActivityChanged{
+				NewestAddedAt: timestamppb.New(d.NewestAddedAt), QuietAfterSeconds: d.QuietAfterSeconds,
+			}
+			if c.From, err = lookup(photosActivities, d.From, "photos activity"); err == nil {
+				c.To, err = lookup(photosActivities, d.To, "photos activity")
+			}
+			out.Detail = &agentv3.Event_PhotosActivityChanged{PhotosActivityChanged: c}
 		}
 	case ledger.EventIPhoneBackupChanged:
 		var d struct {

@@ -55,6 +55,9 @@ const (
 	// alertCheckpoint: kei kept its iCloud checkpoint for
 	// kei.checkpoint_alert_cycles syncs in a row.
 	alertCheckpoint = "kei-checkpoint"
+	// alertPhotosQuiet: nothing was added to iCloud Photos for longer than
+	// icloud.quiet_after.
+	alertPhotosQuiet = "photos-quiet"
 )
 
 // CycleRunKind is the ledger run kind of a sync cycle.
@@ -351,6 +354,10 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	case outcome == kei.OutcomePartial, outcome == kei.OutcomeOK:
 		// Failed assets are retried next cycle; download logged which.
 	}
+	// Only a sync that listed every change in iCloud says whether anything was
+	// added there; a failed or partial listing judges nothing.
+	listed := err == nil && (outcome == kei.OutcomeOK || outcome == kei.OutcomePartial) &&
+		report != nil && report.ListedCompletely()
 	switch {
 	case err == nil:
 		rep.KeiOutcome = outcome.String()
@@ -368,6 +375,11 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	}
 	a.log.InfoContext(ctx, "ingested", "assets", ingested.Assets, "new", ingested.NewRenditions, "changed", ingested.ChangedRenditions,
 		"repaired", ingested.Repaired)
+	if listed {
+		if err = a.checkPhotosActivity(ctx); err != nil {
+			errs = append(errs, err)
+		}
+	}
 
 	a.setPhase(PhaseVerifying)
 	verified, err := Verify(ctx, a.cfg, a.db, a.log, a.now, a.hub.Changed)
@@ -400,6 +412,45 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 	}
 	a.preparePreviews(ctx)
 	return rep, errors.Join(errs...)
+}
+
+// checkPhotosActivity judges whether iCloud Photos still receives new items:
+// when its newest addition is older than icloud.quiet_after, the phone may
+// have stopped uploading (iCloud Photos off, iCloud storage full) and new
+// photos may exist only on it. A change is recorded once; the alert repeats
+// while it lasts. An empty library has nothing to fall quiet.
+func (a *Agent) checkPhotosActivity(ctx context.Context) error {
+	newest, err := a.db.NewestAddition(ctx)
+	if err != nil || newest == nil {
+		return err
+	}
+	now, quietAfter := a.now(), a.cfg.ICloud.QuietAfter.Std()
+	state := ledger.PhotosActive
+	if now.Sub(*newest) > quietAfter {
+		state = ledger.PhotosQuiet
+	}
+	previous, changed, err := a.db.RecordPhotosActivity(ctx, state, *newest, quietAfter, now)
+	if err != nil {
+		return err
+	}
+	if changed {
+		level := slog.LevelInfo
+		if state == ledger.PhotosQuiet {
+			level = slog.LevelWarn
+		}
+		a.log.Log(ctx, level, "iCloud Photos activity changed", "from", previous, "to", state, "newest_added_at", *newest)
+	}
+	if state == ledger.PhotosQuiet {
+		days := int(now.Sub(*newest).Hours() / 24)
+		a.alertRepeated(ctx, alertPhotosQuiet, notify.Msg{
+			Title: "homecloud: no new photos in iCloud",
+			Body: fmt.Sprintf("Nothing has been added to iCloud Photos for %d days. Photos taken since then may be only on your phone: "+
+				"check that iCloud Photos is on and that iCloud storage is not full.", days),
+			Priority: notify.PriorityHigh,
+			Tags:     []string{"warning"},
+		})
+	}
+	return nil
 }
 
 // exportSafeToDelete rewrites the safe-to-delete report at the archive root,

@@ -63,6 +63,10 @@ type ICloud struct {
 	// RequestTimeout bounds one call of homecloud's own iCloud client (sign-in
 	// and iCloud Drive listing); downloads are bounded by drive.stall_timeout.
 	RequestTimeout Duration `toml:"request_timeout"`
+	// QuietAfter is how long iCloud Photos may receive nothing new before the
+	// agent alerts: the phone may have stopped uploading (iCloud Photos off,
+	// iCloud storage full), leaving new photos only on the phone.
+	QuietAfter Duration `toml:"quiet_after"`
 }
 
 // Kei pins the kei downloader. homecloud generates kei's configuration at
@@ -348,6 +352,9 @@ func (c *Config) Validate() error {
 	}
 	if t := c.ICloud.RequestTimeout.Std(); t < 10*time.Second || t > 10*time.Minute {
 		add("icloud.request_timeout must be between 10s and 10m, got %s", t)
+	}
+	if q := c.ICloud.QuietAfter.Std(); q < 24*time.Hour || q > 8760*time.Hour {
+		add("icloud.quiet_after must be between 24h and 8760h, got %s", q)
 	}
 
 	type field struct{ key, value string }

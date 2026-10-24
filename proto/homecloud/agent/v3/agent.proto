@@ -146,6 +146,8 @@ message Overview {
   // The downloader's iCloud checkpoint as of the latest cycle in which it
   // wrote a report; absent before the first.
   DownloaderCheckpoint downloader_checkpoint = 13;
+  // Whether iCloud Photos keeps receiving new items.
+  ICloudPhotos icloud_photos = 14;
 }
 
 // ICloudDrive is the iCloud Drive archive and homecloud's iCloud session.
@@ -621,6 +623,7 @@ message Event {
     DriveFileEvent drive_file = 11;
     IPhoneBackupCopyEvent iphone_backup_copy = 12;
     QuarantineRepairEvent quarantine_repair = 13;
+    PhotosActivityChanged photos_activity_changed = 14;
   }
 }
 
@@ -648,6 +651,7 @@ enum EventKind {
   EVENT_KIND_RENDITION_SET_ASIDE = 20;
   EVENT_KIND_QUARANTINE_REPAIRED = 21;
   EVENT_KIND_QUARANTINE_REPAIR_ABANDONED = 22;
+  EVENT_KIND_PHOTOS_ACTIVITY_CHANGED = 23;
 }
 
 // QuarantineRepairEvent is a step of the repair of a quarantined asset.
@@ -797,6 +801,36 @@ message DriveHealthChanged {
   HealthState from = 1;
   HealthState to = 2;
   repeated string reasons = 3;
+}
+
+// PhotosActivityChanged: iCloud Photos started or stopped receiving new items
+// within quiet_after_seconds (icloud.quiet_after).
+message PhotosActivityChanged {
+  PhotosActivity from = 1;
+  PhotosActivity to = 2;
+  // When the newest item was added to iCloud Photos at that check.
+  google.protobuf.Timestamp newest_added_at = 3;
+  int64 quiet_after_seconds = 4;
+}
+
+enum PhotosActivity {
+  // Not judged yet: no sync has listed the whole library since the agent
+  // started recording it.
+  PHOTOS_ACTIVITY_UNSPECIFIED = 0;
+  // An item was added within icloud.quiet_after.
+  PHOTOS_ACTIVITY_ACTIVE = 1;
+  // Nothing was added for longer than icloud.quiet_after: the phone may have
+  // stopped uploading (iCloud Photos off, iCloud storage full).
+  PHOTOS_ACTIVITY_QUIET = 2;
+}
+
+// ICloudPhotos is whether iCloud Photos keeps receiving new items.
+message ICloudPhotos {
+  // When the newest archived item was added to iCloud Photos; absent before
+  // the first one.
+  google.protobuf.Timestamp newest_added_at = 1;
+  // As judged after the latest sync that listed the whole library.
+  PhotosActivity activity = 2;
 }
 
 enum AssetState {
@@ -1136,6 +1170,8 @@ message Settings {
   // How long an item must have been in iCloud Photos before the
   // safe-to-delete report lists it.
   int64 safe_to_delete_min_age_seconds = 31;
+  // How long iCloud Photos may receive nothing new before the agent alerts.
+  int64 icloud_quiet_after_seconds = 32;
 }
 
 // ToolPin is an external tool and the exact version homecloud requires.

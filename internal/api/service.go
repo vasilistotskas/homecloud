@@ -67,6 +67,8 @@ type Ledger interface {
 	LibraryPage(ctx context.Context, q ledger.LibraryQuery) ([]ledger.LibraryAsset, error)
 	CaptureTimes(ctx context.Context, f ledger.LibraryFilter) ([]time.Time, int, error)
 	FirstCapture(ctx context.Context) (*time.Time, error)
+	NewestAddition(ctx context.Context) (*time.Time, error)
+	LastPhotosActivity(ctx context.Context) (ledger.PhotosActivity, error)
 	EachArchivedAsset(ctx context.Context, fn func(ledger.ArchivedAsset) error) error
 }
 
@@ -266,6 +268,9 @@ func (s *Service) overview(ctx context.Context, st app.Status) (*agentv3.Overvie
 	if ov.StorageHealth, err = storageHealthToProto(st.Storage); err != nil {
 		return nil, internal(err)
 	}
+	if ov.IcloudPhotos, err = s.icloudPhotos(ctx); err != nil {
+		return nil, err
+	}
 	if ov.LastCycle, err = s.lastRun(ctx, app.CycleRunKind); err != nil {
 		return nil, err
 	}
@@ -348,6 +353,28 @@ func (s *Service) lastRun(ctx context.Context, kind string) (*agentv3.Run, error
 		return nil, internal(err)
 	}
 	return run, nil
+}
+
+// icloudPhotos is iCloud Photos' newest addition and its activity as the
+// agent last judged it.
+func (s *Service) icloudPhotos(ctx context.Context) (*agentv3.ICloudPhotos, error) {
+	newest, err := s.db.NewestAddition(ctx)
+	if err != nil {
+		return nil, internal(err)
+	}
+	last, err := s.db.LastPhotosActivity(ctx)
+	if err != nil {
+		return nil, internal(err)
+	}
+	activity, err := lookup(photosActivities, last, "photos activity")
+	if err != nil {
+		return nil, internal(err)
+	}
+	out := &agentv3.ICloudPhotos{Activity: activity}
+	if newest != nil {
+		out.NewestAddedAt = timestamppb.New(*newest)
+	}
+	return out, nil
 }
 
 // archiveSpace returns the archive volume's space, or FailedPrecondition when
@@ -546,6 +573,7 @@ func (s *Service) GetSettings(context.Context, *agentv3.GetSettingsRequest) (*ag
 		DownloaderConfig:                 c.Kei.Config,
 		DownloaderCheckpointAlertCycles:  int32(c.Kei.CheckpointAlertCycles), //nolint:gosec // validated 2..100
 		SafeToDeleteMinAgeSeconds:        int64(c.SafeToDelete.MinAge.Std().Seconds()),
+		IcloudQuietAfterSeconds:          int64(c.ICloud.QuietAfter.Std().Seconds()),
 		VideoProbe:                       &agentv3.ToolPin{Binary: c.FFmpeg.FFprobe, Version: c.FFmpeg.Version},
 		Thumbnailer:                      &agentv3.ToolPin{Binary: c.FFmpeg.FFmpeg, Version: c.FFmpeg.Version},
 		Listen:                           c.Web.Listen,
