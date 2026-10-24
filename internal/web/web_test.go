@@ -388,9 +388,11 @@ func TestPairedDevice(t *testing.T) {
 func origin(o string) connect.ClientInterceptor {
 	return func(next connect.ClientFunc) connect.ClientFunc {
 		return func(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
-			if info, ok := connect.CallInfoForClientContext(ctx); ok {
-				info.RequestHeader().Set("Origin", o)
+			info, ok := connect.CallInfoForClientContext(ctx)
+			if !ok {
+				return nil, connect.NewError(connect.CodeInternal, "no call information to carry the origin")
 			}
+			info.RequestHeader().Set("Origin", o)
 			return next(ctx, spec)
 		}
 	}

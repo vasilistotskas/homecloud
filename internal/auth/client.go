@@ -13,10 +13,12 @@ func Bearer(token string) connect.ClientInterceptor {
 	return func(next connect.ClientFunc) connect.ClientFunc {
 		return func(ctx context.Context, spec connect.Spec) (connect.ClientStream, error) {
 			// connect.Client attaches a CallInfo to every call before its
-			// interceptors run.
-			if info, ok := connect.CallInfoForClientContext(ctx); ok {
-				info.RequestHeader().Set("Authorization", header)
+			// interceptors run; without one the token could not be sent.
+			info, ok := connect.CallInfoForClientContext(ctx)
+			if !ok {
+				return nil, connect.NewError(connect.CodeInternal, "no call information to carry the bearer token")
 			}
+			info.RequestHeader().Set("Authorization", header)
 			return next(ctx, spec)
 		}
 	}
