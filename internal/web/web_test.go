@@ -52,17 +52,27 @@ func (f *fakeAgent) CheckArchive() error { return f.archive }
 
 func (f *fakeAgent) ICloudSignedInAt() (time.Time, error) { return f.signedIn, nil }
 
-// notes records the alerts sent.
+// notes records the alerts sent, or fails each send with fail.
 type notes struct {
 	mu   sync.Mutex
 	msgs []notify.Msg
+	fail error
 }
 
 func (n *notes) Send(_ context.Context, m notify.Msg) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.fail != nil {
+		return n.fail
+	}
 	n.msgs = append(n.msgs, m)
 	return nil
+}
+
+func (n *notes) failWith(err error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.fail = err
 }
 
 func (n *notes) sent() []notify.Msg {
@@ -819,6 +829,68 @@ func TestLibraryAndSignedThumbnails(t *testing.T) {
 	}
 	if status, _, _ := get(t, e, strings.Split(item.GetThumbnailUrl(), "?")[0], ""); status != http.StatusForbidden {
 		t.Fatalf("unsigned thumbnail = %d", status)
+	}
+}
+
+// TestErrorsReachTheAppInTheAgentsWords pins what the app shows for each kind
+// of failure (LoadError, the toasts, the pairing form): the code and the
+// agent's own message. Only a *connect.Error a handler writes keeps its
+// message on the wire.
+func TestErrorsReachTheAppInTheAgentsWords(t *testing.T) {
+	e := setup(t)
+	ctx := context.Background()
+	seed(t, e.db, "V", false)
+	anon := agentv3connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(http.DefaultClient, e.url)))
+	cases := []struct {
+		name string
+		call func() error
+		code connect.Code
+		msg  string
+	}{
+		{"refused by the web layer", func() error {
+			_, err := anon.GetSettings(ctx, &agentv3.GetSettingsRequest{})
+			return err
+		}, connect.CodeUnauthenticated, "missing or invalid credentials"},
+		{"a bad argument", func() error {
+			_, err := e.client.ListRuns(ctx, &agentv3.ListRunsRequest{Kind: agentv3.RunKind_RUN_KIND_CYCLE, PageToken: "!"})
+			return err
+		}, connect.CodeInvalidArgument, "malformed page_token"},
+		{"not found", func() error {
+			_, err := e.client.GetAsset(ctx, &agentv3.GetAssetRequest{Library: "PrimarySync", AssetId: "nope"})
+			return err
+		}, connect.CodeNotFound, "asset PrimarySync/nope: not found"},
+		{"a precondition", func() error {
+			_, err := e.client.ReleaseQuarantine(ctx, &agentv3.ReleaseQuarantineRequest{Library: "PrimarySync", AssetId: "V", Reason: "fine"})
+			return err
+		}, connect.CodeFailedPrecondition, "release quarantine: asset PrimarySync/V: asset is not quarantined"},
+		{"a refused pairing code", func() error {
+			_, err := anon.PairDevice(ctx, &agentv3.PairDeviceRequest{Code: "ABCD-EFGH", Name: "Laptop"})
+			return err
+		}, connect.CodePermissionDenied, auth.ErrInvalidCode.Error()},
+		{"a service the agent depends on", func() error {
+			e.notes.failWith(errors.New("ntfy answered 502"))
+			_, err := e.client.SendTestNotification(ctx, &agentv3.SendTestNotificationRequest{})
+			return err
+		}, connect.CodeUnavailable, "send test notification: ntfy answered 502"},
+		{"the agent's own failure", func() error {
+			if err := e.db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			_, err := e.client.ListRuns(ctx, &agentv3.ListRunsRequest{Kind: agentv3.RunKind_RUN_KIND_CYCLE})
+			return err
+		}, connect.CodeInternal, ""},
+	}
+	for _, c := range cases {
+		err := c.call()
+		ce, ok := errors.AsType[*connect.Error](err)
+		if !ok || ce.Code() != c.code {
+			t.Fatalf("%s: %v, want %v", c.name, err, c.code)
+		}
+		// An internal failure's message is the ledger's own text, which the
+		// test cannot spell; it must not arrive empty.
+		if c.msg == "" && ce.Message() == "" || c.msg != "" && ce.Message() != c.msg {
+			t.Fatalf("%s: message %q, want %q", c.name, ce.Message(), c.msg)
+		}
 	}
 }
 
