@@ -327,6 +327,8 @@ enum Phase {
   PHASE_CHECKING_IPHONE_BACKUPS = 8;
   // Archiving new and changed iCloud Drive files.
   PHASE_SYNCING_DRIVE = 9;
+  // Stacking each edit over its original in the viewer (Immich).
+  PHASE_UPDATING_VIEWER = 10;
 }
 
 // Run is one recorded job execution.

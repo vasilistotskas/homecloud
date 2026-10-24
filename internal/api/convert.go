@@ -91,6 +91,8 @@ func phase(p app.Phase) agentv3.Phase {
 		return agentv3.Phase_PHASE_VERIFYING
 	case app.PhasePreparingPreviews:
 		return agentv3.Phase_PHASE_PREPARING_PREVIEWS
+	case app.PhaseUpdatingViewer:
+		return agentv3.Phase_PHASE_UPDATING_VIEWER
 	case app.PhaseCheckingArchive:
 		return agentv3.Phase_PHASE_CHECKING_ARCHIVE
 	case app.PhaseBackingUpLedger:

@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -39,6 +40,7 @@ type Config struct {
 	DriveHealth  DriveHealth  `toml:"drive_health"`
 	Smartctl     Smartctl     `toml:"smartctl"`
 	SafeToDelete SafeToDelete `toml:"safe_to_delete"`
+	Viewer       Viewer       `toml:"viewer"`
 }
 
 // Storage describes the archive.
@@ -245,6 +247,22 @@ type SafeToDelete struct {
 	// MinAge is how long an item must have been in iCloud Photos before the
 	// report lists it, so recent photos stay on the owner's devices.
 	MinAge Duration `toml:"min_age"`
+}
+
+// Viewer connects the agent to the optional viewer: Immich, reading the
+// archive's Photos/ (README, "The viewer"). Each cycle the agent stacks every
+// edit over its original there, which Immich cannot pair by itself. Absent
+// when there is no viewer. Its API key is kept apart from this file, in the
+// per-user state directory (homecloud viewer key --set).
+type Viewer struct {
+	// URL is Immich's origin as the agent reaches it, such as
+	// http://immich-server:2283 next to it on the NAS.
+	URL string `toml:"url"`
+	// PhotosPath is where Immich sees the archive's Photos/ folder, such as
+	// /mnt/archive/Photos (deploy/compose.viewer.yaml).
+	PhotosPath string `toml:"photos_path"`
+	// Timeout bounds one request to Immich.
+	Timeout Duration `toml:"timeout"`
 }
 
 // Duration is a time.Duration decoded from a Go duration string such as "1h30m".
@@ -455,6 +473,20 @@ func (c *Config) Validate() error {
 
 	if a := c.SafeToDelete.MinAge.Std(); a < 24*time.Hour || a > 10*365*24*time.Hour {
 		add("safe_to_delete.min_age must be between 24h and 87600h (10 years), got %s", a)
+	}
+
+	if v := c.Viewer; v != (Viewer{}) {
+		if u, err := url.Parse(v.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+			strings.TrimSuffix(u.Path, "/") != "" || u.RawQuery != "" || u.User != nil {
+			add("viewer.url must be Immich's http(s) origin such as http://immich-server:2283, got %q", v.URL)
+		}
+		// A path in Immich's container, which is Linux whatever runs the agent.
+		if !path.IsAbs(v.PhotosPath) || path.Clean(v.PhotosPath) != v.PhotosPath || v.PhotosPath == "/" {
+			add("viewer.photos_path must be the absolute path where Immich sees Photos/, such as /mnt/archive/Photos, got %q", v.PhotosPath)
+		}
+		if t := v.Timeout.Std(); t < 5*time.Second || t > 2*time.Minute {
+			add("viewer.timeout must be between 5s and 2m, got %s", t)
+		}
 	}
 
 	if c.Logs.MaxSizeMB < 1 || c.Logs.MaxSizeMB > 1024 {

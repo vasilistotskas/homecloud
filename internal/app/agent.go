@@ -26,6 +26,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/policy"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
+	"github.com/vasilistotskas/homecloud/internal/viewer"
 )
 
 // Notifier delivers operator alerts.
@@ -88,6 +89,8 @@ type Agent struct {
 	icloudEndpoints icloud.Endpoints
 	// pushKey locates the key pushed iPhone backups must be signed with.
 	pushKey func() (string, error)
+	// viewerKey locates the viewer's API key.
+	viewerKey func() (string, error)
 
 	hub     *Hub
 	trigger chan struct{}
@@ -108,6 +111,7 @@ func NewAgent(cfg *config.Config, db *ledger.DB, log *slog.Logger, n Notifier, k
 		icloudSession:   icloud.SessionPath,
 		icloudEndpoints: icloud.AppleEndpoints,
 		pushKey:         iphonecopy.PushKeyPath,
+		viewerKey:       viewer.KeyPath,
 		hub:             NewHub(),
 		trigger:         make(chan struct{}, 1),
 	}
@@ -411,7 +415,49 @@ func (a *Agent) cycle(ctx context.Context) (CycleReport, error) {
 		errs = append(errs, err)
 	}
 	a.preparePreviews(ctx)
+	a.updateViewer(ctx)
 	return rep, errors.Join(errs...)
+}
+
+// updateViewer stacks each edit over its original in the viewer ([viewer]),
+// which cannot pair them by itself. Photos/Hidden is out of the viewer's
+// sight, so its pairs are left out. The viewer is derived, like previews:
+// a failure is logged and retried next cycle, never failing the cycle.
+func (a *Agent) updateViewer(ctx context.Context) {
+	if a.cfg.Viewer == (config.Viewer{}) {
+		return
+	}
+	a.setPhase(PhaseUpdatingViewer)
+	path, err := a.viewerKey()
+	if err != nil {
+		a.log.ErrorContext(ctx, "viewer not updated: its API key cannot be located", "err", err)
+		return
+	}
+	key, err := viewer.LoadKey(path)
+	if errors.Is(err, viewer.ErrNoKey) {
+		a.log.WarnContext(ctx, `viewer not updated: no API key; run "homecloud viewer key --set"`)
+		return
+	}
+	if err != nil {
+		a.log.ErrorContext(ctx, "viewer not updated: its API key cannot be read", "err", err)
+		return
+	}
+	hiddenDir := kei.HiddenPath(a.cfg.Storage.Root) + string(filepath.Separator)
+	pairs, err := a.db.EditPairs(ctx, hiddenDir)
+	if err != nil {
+		a.log.ErrorContext(ctx, "viewer not updated: the edits could not be read", "err", err)
+		return
+	}
+	res, err := viewer.StackEdits(ctx, viewer.New(a.cfg.Viewer, key), pairs, kei.DownloadDir(a.cfg.Storage.Root), a.cfg.Viewer.PhotosPath)
+	if err != nil {
+		a.log.WarnContext(ctx, "viewer not updated", "err", err, "stacked_now", res.Created)
+		return
+	}
+	// Pairs Immich has not scanned yet are stacked by a later cycle: worth a
+	// line only when something changed.
+	if res.Created > 0 {
+		a.log.InfoContext(ctx, "viewer updated", "stacked_now", res.Created, "stacked", res.Stacked, "not_in_viewer", res.NotInViewer)
+	}
 }
 
 // checkPhotosActivity judges whether iCloud Photos still receives new items:

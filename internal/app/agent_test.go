@@ -33,6 +33,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/notify"
 	"github.com/vasilistotskas/homecloud/internal/platform"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
+	"github.com/vasilistotskas/homecloud/internal/viewer"
 )
 
 // The test binary doubles as a fake kei when HOMECLOUD_FAKE_KEI=1:
@@ -266,6 +267,9 @@ func newTestAgent(t *testing.T, manifest, syncExit string, clock *time.Time) (*A
 	// Nor this computer's push key: tests that push save their own.
 	pushKey := filepath.Join(t.TempDir(), iphonecopy.PushKeyFile)
 	agent.pushKey = func() (string, error) { return pushKey, nil }
+	// Nor its viewer key: tests with a viewer save their own.
+	viewerKey := filepath.Join(t.TempDir(), viewer.KeyFile)
+	agent.viewerKey = func() (string, error) { return viewerKey, nil }
 	// Tests judge one healthy drive unless they say otherwise.
 	agent.readStorage = func() (platform.Storage, error) {
 		return platform.Storage{Drives: []platform.Drive{{Name: "nvme0n1", Device: "/dev/nvme0n1"}}}, nil

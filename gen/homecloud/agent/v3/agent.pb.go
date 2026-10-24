@@ -160,21 +160,24 @@ const (
 	Phase_PHASE_CHECKING_IPHONE_BACKUPS Phase = 8
 	// Archiving new and changed iCloud Drive files.
 	Phase_PHASE_SYNCING_DRIVE Phase = 9
+	// Stacking each edit over its original in the viewer (Immich).
+	Phase_PHASE_UPDATING_VIEWER Phase = 10
 )
 
 // Enum value maps for Phase.
 var (
 	Phase_name = map[int32]string{
-		0: "PHASE_UNSPECIFIED",
-		1: "PHASE_IDLE",
-		2: "PHASE_DOWNLOADING",
-		3: "PHASE_INGESTING",
-		4: "PHASE_VERIFYING",
-		5: "PHASE_PREPARING_PREVIEWS",
-		6: "PHASE_CHECKING_ARCHIVE",
-		7: "PHASE_BACKING_UP_LEDGER",
-		8: "PHASE_CHECKING_IPHONE_BACKUPS",
-		9: "PHASE_SYNCING_DRIVE",
+		0:  "PHASE_UNSPECIFIED",
+		1:  "PHASE_IDLE",
+		2:  "PHASE_DOWNLOADING",
+		3:  "PHASE_INGESTING",
+		4:  "PHASE_VERIFYING",
+		5:  "PHASE_PREPARING_PREVIEWS",
+		6:  "PHASE_CHECKING_ARCHIVE",
+		7:  "PHASE_BACKING_UP_LEDGER",
+		8:  "PHASE_CHECKING_IPHONE_BACKUPS",
+		9:  "PHASE_SYNCING_DRIVE",
+		10: "PHASE_UPDATING_VIEWER",
 	}
 	Phase_value = map[string]int32{
 		"PHASE_UNSPECIFIED":             0,
@@ -187,6 +190,7 @@ var (
 		"PHASE_BACKING_UP_LEDGER":       7,
 		"PHASE_CHECKING_IPHONE_BACKUPS": 8,
 		"PHASE_SYNCING_DRIVE":           9,
+		"PHASE_UPDATING_VIEWER":         10,
 	}
 )
 
@@ -8516,7 +8520,7 @@ const file_homecloud_agent_v3_agent_proto_rawDesc = "" +
 	"\x1fAPPLE_ACCOUNT_STATE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dAPPLE_ACCOUNT_STATE_SIGNED_IN\x10\x01\x12(\n" +
 	"$APPLE_ACCOUNT_STATE_SIGN_IN_REQUIRED\x10\x02\x12'\n" +
-	"#APPLE_ACCOUNT_STATE_NEEDS_ATTENTION\x10\x03*\x82\x02\n" +
+	"#APPLE_ACCOUNT_STATE_NEEDS_ATTENTION\x10\x03*\x9d\x02\n" +
 	"\x05Phase\x12\x15\n" +
 	"\x11PHASE_UNSPECIFIED\x10\x00\x12\x0e\n" +
 	"\n" +
@@ -8528,7 +8532,9 @@ const file_homecloud_agent_v3_agent_proto_rawDesc = "" +
 	"\x16PHASE_CHECKING_ARCHIVE\x10\x06\x12\x1b\n" +
 	"\x17PHASE_BACKING_UP_LEDGER\x10\a\x12!\n" +
 	"\x1dPHASE_CHECKING_IPHONE_BACKUPS\x10\b\x12\x17\n" +
-	"\x13PHASE_SYNCING_DRIVE\x10\t*\x9c\x01\n" +
+	"\x13PHASE_SYNCING_DRIVE\x10\t\x12\x19\n" +
+	"\x15PHASE_UPDATING_VIEWER\x10\n" +
+	"*\x9c\x01\n" +
 	"\aRunKind\x12\x18\n" +
 	"\x14RUN_KIND_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eRUN_KIND_CYCLE\x10\x01\x12\x12\n" +

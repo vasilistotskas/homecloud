@@ -10,6 +10,7 @@ export const cyclePhases: ReadonlySet<Phase> = new Set([
   Phase.INGESTING,
   Phase.VERIFYING,
   Phase.PREPARING_PREVIEWS,
+  Phase.UPDATING_VIEWER,
 ]);
 
 /**

@@ -17,6 +17,8 @@ const (
 	PhaseIngesting
 	PhaseVerifying
 	PhasePreparingPreviews
+	// PhaseUpdatingViewer stacks each edit over its original in the viewer.
+	PhaseUpdatingViewer
 	// PhaseCheckingArchive re-hashes a share of archived files (scrub).
 	PhaseCheckingArchive
 	PhaseBackingUpLedger
@@ -29,7 +31,7 @@ const (
 // InCycle reports whether p is a phase of a sync cycle, as opposed to idle
 // time or a maintenance job (scrub, ledger backup).
 func (p Phase) InCycle() bool {
-	return p >= PhaseDownloading && p <= PhasePreparingPreviews
+	return p >= PhaseDownloading && p <= PhaseUpdatingViewer
 }
 
 // Status is the agent's live, in-memory state. Everything durable lives in

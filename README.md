@@ -34,7 +34,7 @@ flowchart TB
 
     subgraph agent["homecloud-agent · per-user at logon, or a container on a NAS"]
         api["Local API · 127.0.0.1<br/>Connect-RPC, signed /media,<br/>embedded web app"]
-        cycle["Cycle<br/>preflight → repairs → download → ingest<br/>→ verify → drive health → export → previews"]
+        cycle["Cycle<br/>preflight → repairs → download → ingest<br/>→ verify → drive health → export → previews<br/>→ viewer (optional)"]
         maint["Maintenance, each on its own interval<br/>iCloud Drive sync · integrity scrub<br/>· ledger backup · iPhone backup check"]
     end
 
@@ -234,6 +234,7 @@ else.
 | `internal/icloud`, `internal/drive` | homecloud's own iCloud sign-in and the iCloud Drive archive |
 | `internal/iphonebackup`, `internal/iphonecopy` | Judging iPhone backups; their verified copies and pushes |
 | `internal/health`, `internal/smartctl` | Drive and RAID health |
+| `internal/viewer` | The optional viewer: stacking each edit over its original in Immich |
 | `internal/api`, `internal/web`, `internal/auth` | The Connect API, the HTTP server (Host, Origin, CORS checks), tokens and sign-in codes |
 | `internal/platform` | Everything specific to Windows or Linux |
 | `proto/`, `gen/`, `ui/src/gen/` | The API contract and the code generated from it |
@@ -361,6 +362,15 @@ of RAM, and downloads its search models (1.7 GB) on first use. Then:
 4. Open `https://<TS_HOSTNAME>.<tailnet>.ts.net:8443` and create the admin account.
 5. In Administration, External libraries, add a library with the import path
    `/mnt/archive/Photos`.
+6. Immich shows an edit and its original as two items, and only homecloud knows which edit
+   belongs to which original. To have the agent stack each edit over its original after every
+   sync:
+   - In Immich, under Account settings, API keys, create a key as the library's owner, with
+     `asset.read`, `stack.read` and `stack.create`.
+   - Run `docker compose exec homecloud homecloud viewer key --set` and paste the key.
+   - Add `[viewer]` to `config.toml` with `url = "http://immich-server:2283"` and
+     `photos_path = "/mnt/archive/Photos"`.
+   - `homecloud doctor` then checks that the key works.
 
 Point the Immich iPhone app at the same address, and leave its backup off. Its settings come from
 `deploy/immich.json` (the version check is off), so they cannot be changed in the web UI.
@@ -424,6 +434,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[safe_to_delete]` | `min_age`: how long an item must have been in iCloud Photos before the safe-to-delete report lists it (24h–87600h, e.g. `"8760h"` for a year) |
 | `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files in `%LOCALAPPDATA%\homecloud\logs` on Windows, and how many crash reports are kept (Linux logs to journald) |
 | `[drive_health]` | Linux only: `source`, where the SMART data of the drives under the archive comes from: `"udisks"` (a desktop's udisks2, no rights needed) or `"smartctl"` (a server or the container). Windows reads NVMe health itself and has no such section |
+| `[viewer]` | Only with the optional viewer (Immich, see "The viewer"): `url` (Immich's origin as the agent reaches it, e.g. `"http://immich-server:2283"`), `photos_path` (where Immich sees `Photos/`, e.g. `"/mnt/archive/Photos"`), `timeout` (one request, 5s–2m). Its API key is not here: `homecloud viewer key --set` saves it |
 | `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m), `socket` (where the container's smartctl sidecar answers; empty runs smartctl in the agent) |
 
 ## Operating
@@ -447,6 +458,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `homecloud iphone push --from DIR --to DIR [--log]` | Send each device's finished backup in `DIR` (repeatable) to another device's `iphone_backup.incoming`: only files that differ from its newest copy, with the backup's manifest; a backup in progress or changing meanwhile waits for the next push. `--log` writes what it does to `iphone-push.log` in homecloud's log folder instead of the terminal |
 | `homecloud iphone install-push --from … --to … --every 1h` / `uninstall-push` | Push on a schedule while you are logged on: a Task Scheduler task that pushes with `--log` and opens no window, or a systemd user timer whose output goes to the journal |
 | `homecloud iphone push-key` / `push-key --set` | Show this computer's key for pushed backups, creating it (run where the archive is); `--set` saves that key on the computer that pushes (pasted, or on standard input) |
+| `homecloud viewer key` / `key --set` | Say whether the agent has the viewer's Immich API key; `--set` saves it (pasted, or on standard input) |
 | `homecloud smartctl serve` | Linux: answer the agent's drive health requests on `smartctl.socket`, the container's smartctl sidecar (`deploy/compose.yaml`) |
 
 `verify`, `quarantine release` and `quarantine repair` write the ledger, which the running agent

@@ -116,7 +116,7 @@ func newApp() *program {
 			leaf("notify-test", "send a test push notification through ntfy", runNotifyTest),
 			leaf("install", "start homecloud-agent (next to this binary) at logon and now (Task Scheduler / systemd user unit)", runInstall),
 			leaf("uninstall", "stop starting homecloud-agent at logon", runUninstall),
-		}, slices.Concat(icloudCommands(), iphoneCommands(), smartctlCommands())...),
+		}, slices.Concat(icloudCommands(), iphoneCommands(), viewerCommands(), smartctlCommands())...),
 	}
 }
 

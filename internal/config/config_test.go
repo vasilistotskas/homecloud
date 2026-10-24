@@ -148,6 +148,24 @@ func TestLoadValid(t *testing.T) {
 	}
 }
 
+const viewerTOML = `
+[viewer]
+url = "http://immich-server:2283"
+photos_path = "/mnt/archive/Photos"
+timeout = "30s"
+`
+
+func TestLoadViewer(t *testing.T) {
+	cfg, err := Load(writeConfig(t, validTOML+viewerTOML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := Viewer{URL: "http://immich-server:2283", PhotosPath: "/mnt/archive/Photos", Timeout: Duration(30 * time.Second)}
+	if diff := cmp.Diff(want, cfg.Viewer); diff != "" {
+		t.Errorf("viewer mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestLoadRejectsUnknownKeys(t *testing.T) {
 	_, err := Load(writeConfig(t, validTOML+"\n[storage.extra]\ntypo = 1\n"))
 	if err == nil || !strings.Contains(err.Error(), "unknown keys") {
@@ -169,11 +187,26 @@ func TestValidate(t *testing.T) {
 		}
 		return *cfg
 	}
+	viewer := func(mutate func(*Viewer)) func(*Config) {
+		return func(c *Config) {
+			c.Viewer = Viewer{URL: "http://immich-server:2283", PhotosPath: "/mnt/archive/Photos", Timeout: Duration(30 * time.Second)}
+			mutate(&c.Viewer)
+		}
+	}
 	tests := []struct {
 		name    string
 		mutate  func(*Config)
 		wantErr string
 	}{
+		{"viewer without url", viewer(func(v *Viewer) { v.URL = "" }), "viewer.url"},
+		{"viewer url with a path", viewer(func(v *Viewer) { v.URL = "http://immich-server:2283/api" }), "viewer.url"},
+		{"viewer url with credentials", viewer(func(v *Viewer) { v.URL = "http://me:pw@immich-server:2283" }), "viewer.url"},
+		{"viewer url over ftp", viewer(func(v *Viewer) { v.URL = "ftp://immich-server" }), "viewer.url"},
+		{"viewer photos path relative", viewer(func(v *Viewer) { v.PhotosPath = "mnt/archive/Photos" }), "viewer.photos_path"},
+		{"viewer photos path not clean", viewer(func(v *Viewer) { v.PhotosPath = "/mnt/archive/Photos/" }), "viewer.photos_path"},
+		{"viewer photos path a Windows path", viewer(func(v *Viewer) { v.PhotosPath = `E:\HomeCloud\Photos` }), "viewer.photos_path"},
+		{"viewer photos path the root", viewer(func(v *Viewer) { v.PhotosPath = "/" }), "viewer.photos_path"},
+		{"viewer timeout too short", viewer(func(v *Viewer) { v.Timeout = Duration(time.Second) }), "viewer.timeout"},
 		{"relative root", func(c *Config) { c.Storage.Root = `HomeCloud` }, "storage.root"},
 		{"bad archive id", func(c *Config) { c.Storage.ArchiveID = "not-an-archive" }, "storage.archive_id"},
 		{"free percent zero", func(c *Config) { c.Storage.MinFreePercent = 0 }, "storage.min_free_percent"},

@@ -20,6 +20,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/smartctl"
 	"github.com/vasilistotskas/homecloud/internal/thumbs"
 	"github.com/vasilistotskas/homecloud/internal/verify"
+	"github.com/vasilistotskas/homecloud/internal/viewer"
 )
 
 // Result is the outcome of one check.
@@ -56,7 +57,36 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 		}))
 	}
 	results = append(results, checkStorage(ctx, cfg))
+	if cfg.Viewer != (config.Viewer{}) {
+		results = append(results, checkViewer(ctx, cfg.Viewer))
+	}
 	return append(results, checkIPhoneBackupDirs(cfg)...)
+}
+
+// checkViewer checks the viewer the agent stacks edits in: its API key is
+// saved here, Immich answers with it, and it grants what the agent needs.
+func checkViewer(ctx context.Context, cfg config.Viewer) Result {
+	const name = "viewer"
+	path, err := viewer.KeyPath()
+	if err != nil {
+		return Result{Name: name, Err: err}
+	}
+	key, err := viewer.LoadKey(path)
+	if errors.Is(err, viewer.ErrNoKey) {
+		return Result{Name: name, Err: fmt.Errorf("%w: create one in Immich with %s, then run \"homecloud viewer key --set\"",
+			err, strings.Join(viewer.Permissions, ", "))}
+	}
+	if err != nil {
+		return Result{Name: name, Err: err}
+	}
+	missing, err := viewer.New(cfg, key).MissingPermissions(ctx)
+	switch {
+	case err != nil:
+		return Result{Name: name, Err: err}
+	case len(missing) > 0:
+		return Result{Name: name, Err: fmt.Errorf("the API key lacks %s: create one that grants it", strings.Join(missing, ", "))}
+	}
+	return Result{Name: name, Detail: cfg.URL}
 }
 
 // Err joins the failures in results, or returns nil when all passed.

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -9,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"golang.org/x/term"
 
 	"github.com/vasilistotskas/homecloud/internal/iphonebackup"
 	"github.com/vasilistotskas/homecloud/internal/iphonecopy"
@@ -335,28 +332,11 @@ func runShowPushKey(c *call) error {
 		"On the computer that pushes, run \"homecloud iphone push-key --set\" and paste it.\n", key)
 }
 
-// runSetPushKey saves the key of the archive this computer pushes to, read
-// without echo from a terminal or as a line of standard input.
+// runSetPushKey saves the key of the archive this computer pushes to.
 func runSetPushKey(c *call) error {
-	var line string
-	if term.IsTerminal(stdinFD()) {
-		if err := printf(c, "Push key (not shown): "); err != nil {
-			return err
-		}
-		b, err := term.ReadPassword(stdinFD())
-		if err != nil {
-			return fmt.Errorf("read push key: %w", err)
-		}
-		line = string(b)
-		if err := printf(c, "\n"); err != nil {
-			return err
-		}
-	} else {
-		sc := bufio.NewScanner(c.stdin)
-		if !sc.Scan() {
-			return errors.Join(errors.New("no push key on standard input"), sc.Err())
-		}
-		line = sc.Text()
+	line, err := readSecret(c, "Push key", "push key")
+	if err != nil {
+		return err
 	}
 	key, err := iphonecopy.ParsePushKey(line)
 	if err != nil {

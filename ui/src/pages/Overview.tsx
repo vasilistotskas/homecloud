@@ -310,6 +310,7 @@ const phaseText: Record<Phase, string> = {
   [Phase.INGESTING]: "Recording what was downloaded…",
   [Phase.VERIFYING]: "Checking files…",
   [Phase.PREPARING_PREVIEWS]: "Preparing previews for the library…",
+  [Phase.UPDATING_VIEWER]: "Stacking edits over their originals in Immich…",
   [Phase.CHECKING_ARCHIVE]: "Re-checking archived files against their checksums…",
   [Phase.BACKING_UP_LEDGER]: "Backing up the archive's records…",
   [Phase.CHECKING_IPHONE_BACKUPS]: "Checking the iPhone backups on this computer…",

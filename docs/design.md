@@ -185,6 +185,7 @@ The archive is the only copy (no second copy, by decision), so after every cycle
 
 - **Preflight, every cycle:** the configured archive must be present at `storage.root`: `homecloud-archive.json` there (written once by `homecloud archive init`, `internal/archive`) must name `storage.archive_id`. An unmounted drive, another disk or an empty mount point has no marker or another one. The marker travels with the files, so an archive copied to another disk or a NAS keeps its identity, and it needs nothing from the OS, so it works the same in containers and on network shares (a volume's own identity does not). Without it the cycle stops before kei, ingest or verification runs, records a failed run (`archive_unavailable`) and alerts. Below `storage.min_free_percent` the download is skipped (`skipped_low_space`) while ingest and verification still run. Lasting conditions (sign-in needed, drive missing, low space, a backup problem) alert at most every `notify.repeat_every`; the last alert per condition is kept in the ledger (`alert_throttle`), so restarting the agent does not repeat it early.
 - **iCloud Photos activity (#22):** after a cycle whose kei sync listed every change since its checkpoint (exit OK or partial, a report with no enumeration error, no incomplete or interrupted listing, no inventory drop: `kei.Report.ListedCompletely`), the agent compares the ledger's newest `added_at` with `icloud.quiet_after` (24h–8760h). Older means the phone may have stopped uploading (iCloud Photos off, iCloud storage full) and photos taken since may exist only on it: found on 2026-10-24, when nothing had been added since 2026-04-17 while every sync ended OK. The state (`active`/`quiet`) is appended once per change (`photos_activity_changed`, with the newest addition and the threshold), the alert repeats every `notify.repeat_every` while it lasts and names no file or device, and the Overview shows the newest addition and, while quiet, a warning banner. A failed or partial listing judges nothing, so a broken sync never looks like a quiet library; an empty library has nothing to fall quiet. `homecloud doctor` does not report it: doctor reads no ledger.
+- **Viewer (optional, #21):** with `[viewer]` set, the cycle ends after previews by stacking each edit over its original in Immich (§10, Spike D). The viewer is derived data: a failure is logged, never fatal.
 - **Maintenance:** after each cycle the agent runs each maintenance job (scrub, ledger backup, iPhone backup check, iCloud Drive sync) when no *completed* run of that kind falls within its interval (`runs.detail` carries `error` only when a run could not do its work). A job therefore runs at the first cycle at or after it is due; the overview reports each job's next run computed by the same rule (`app.NextRunAt`), so the app never re-derives it.
 - **Interrupted runs:** on Windows the agent is a GUI-subsystem process that receives no console events, so logoff or shutdown ends it without notice. Every write is crash-safe (SQLite WAL, atomic renames, kei's own journal), and at startup the agent closes every run left unfinished as failed with `interrupted`. Only one agent runs at a time, so an open run at startup was interrupted.
 - **One ledger writer:** the agent holds the `homecloud-ledger-writer` lock for its whole life; `homecloud verify`, `homecloud quarantine release` and `homecloud quarantine repair` take the same lock and refuse while the agent runs (the app offers these actions).
@@ -391,7 +392,7 @@ Immich v3.3.5 (server, machine learning, Valkey and Immich's Postgres, all pinne
 
 **Decision: Immich is the optional viewer and phone gallery; PhotoPrism is not used.** homecloud stays the archive, and Immich only reads `Photos/` (`:ro`). Kept with it:
 - Hidden stays out of Immich: the profile masks `Photos/Hidden`. Immich's locked folder would also work, but only through a PIN-unlocked session.
-- homecloud's ledger drives the stacks, since the ledger already knows each edit's original.
+- homecloud's ledger drives the stacks, since the ledger already knows each edit's original (see "Edit stacks" below).
 - The version check is off, and the models are seeded once.
 
 **The opt-in profile:** `deploy/compose.viewer.yaml` (README, "The viewer"). It was run as written against the sample: 150 files imported, none from `Photos/Hidden`, no write errors, and the config applied.
@@ -399,6 +400,17 @@ Immich v3.3.5 (server, machine learning, Valkey and Immich's Postgres, all pinne
 - Immich runs in its own network namespace, and Tailscale Serve proxies port 8443 to it by name. Tailscale v1.104.2 reaches a non-localhost backend with `SystemDial`.
 - `deploy/immich.json` turns the version check off. A config file also makes every setting read-only in the web UI.
 - Dependabot bumps the pins: `compose.viewer.yaml` matches its compose file pattern.
+
+**Edit stacks (implemented, `internal/viewer`):** with `[viewer]` set, each cycle ends with an "updating the viewer" phase.
+- The ledger lists every asset outside `Photos/Hidden` that has both an `adjusted` and an `original` file (`ledger.EditPairs`).
+- The agent maps each file to the path Immich sees (`viewer.photos_path` plus its path under `Photos/`). It lists Immich's assets with the metadata search in Immich v3.2's request shape (`orderBy`, cursor paging, 1,000 per page; the flat `page` field is deprecated), and lists the stacks.
+- It stacks the edit over the original (`POST /stacks`, the edit first, so on top) unless both already share a stack with the edit on top. Immich folds in any stack whose top asset is among the ids (its `StackRepository.create`), so a stack the owner made converges and is then left alone.
+- A pair Immich has not scanned yet is stacked by a later cycle. Like previews, a failure is logged and never fails the cycle.
+- The API key needs `asset.read`, `stack.read` and `stack.create`. Immich's access check for creating a stack is ownership, not the key's scope (`requireAccess`), so the key must belong to the library's owner. It is kept owner-only in the per-user state folder (`homecloud viewer key --set`), never in `config.toml`, and `homecloud doctor` checks its permissions (`GET /api-keys/me`).
+- Run on 2026-10-24 against the spike, with a copy of the live ledger and a key that had only those three permissions:
+  - 969 pairs (1,050 edited assets less 81 in Hidden).
+  - The first pass stacked the 34 that Immich held, every one with the edit on top. The other 935 are not in the sample.
+  - A second pass created none.
 
 Still to check, on the owner's iPhone: how the Immich iOS app shows external-library assets over Tailscale (no local copy kept), and what it does with stacks and the locked folder.
 
