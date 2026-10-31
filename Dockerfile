@@ -16,7 +16,7 @@
 # which installs the Node.js that ui/package.json's devEngines.runtime pins.
 FROM --platform=$BUILDPLATFORM ghcr.io/pnpm/pnpm:12.15.0@sha256:d6148daf3ad2af8fa4ecd1aa06db73da32b2e37f63088987eea2fb375ee7f320 AS ui
 WORKDIR /src/ui
-COPY ui/package.json ui/pnpm-lock.yaml ./
+COPY ui/package.json ui/pnpm-lock.yaml ui/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY ui/ ./
 RUN pnpm build

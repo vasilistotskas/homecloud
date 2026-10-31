@@ -54,6 +54,8 @@ linters:
         - connectrpc.com/connect/v2.NewError(
         - connectrpc.com/connect/v2.Errorf(
         - (*connectrpc.com/connect/v2.Error).WithCause(
+        # tusd's HTTP error for a refused upload, made the same way.
+        - github.com/tus/tusd/v2/pkg/handler.NewError(
     govet:
       enable-all: true
       disable:
