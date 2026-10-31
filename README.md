@@ -235,6 +235,7 @@ else.
 | `internal/iphonebackup`, `internal/iphonecopy` | Judging iPhone backups; their verified copies and pushes |
 | `internal/health`, `internal/smartctl` | Drive and RAID health |
 | `internal/viewer` | The optional viewer: stacking each edit over its original in Immich |
+| `internal/files` | The Files page: the folders you name, resumable uploads (tus), downloads, the trash |
 | `internal/api`, `internal/web`, `internal/auth` | The Connect API, the HTTP server (Host, Origin, CORS checks), tokens and sign-in codes |
 | `internal/platform` | Everything specific to Windows or Linux |
 | `proto/`, `gen/`, `ui/src/gen/` | The API contract and the code generated from it |
@@ -288,6 +289,7 @@ docker run --rm -v /srv/archive:/archive --entrypoint homecloud homecloud archiv
 | `/state` | the agent's and kei's state, including both iCloud sessions: keep it private | `XDG_STATE_HOME`, `KEI_DATA_DIR` |
 | `/backups` | ledger snapshots, **on another drive than `/archive`** (doctor checks) | `backup.dir = '/backups'` |
 | `/iphone` | backups pushed from the computer Apple's Devices app backs up to (`homecloud iphone push`) | `iphone_backup.incoming = '/iphone'`, `dirs = []`, `keep` ≥ 1 |
+| any you add, e.g. `/files/Uploads` | a NAS folder for the Files page | a `[[files.locations]]` entry with that `path` |
 
 Tools: `kei.binary = '/opt/kei/kei'`, `ffmpeg.ffmpeg = '/opt/ffmpeg/bin/ffmpeg'`,
 `ffmpeg.ffprobe = '/opt/ffmpeg/bin/ffprobe'`. Run it as the user that owns the folders
@@ -425,6 +427,30 @@ After changing an SVG, render it at its own size and save the BMP next to it. Fo
 2. Save that as a 24-bit BMP, e.g. with Pillow:
    `Image.open("sidebar.png").convert("RGB").save("sidebar.bmp")`.
 
+## Files
+
+The Files page lets a phone or another computer signed in to homecloud browse the folders you
+name, upload into them, download, create folders, rename, move and delete, like a small Google
+Drive on your own drive. Name each folder in `config.toml`:
+
+```toml
+[files]
+trash_retention = "720h"
+upload_expiry = "168h"
+
+[[files.locations]]
+name = "Uploads"
+path = 'E:\Uploads'
+```
+
+Only these folders are reachable, never the archive: a location must be apart from
+`storage.root`, so name `E:\Uploads` and `E:\Videos` rather than `E:\`. A folder added to the
+drive later shows only once it is named here. Uploads resume after a dropped connection, and
+nothing is ever replaced: a file with a taken name is saved as `name (2).ext`. Deleting moves to
+the location's trash (`.homecloud/trash` inside it), which the app restores from until
+`trash_retention` ends. On the NAS, mount each folder into the container and name the path the
+container sees.
+
 ## Configuration
 
 `config.toml` is found in this order: `--config`, then `HOMECLOUD_CONFIG`, then
@@ -449,6 +475,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | `[logs]` | `max_size_mb`, `max_backups`: rotation of the agent's log files in `%LOCALAPPDATA%\homecloud\logs` on Windows, and how many crash reports are kept (Linux logs to journald) |
 | `[drive_health]` | Linux only: `source`, where the SMART data of the drives under the archive comes from: `"udisks"` (a desktop's udisks2, no rights needed) or `"smartctl"` (a server or the container). Windows reads NVMe health itself and has no such section |
 | `[viewer]` | Only with the optional viewer (Immich, see "The viewer"): `url` (Immich's origin as the agent reaches it, e.g. `"http://immich-server:2283"`), `photos_path` (where Immich sees `Photos/`, e.g. `"/mnt/archive/Photos"`), `timeout` (one request, 5s–2m). Its API key is not here: `homecloud viewer key --set` saves it |
+| `[files]` | Only for the Files page (see "Files"): one `[[files.locations]]` per folder the app may browse, upload into and change, each with `name` (as the app shows it, unique) and `path` (absolute; apart from `storage.root`, `backup.dir`, the iPhone backup folders and the other locations: neither the same folder nor inside one another), plus `trash_retention` (how long a deleted item stays in its location's trash, 24h–2160h, e.g. `"720h"`) and `upload_expiry` (how long an unfinished upload is kept for resuming, 24h–720h, e.g. `"168h"`) |
 | `[smartctl]` | Only with `drive_health.source = "smartctl"`: `binary`, `version` (smartctl's `MAJOR.MINOR`, e.g. `"7.5"`), `timeout` (one drive, 10s–10m), `socket` (where the container's smartctl sidecar answers; empty runs smartctl in the agent) |
 
 ## Operating
@@ -456,7 +483,7 @@ path it validated. Every key is required; the schema is `internal/config`.
 | Command | Purpose |
 |---|---|
 | `homecloud archive init --root R` | Mark `R` as a new archive (writes `homecloud-archive.json`, never replaces one) and print its id for `storage.archive_id` |
-| `homecloud doctor` | Read-only checks: archive root and identity, that the archive, the ledger backups and kei's folder are this account's alone, free space, backup dir on another drive, generated kei config, pinned tool versions, the health of every drive and RAID array under the archive, iPhone backup folders and the incoming folder |
+| `homecloud doctor` | Read-only checks: archive root and identity, that the archive, the ledger backups and kei's folder are this account's alone, free space, backup dir on another drive, generated kei config, pinned tool versions, the health of every drive and RAID array under the archive, iPhone backup folders and the incoming folder, the Files locations |
 | `homecloud open [--print]` | Open the web app in the browser (`http://homecloud.localhost:<port>`, or the public origin) with a one-time sign-in code, which you confirm on the page; `--print` prints the link instead (another device, or a NAS) |
 | `homecloud pair` | Print a one-time code that pairs the desktop app on another computer with this agent (needs `web.public_origin`); each pairing sends an alert |
 | `homecloud status` | Asset counts by state |

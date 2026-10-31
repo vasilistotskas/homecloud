@@ -7955,6 +7955,1098 @@ func (x *SignOutBrowsersResponse) GetEnded() int32 {
 	return 0
 }
 
+type ListFileLocationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFileLocationsRequest) Reset() {
+	*x = ListFileLocationsRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[95]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFileLocationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFileLocationsRequest) ProtoMessage() {}
+
+func (x *ListFileLocationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[95]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFileLocationsRequest.ProtoReflect.Descriptor instead.
+func (*ListFileLocationsRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{95}
+}
+
+type ListFileLocationsResponse struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Locations []*FileLocation        `protobuf:"bytes,1,rep,name=locations,proto3" json:"locations,omitempty"`
+	// How long deleted items stay in the trash.
+	TrashRetentionSeconds int64 `protobuf:"varint,2,opt,name=trash_retention_seconds,json=trashRetentionSeconds,proto3" json:"trash_retention_seconds,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ListFileLocationsResponse) Reset() {
+	*x = ListFileLocationsResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[96]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFileLocationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFileLocationsResponse) ProtoMessage() {}
+
+func (x *ListFileLocationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[96]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFileLocationsResponse.ProtoReflect.Descriptor instead.
+func (*ListFileLocationsResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{96}
+}
+
+func (x *ListFileLocationsResponse) GetLocations() []*FileLocation {
+	if x != nil {
+		return x.Locations
+	}
+	return nil
+}
+
+func (x *ListFileLocationsResponse) GetTrashRetentionSeconds() int64 {
+	if x != nil {
+		return x.TrashRetentionSeconds
+	}
+	return 0
+}
+
+type FileLocation struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// False when its folder cannot be opened: a drive that is not connected, a
+	// share that is not mounted.
+	Available bool `protobuf:"varint,2,opt,name=available,proto3" json:"available,omitempty"`
+	// Free space on its volume, when available.
+	FreeBytes uint64 `protobuf:"varint,3,opt,name=free_bytes,json=freeBytes,proto3" json:"free_bytes,omitempty"`
+	// Where tus uploads into this location are created (POST), relative to the
+	// agent's origin. Each upload's metadata names its "filename" and its
+	// folder "dir"; the response that finishes it carries the path it was
+	// saved at in the Homecloud-Saved-As header (URL-encoded).
+	UploadPath    string `protobuf:"bytes,4,opt,name=upload_path,json=uploadPath,proto3" json:"upload_path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileLocation) Reset() {
+	*x = FileLocation{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[97]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileLocation) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileLocation) ProtoMessage() {}
+
+func (x *FileLocation) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[97]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileLocation.ProtoReflect.Descriptor instead.
+func (*FileLocation) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{97}
+}
+
+func (x *FileLocation) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FileLocation) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *FileLocation) GetFreeBytes() uint64 {
+	if x != nil {
+		return x.FreeBytes
+	}
+	return 0
+}
+
+func (x *FileLocation) GetUploadPath() string {
+	if x != nil {
+		return x.UploadPath
+	}
+	return ""
+}
+
+type ListFilesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Location      string                 `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFilesRequest) Reset() {
+	*x = ListFilesRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[98]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFilesRequest) ProtoMessage() {}
+
+func (x *ListFilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[98]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFilesRequest.ProtoReflect.Descriptor instead.
+func (*ListFilesRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{98}
+}
+
+func (x *ListFilesRequest) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *ListFilesRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ListFilesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*FileEntry           `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListFilesResponse) Reset() {
+	*x = ListFilesResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[99]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListFilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListFilesResponse) ProtoMessage() {}
+
+func (x *ListFilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[99]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListFilesResponse.ProtoReflect.Descriptor instead.
+func (*ListFilesResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{99}
+}
+
+func (x *ListFilesResponse) GetEntries() []*FileEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type FileEntry struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Folder bool                   `protobuf:"varint,2,opt,name=folder,proto3" json:"folder,omitempty"`
+	// Files only.
+	SizeBytes     int64                  `protobuf:"varint,3,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	ModifiedAt    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=modified_at,json=modifiedAt,proto3" json:"modified_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileEntry) Reset() {
+	*x = FileEntry{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[100]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileEntry) ProtoMessage() {}
+
+func (x *FileEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[100]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
+func (*FileEntry) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{100}
+}
+
+func (x *FileEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FileEntry) GetFolder() bool {
+	if x != nil {
+		return x.Folder
+	}
+	return false
+}
+
+func (x *FileEntry) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *FileEntry) GetModifiedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ModifiedAt
+	}
+	return nil
+}
+
+type CreateFolderRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Location string                 `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	// The folder to create it in.
+	Path          string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateFolderRequest) Reset() {
+	*x = CreateFolderRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[101]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateFolderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateFolderRequest) ProtoMessage() {}
+
+func (x *CreateFolderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[101]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateFolderRequest.ProtoReflect.Descriptor instead.
+func (*CreateFolderRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{101}
+}
+
+func (x *CreateFolderRequest) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *CreateFolderRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *CreateFolderRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type CreateFolderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateFolderResponse) Reset() {
+	*x = CreateFolderResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[102]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateFolderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateFolderResponse) ProtoMessage() {}
+
+func (x *CreateFolderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[102]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateFolderResponse.ProtoReflect.Descriptor instead.
+func (*CreateFolderResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{102}
+}
+
+type RenameFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Location      string                 `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	NewName       string                 `protobuf:"bytes,3,opt,name=new_name,json=newName,proto3" json:"new_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenameFileRequest) Reset() {
+	*x = RenameFileRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[103]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenameFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenameFileRequest) ProtoMessage() {}
+
+func (x *RenameFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[103]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenameFileRequest.ProtoReflect.Descriptor instead.
+func (*RenameFileRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{103}
+}
+
+func (x *RenameFileRequest) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *RenameFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *RenameFileRequest) GetNewName() string {
+	if x != nil {
+		return x.NewName
+	}
+	return ""
+}
+
+type RenameFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RenameFileResponse) Reset() {
+	*x = RenameFileResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[104]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RenameFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RenameFileResponse) ProtoMessage() {}
+
+func (x *RenameFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[104]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RenameFileResponse.ProtoReflect.Descriptor instead.
+func (*RenameFileResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{104}
+}
+
+type MoveFilesRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Location string                 `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	Paths    []string               `protobuf:"bytes,2,rep,name=paths,proto3" json:"paths,omitempty"`
+	// The folder to move them into.
+	Destination   string `protobuf:"bytes,3,opt,name=destination,proto3" json:"destination,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveFilesRequest) Reset() {
+	*x = MoveFilesRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[105]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveFilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveFilesRequest) ProtoMessage() {}
+
+func (x *MoveFilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[105]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveFilesRequest.ProtoReflect.Descriptor instead.
+func (*MoveFilesRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{105}
+}
+
+func (x *MoveFilesRequest) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *MoveFilesRequest) GetPaths() []string {
+	if x != nil {
+		return x.Paths
+	}
+	return nil
+}
+
+func (x *MoveFilesRequest) GetDestination() string {
+	if x != nil {
+		return x.Destination
+	}
+	return ""
+}
+
+type MoveFilesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Moved         int32                  `protobuf:"varint,1,opt,name=moved,proto3" json:"moved,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveFilesResponse) Reset() {
+	*x = MoveFilesResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[106]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveFilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveFilesResponse) ProtoMessage() {}
+
+func (x *MoveFilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[106]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveFilesResponse.ProtoReflect.Descriptor instead.
+func (*MoveFilesResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{106}
+}
+
+func (x *MoveFilesResponse) GetMoved() int32 {
+	if x != nil {
+		return x.Moved
+	}
+	return 0
+}
+
+type TrashFilesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Location      string                 `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	Paths         []string               `protobuf:"bytes,2,rep,name=paths,proto3" json:"paths,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrashFilesRequest) Reset() {
+	*x = TrashFilesRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[107]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrashFilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrashFilesRequest) ProtoMessage() {}
+
+func (x *TrashFilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[107]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrashFilesRequest.ProtoReflect.Descriptor instead.
+func (*TrashFilesRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{107}
+}
+
+func (x *TrashFilesRequest) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *TrashFilesRequest) GetPaths() []string {
+	if x != nil {
+		return x.Paths
+	}
+	return nil
+}
+
+type TrashFilesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Trashed       int32                  `protobuf:"varint,1,opt,name=trashed,proto3" json:"trashed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrashFilesResponse) Reset() {
+	*x = TrashFilesResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[108]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrashFilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrashFilesResponse) ProtoMessage() {}
+
+func (x *TrashFilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[108]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrashFilesResponse.ProtoReflect.Descriptor instead.
+func (*TrashFilesResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{108}
+}
+
+func (x *TrashFilesResponse) GetTrashed() int32 {
+	if x != nil {
+		return x.Trashed
+	}
+	return 0
+}
+
+type ListTrashRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Location      string                 `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTrashRequest) Reset() {
+	*x = ListTrashRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[109]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTrashRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTrashRequest) ProtoMessage() {}
+
+func (x *ListTrashRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[109]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTrashRequest.ProtoReflect.Descriptor instead.
+func (*ListTrashRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{109}
+}
+
+func (x *ListTrashRequest) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+type ListTrashResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*TrashItem           `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListTrashResponse) Reset() {
+	*x = ListTrashResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[110]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListTrashResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListTrashResponse) ProtoMessage() {}
+
+func (x *ListTrashResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[110]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListTrashResponse.ProtoReflect.Descriptor instead.
+func (*ListTrashResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{110}
+}
+
+func (x *ListTrashResponse) GetItems() []*TrashItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
+type TrashItem struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Where it was.
+	Path   string `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Folder bool   `protobuf:"varint,3,opt,name=folder,proto3" json:"folder,omitempty"`
+	// Files only.
+	SizeBytes     int64                  `protobuf:"varint,4,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	DeletedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TrashItem) Reset() {
+	*x = TrashItem{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[111]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TrashItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TrashItem) ProtoMessage() {}
+
+func (x *TrashItem) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[111]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TrashItem.ProtoReflect.Descriptor instead.
+func (*TrashItem) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{111}
+}
+
+func (x *TrashItem) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *TrashItem) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *TrashItem) GetFolder() bool {
+	if x != nil {
+		return x.Folder
+	}
+	return false
+}
+
+func (x *TrashItem) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *TrashItem) GetDeletedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DeletedAt
+	}
+	return nil
+}
+
+type RestoreFilesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Location      string                 `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	Ids           []string               `protobuf:"bytes,2,rep,name=ids,proto3" json:"ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestoreFilesRequest) Reset() {
+	*x = RestoreFilesRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[112]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreFilesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreFilesRequest) ProtoMessage() {}
+
+func (x *RestoreFilesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[112]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreFilesRequest.ProtoReflect.Descriptor instead.
+func (*RestoreFilesRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{112}
+}
+
+func (x *RestoreFilesRequest) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *RestoreFilesRequest) GetIds() []string {
+	if x != nil {
+		return x.Ids
+	}
+	return nil
+}
+
+type RestoreFilesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Where each was restored, in order.
+	Paths         []string `protobuf:"bytes,1,rep,name=paths,proto3" json:"paths,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RestoreFilesResponse) Reset() {
+	*x = RestoreFilesResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[113]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RestoreFilesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RestoreFilesResponse) ProtoMessage() {}
+
+func (x *RestoreFilesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[113]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RestoreFilesResponse.ProtoReflect.Descriptor instead.
+func (*RestoreFilesResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{113}
+}
+
+func (x *RestoreFilesResponse) GetPaths() []string {
+	if x != nil {
+		return x.Paths
+	}
+	return nil
+}
+
+type GetFileLinkRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Location string                 `protobuf:"bytes,1,opt,name=location,proto3" json:"location,omitempty"`
+	Path     string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	// Show it in the browser instead of downloading it.
+	Inline        bool `protobuf:"varint,3,opt,name=inline,proto3" json:"inline,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFileLinkRequest) Reset() {
+	*x = GetFileLinkRequest{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[114]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFileLinkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFileLinkRequest) ProtoMessage() {}
+
+func (x *GetFileLinkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[114]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFileLinkRequest.ProtoReflect.Descriptor instead.
+func (*GetFileLinkRequest) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{114}
+}
+
+func (x *GetFileLinkRequest) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *GetFileLinkRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *GetFileLinkRequest) GetInline() bool {
+	if x != nil {
+		return x.Inline
+	}
+	return false
+}
+
+type GetFileLinkResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Relative to the agent's origin.
+	Url           string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetFileLinkResponse) Reset() {
+	*x = GetFileLinkResponse{}
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[115]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetFileLinkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetFileLinkResponse) ProtoMessage() {}
+
+func (x *GetFileLinkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_homecloud_agent_v3_agent_proto_msgTypes[115]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetFileLinkResponse.ProtoReflect.Descriptor instead.
+func (*GetFileLinkResponse) Descriptor() ([]byte, []int) {
+	return file_homecloud_agent_v3_agent_proto_rawDescGZIP(), []int{115}
+}
+
+func (x *GetFileLinkResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
 var File_homecloud_agent_v3_agent_proto protoreflect.FileDescriptor
 
 const file_homecloud_agent_v3_agent_proto_rawDesc = "" +
@@ -8509,7 +9601,74 @@ const file_homecloud_agent_v3_agent_proto_rawDesc = "" +
 	"\x0fSignOutResponse\"\x18\n" +
 	"\x16SignOutBrowsersRequest\"/\n" +
 	"\x17SignOutBrowsersResponse\x12\x14\n" +
-	"\x05ended\x18\x01 \x01(\x05R\x05ended*\x92\x01\n" +
+	"\x05ended\x18\x01 \x01(\x05R\x05ended\"\x1a\n" +
+	"\x18ListFileLocationsRequest\"\x93\x01\n" +
+	"\x19ListFileLocationsResponse\x12>\n" +
+	"\tlocations\x18\x01 \x03(\v2 .homecloud.agent.v3.FileLocationR\tlocations\x126\n" +
+	"\x17trash_retention_seconds\x18\x02 \x01(\x03R\x15trashRetentionSeconds\"\x80\x01\n" +
+	"\fFileLocation\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
+	"\tavailable\x18\x02 \x01(\bR\tavailable\x12\x1d\n" +
+	"\n" +
+	"free_bytes\x18\x03 \x01(\x04R\tfreeBytes\x12\x1f\n" +
+	"\vupload_path\x18\x04 \x01(\tR\n" +
+	"uploadPath\"B\n" +
+	"\x10ListFilesRequest\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"L\n" +
+	"\x11ListFilesResponse\x127\n" +
+	"\aentries\x18\x01 \x03(\v2\x1d.homecloud.agent.v3.FileEntryR\aentries\"\x93\x01\n" +
+	"\tFileEntry\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06folder\x18\x02 \x01(\bR\x06folder\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x12;\n" +
+	"\vmodified_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"modifiedAt\"Y\n" +
+	"\x13CreateFolderRequest\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\x16\n" +
+	"\x14CreateFolderResponse\"^\n" +
+	"\x11RenameFileRequest\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x19\n" +
+	"\bnew_name\x18\x03 \x01(\tR\anewName\"\x14\n" +
+	"\x12RenameFileResponse\"f\n" +
+	"\x10MoveFilesRequest\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\x12\x14\n" +
+	"\x05paths\x18\x02 \x03(\tR\x05paths\x12 \n" +
+	"\vdestination\x18\x03 \x01(\tR\vdestination\")\n" +
+	"\x11MoveFilesResponse\x12\x14\n" +
+	"\x05moved\x18\x01 \x01(\x05R\x05moved\"E\n" +
+	"\x11TrashFilesRequest\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\x12\x14\n" +
+	"\x05paths\x18\x02 \x03(\tR\x05paths\".\n" +
+	"\x12TrashFilesResponse\x12\x18\n" +
+	"\atrashed\x18\x01 \x01(\x05R\atrashed\".\n" +
+	"\x10ListTrashRequest\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\"H\n" +
+	"\x11ListTrashResponse\x123\n" +
+	"\x05items\x18\x01 \x03(\v2\x1d.homecloud.agent.v3.TrashItemR\x05items\"\xa1\x01\n" +
+	"\tTrashItem\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
+	"\x06folder\x18\x03 \x01(\bR\x06folder\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x04 \x01(\x03R\tsizeBytes\x129\n" +
+	"\n" +
+	"deleted_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tdeletedAt\"C\n" +
+	"\x13RestoreFilesRequest\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\x12\x10\n" +
+	"\x03ids\x18\x02 \x03(\tR\x03ids\",\n" +
+	"\x14RestoreFilesResponse\x12\x14\n" +
+	"\x05paths\x18\x01 \x03(\tR\x05paths\"\\\n" +
+	"\x12GetFileLinkRequest\x12\x1a\n" +
+	"\blocation\x18\x01 \x01(\tR\blocation\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x16\n" +
+	"\x06inline\x18\x03 \x01(\bR\x06inline\"'\n" +
+	"\x13GetFileLinkResponse\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url*\x92\x01\n" +
 	"\vHealthState\x12\x1c\n" +
 	"\x18HEALTH_STATE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fHEALTH_STATE_OK\x10\x01\x12\x18\n" +
@@ -8653,7 +9812,7 @@ const file_homecloud_agent_v3_agent_proto_rawDesc = "" +
 	"\x10LoginCodePurpose\x12\"\n" +
 	"\x1eLOGIN_CODE_PURPOSE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aLOGIN_CODE_PURPOSE_SIGN_IN\x10\x01\x12\x1b\n" +
-	"\x17LOGIN_CODE_PURPOSE_PAIR\x10\x022\xd8\x12\n" +
+	"\x17LOGIN_CODE_PURPOSE_PAIR\x10\x022\xcc\x19\n" +
 	"\fAgentService\x12W\n" +
 	"\aGetInfo\x12\".homecloud.agent.v3.GetInfoRequest\x1a#.homecloud.agent.v3.GetInfoResponse\"\x03\x90\x02\x01\x12c\n" +
 	"\vGetOverview\x12&.homecloud.agent.v3.GetOverviewRequest\x1a'.homecloud.agent.v3.GetOverviewResponse\"\x03\x90\x02\x01\x12f\n" +
@@ -8680,7 +9839,18 @@ const file_homecloud_agent_v3_agent_proto_rawDesc = "" +
 	"\vListDevices\x12&.homecloud.agent.v3.ListDevicesRequest\x1a'.homecloud.agent.v3.ListDevicesResponse\"\x03\x90\x02\x01\x12a\n" +
 	"\fRevokeDevice\x12'.homecloud.agent.v3.RevokeDeviceRequest\x1a(.homecloud.agent.v3.RevokeDeviceResponse\x12R\n" +
 	"\aSignOut\x12\".homecloud.agent.v3.SignOutRequest\x1a#.homecloud.agent.v3.SignOutResponse\x12j\n" +
-	"\x0fSignOutBrowsers\x12*.homecloud.agent.v3.SignOutBrowsersRequest\x1a+.homecloud.agent.v3.SignOutBrowsersResponseB\xd2\x01\n" +
+	"\x0fSignOutBrowsers\x12*.homecloud.agent.v3.SignOutBrowsersRequest\x1a+.homecloud.agent.v3.SignOutBrowsersResponse\x12u\n" +
+	"\x11ListFileLocations\x12,.homecloud.agent.v3.ListFileLocationsRequest\x1a-.homecloud.agent.v3.ListFileLocationsResponse\"\x03\x90\x02\x01\x12]\n" +
+	"\tListFiles\x12$.homecloud.agent.v3.ListFilesRequest\x1a%.homecloud.agent.v3.ListFilesResponse\"\x03\x90\x02\x01\x12a\n" +
+	"\fCreateFolder\x12'.homecloud.agent.v3.CreateFolderRequest\x1a(.homecloud.agent.v3.CreateFolderResponse\x12[\n" +
+	"\n" +
+	"RenameFile\x12%.homecloud.agent.v3.RenameFileRequest\x1a&.homecloud.agent.v3.RenameFileResponse\x12X\n" +
+	"\tMoveFiles\x12$.homecloud.agent.v3.MoveFilesRequest\x1a%.homecloud.agent.v3.MoveFilesResponse\x12[\n" +
+	"\n" +
+	"TrashFiles\x12%.homecloud.agent.v3.TrashFilesRequest\x1a&.homecloud.agent.v3.TrashFilesResponse\x12]\n" +
+	"\tListTrash\x12$.homecloud.agent.v3.ListTrashRequest\x1a%.homecloud.agent.v3.ListTrashResponse\"\x03\x90\x02\x01\x12a\n" +
+	"\fRestoreFiles\x12'.homecloud.agent.v3.RestoreFilesRequest\x1a(.homecloud.agent.v3.RestoreFilesResponse\x12c\n" +
+	"\vGetFileLink\x12&.homecloud.agent.v3.GetFileLinkRequest\x1a'.homecloud.agent.v3.GetFileLinkResponse\"\x03\x90\x02\x01B\xd2\x01\n" +
 	"\x16com.homecloud.agent.v3B\n" +
 	"AgentProtoP\x01ZBgithub.com/vasilistotskas/homecloud/gen/homecloud/agent/v3;agentv3\xa2\x02\x03HAX\xaa\x02\x12Homecloud.Agent.V3\xca\x02\x12Homecloud\\Agent\\V3\xe2\x02\x1eHomecloud\\Agent\\V3\\GPBMetadata\xea\x02\x14Homecloud::Agent::V3b\x06proto3"
 
@@ -8697,7 +9867,7 @@ func file_homecloud_agent_v3_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_homecloud_agent_v3_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 18)
-var file_homecloud_agent_v3_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 95)
+var file_homecloud_agent_v3_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 116)
 var file_homecloud_agent_v3_agent_proto_goTypes = []any{
 	(HealthState)(0),                     // 0: homecloud.agent.v3.HealthState
 	(AppleAccountState)(0),               // 1: homecloud.agent.v3.AppleAccountState
@@ -8812,7 +9982,28 @@ var file_homecloud_agent_v3_agent_proto_goTypes = []any{
 	(*SignOutResponse)(nil),              // 110: homecloud.agent.v3.SignOutResponse
 	(*SignOutBrowsersRequest)(nil),       // 111: homecloud.agent.v3.SignOutBrowsersRequest
 	(*SignOutBrowsersResponse)(nil),      // 112: homecloud.agent.v3.SignOutBrowsersResponse
-	(*timestamppb.Timestamp)(nil),        // 113: google.protobuf.Timestamp
+	(*ListFileLocationsRequest)(nil),     // 113: homecloud.agent.v3.ListFileLocationsRequest
+	(*ListFileLocationsResponse)(nil),    // 114: homecloud.agent.v3.ListFileLocationsResponse
+	(*FileLocation)(nil),                 // 115: homecloud.agent.v3.FileLocation
+	(*ListFilesRequest)(nil),             // 116: homecloud.agent.v3.ListFilesRequest
+	(*ListFilesResponse)(nil),            // 117: homecloud.agent.v3.ListFilesResponse
+	(*FileEntry)(nil),                    // 118: homecloud.agent.v3.FileEntry
+	(*CreateFolderRequest)(nil),          // 119: homecloud.agent.v3.CreateFolderRequest
+	(*CreateFolderResponse)(nil),         // 120: homecloud.agent.v3.CreateFolderResponse
+	(*RenameFileRequest)(nil),            // 121: homecloud.agent.v3.RenameFileRequest
+	(*RenameFileResponse)(nil),           // 122: homecloud.agent.v3.RenameFileResponse
+	(*MoveFilesRequest)(nil),             // 123: homecloud.agent.v3.MoveFilesRequest
+	(*MoveFilesResponse)(nil),            // 124: homecloud.agent.v3.MoveFilesResponse
+	(*TrashFilesRequest)(nil),            // 125: homecloud.agent.v3.TrashFilesRequest
+	(*TrashFilesResponse)(nil),           // 126: homecloud.agent.v3.TrashFilesResponse
+	(*ListTrashRequest)(nil),             // 127: homecloud.agent.v3.ListTrashRequest
+	(*ListTrashResponse)(nil),            // 128: homecloud.agent.v3.ListTrashResponse
+	(*TrashItem)(nil),                    // 129: homecloud.agent.v3.TrashItem
+	(*RestoreFilesRequest)(nil),          // 130: homecloud.agent.v3.RestoreFilesRequest
+	(*RestoreFilesResponse)(nil),         // 131: homecloud.agent.v3.RestoreFilesResponse
+	(*GetFileLinkRequest)(nil),           // 132: homecloud.agent.v3.GetFileLinkRequest
+	(*GetFileLinkResponse)(nil),          // 133: homecloud.agent.v3.GetFileLinkResponse
+	(*timestamppb.Timestamp)(nil),        // 134: google.protobuf.Timestamp
 }
 var file_homecloud_agent_v3_agent_proto_depIdxs = []int32{
 	24,  // 0: homecloud.agent.v3.GetOverviewResponse.overview:type_name -> homecloud.agent.v3.Overview
@@ -8831,9 +10022,9 @@ var file_homecloud_agent_v3_agent_proto_depIdxs = []int32{
 	25,  // 13: homecloud.agent.v3.Overview.icloud_drive:type_name -> homecloud.agent.v3.ICloudDrive
 	44,  // 14: homecloud.agent.v3.Overview.downloader_checkpoint:type_name -> homecloud.agent.v3.DownloaderCheckpoint
 	60,  // 15: homecloud.agent.v3.Overview.icloud_photos:type_name -> homecloud.agent.v3.ICloudPhotos
-	113, // 16: homecloud.agent.v3.ICloudDrive.signed_in_at:type_name -> google.protobuf.Timestamp
+	134, // 16: homecloud.agent.v3.ICloudDrive.signed_in_at:type_name -> google.protobuf.Timestamp
 	0,   // 17: homecloud.agent.v3.StorageHealth.state:type_name -> homecloud.agent.v3.HealthState
-	113, // 18: homecloud.agent.v3.StorageHealth.checked_at:type_name -> google.protobuf.Timestamp
+	134, // 18: homecloud.agent.v3.StorageHealth.checked_at:type_name -> google.protobuf.Timestamp
 	27,  // 19: homecloud.agent.v3.StorageHealth.drives:type_name -> homecloud.agent.v3.DriveHealth
 	28,  // 20: homecloud.agent.v3.StorageHealth.arrays:type_name -> homecloud.agent.v3.RaidArray
 	0,   // 21: homecloud.agent.v3.DriveHealth.state:type_name -> homecloud.agent.v3.HealthState
@@ -8841,14 +10032,14 @@ var file_homecloud_agent_v3_agent_proto_depIdxs = []int32{
 	29,  // 23: homecloud.agent.v3.RaidArray.members:type_name -> homecloud.agent.v3.RaidMember
 	1,   // 24: homecloud.agent.v3.AppleAccount.state:type_name -> homecloud.agent.v3.AppleAccountState
 	2,   // 25: homecloud.agent.v3.Activity.phase:type_name -> homecloud.agent.v3.Phase
-	113, // 26: homecloud.agent.v3.Activity.phase_started_at:type_name -> google.protobuf.Timestamp
-	113, // 27: homecloud.agent.v3.Activity.next_cycle_at:type_name -> google.protobuf.Timestamp
-	113, // 28: homecloud.agent.v3.Activity.next_scrub_at:type_name -> google.protobuf.Timestamp
-	113, // 29: homecloud.agent.v3.Activity.next_ledger_backup_at:type_name -> google.protobuf.Timestamp
-	113, // 30: homecloud.agent.v3.Activity.next_iphone_backup_check_at:type_name -> google.protobuf.Timestamp
-	113, // 31: homecloud.agent.v3.Activity.next_drive_sync_at:type_name -> google.protobuf.Timestamp
-	113, // 32: homecloud.agent.v3.Run.started_at:type_name -> google.protobuf.Timestamp
-	113, // 33: homecloud.agent.v3.Run.finished_at:type_name -> google.protobuf.Timestamp
+	134, // 26: homecloud.agent.v3.Activity.phase_started_at:type_name -> google.protobuf.Timestamp
+	134, // 27: homecloud.agent.v3.Activity.next_cycle_at:type_name -> google.protobuf.Timestamp
+	134, // 28: homecloud.agent.v3.Activity.next_scrub_at:type_name -> google.protobuf.Timestamp
+	134, // 29: homecloud.agent.v3.Activity.next_ledger_backup_at:type_name -> google.protobuf.Timestamp
+	134, // 30: homecloud.agent.v3.Activity.next_iphone_backup_check_at:type_name -> google.protobuf.Timestamp
+	134, // 31: homecloud.agent.v3.Activity.next_drive_sync_at:type_name -> google.protobuf.Timestamp
+	134, // 32: homecloud.agent.v3.Run.started_at:type_name -> google.protobuf.Timestamp
+	134, // 33: homecloud.agent.v3.Run.finished_at:type_name -> google.protobuf.Timestamp
 	6,   // 34: homecloud.agent.v3.Run.result:type_name -> homecloud.agent.v3.RunResult
 	43,  // 35: homecloud.agent.v3.Run.cycle:type_name -> homecloud.agent.v3.CycleReport
 	36,  // 36: homecloud.agent.v3.Run.scrub:type_name -> homecloud.agent.v3.ScrubReport
@@ -8858,17 +10049,17 @@ var file_homecloud_agent_v3_agent_proto_depIdxs = []int32{
 	37,  // 40: homecloud.agent.v3.ScrubReport.drive:type_name -> homecloud.agent.v3.DriveScrub
 	4,   // 41: homecloud.agent.v3.DriveSyncReport.outcome:type_name -> homecloud.agent.v3.DriveSyncOutcome
 	41,  // 42: homecloud.agent.v3.IPhoneBackupReport.devices:type_name -> homecloud.agent.v3.IPhoneBackup
-	113, // 43: homecloud.agent.v3.IPhoneBackup.completed_at:type_name -> google.protobuf.Timestamp
+	134, // 43: homecloud.agent.v3.IPhoneBackup.completed_at:type_name -> google.protobuf.Timestamp
 	5,   // 44: homecloud.agent.v3.IPhoneBackup.state:type_name -> homecloud.agent.v3.IPhoneBackupState
-	113, // 45: homecloud.agent.v3.IPhoneBackup.last_full_read_at:type_name -> google.protobuf.Timestamp
+	134, // 45: homecloud.agent.v3.IPhoneBackup.last_full_read_at:type_name -> google.protobuf.Timestamp
 	42,  // 46: homecloud.agent.v3.IPhoneBackup.copies:type_name -> homecloud.agent.v3.IPhoneBackupCopy
-	113, // 47: homecloud.agent.v3.IPhoneBackupCopy.completed_at:type_name -> google.protobuf.Timestamp
-	113, // 48: homecloud.agent.v3.IPhoneBackupCopy.verified_at:type_name -> google.protobuf.Timestamp
+	134, // 47: homecloud.agent.v3.IPhoneBackupCopy.completed_at:type_name -> google.protobuf.Timestamp
+	134, // 48: homecloud.agent.v3.IPhoneBackupCopy.verified_at:type_name -> google.protobuf.Timestamp
 	7,   // 49: homecloud.agent.v3.CycleReport.download:type_name -> homecloud.agent.v3.DownloadOutcome
 	44,  // 50: homecloud.agent.v3.CycleReport.checkpoint:type_name -> homecloud.agent.v3.DownloaderCheckpoint
 	3,   // 51: homecloud.agent.v3.ListRunsRequest.kind:type_name -> homecloud.agent.v3.RunKind
 	35,  // 52: homecloud.agent.v3.ListRunsResponse.runs:type_name -> homecloud.agent.v3.Run
-	113, // 53: homecloud.agent.v3.Event.at:type_name -> google.protobuf.Timestamp
+	134, // 53: homecloud.agent.v3.Event.at:type_name -> google.protobuf.Timestamp
 	51,  // 54: homecloud.agent.v3.Event.asset:type_name -> homecloud.agent.v3.AssetRef
 	52,  // 55: homecloud.agent.v3.Event.rendition_changed:type_name -> homecloud.agent.v3.RenditionChanged
 	53,  // 56: homecloud.agent.v3.Event.state_changed:type_name -> homecloud.agent.v3.StateChanged
@@ -8883,7 +10074,7 @@ var file_homecloud_agent_v3_agent_proto_depIdxs = []int32{
 	59,  // 65: homecloud.agent.v3.Event.photos_activity_changed:type_name -> homecloud.agent.v3.PhotosActivityChanged
 	9,   // 66: homecloud.agent.v3.QuarantineRepairEvent.step:type_name -> homecloud.agent.v3.QuarantineRepairStep
 	10,  // 67: homecloud.agent.v3.IPhoneBackupCopyEvent.change:type_name -> homecloud.agent.v3.IPhoneBackupCopyChange
-	113, // 68: homecloud.agent.v3.IPhoneBackupCopyEvent.completed_at:type_name -> google.protobuf.Timestamp
+	134, // 68: homecloud.agent.v3.IPhoneBackupCopyEvent.completed_at:type_name -> google.protobuf.Timestamp
 	11,  // 69: homecloud.agent.v3.DriveFileEvent.change:type_name -> homecloud.agent.v3.DriveFileChange
 	13,  // 70: homecloud.agent.v3.StateChanged.from:type_name -> homecloud.agent.v3.AssetState
 	13,  // 71: homecloud.agent.v3.StateChanged.to:type_name -> homecloud.agent.v3.AssetState
@@ -8894,107 +10085,130 @@ var file_homecloud_agent_v3_agent_proto_depIdxs = []int32{
 	0,   // 76: homecloud.agent.v3.DriveHealthChanged.to:type_name -> homecloud.agent.v3.HealthState
 	12,  // 77: homecloud.agent.v3.PhotosActivityChanged.from:type_name -> homecloud.agent.v3.PhotosActivity
 	12,  // 78: homecloud.agent.v3.PhotosActivityChanged.to:type_name -> homecloud.agent.v3.PhotosActivity
-	113, // 79: homecloud.agent.v3.PhotosActivityChanged.newest_added_at:type_name -> google.protobuf.Timestamp
-	113, // 80: homecloud.agent.v3.ICloudPhotos.newest_added_at:type_name -> google.protobuf.Timestamp
+	134, // 79: homecloud.agent.v3.PhotosActivityChanged.newest_added_at:type_name -> google.protobuf.Timestamp
+	134, // 80: homecloud.agent.v3.ICloudPhotos.newest_added_at:type_name -> google.protobuf.Timestamp
 	12,  // 81: homecloud.agent.v3.ICloudPhotos.activity:type_name -> homecloud.agent.v3.PhotosActivity
 	8,   // 82: homecloud.agent.v3.ListEventsRequest.kinds:type_name -> homecloud.agent.v3.EventKind
 	47,  // 83: homecloud.agent.v3.ListEventsResponse.events:type_name -> homecloud.agent.v3.Event
 	15,  // 84: homecloud.agent.v3.ListAssetsRequest.kind:type_name -> homecloud.agent.v3.AssetKind
 	64,  // 85: homecloud.agent.v3.ListAssetsRequest.on_this_day:type_name -> homecloud.agent.v3.CalendarDate
-	113, // 86: homecloud.agent.v3.ListAssetsRequest.taken_before:type_name -> google.protobuf.Timestamp
+	134, // 86: homecloud.agent.v3.ListAssetsRequest.taken_before:type_name -> google.protobuf.Timestamp
 	15,  // 87: homecloud.agent.v3.ListCaptureMonthsRequest.kind:type_name -> homecloud.agent.v3.AssetKind
 	67,  // 88: homecloud.agent.v3.ListCaptureMonthsResponse.months:type_name -> homecloud.agent.v3.CaptureMonth
 	69,  // 89: homecloud.agent.v3.ListAssetsResponse.items:type_name -> homecloud.agent.v3.LibraryItem
 	51,  // 90: homecloud.agent.v3.LibraryItem.asset:type_name -> homecloud.agent.v3.AssetRef
 	15,  // 91: homecloud.agent.v3.LibraryItem.kind:type_name -> homecloud.agent.v3.AssetKind
-	113, // 92: homecloud.agent.v3.LibraryItem.created_at:type_name -> google.protobuf.Timestamp
+	134, // 92: homecloud.agent.v3.LibraryItem.created_at:type_name -> google.protobuf.Timestamp
 	13,  // 93: homecloud.agent.v3.LibraryItem.state:type_name -> homecloud.agent.v3.AssetState
 	72,  // 94: homecloud.agent.v3.GetSafeToDeleteResponse.report:type_name -> homecloud.agent.v3.SafeToDelete
 	73,  // 95: homecloud.agent.v3.SafeToDelete.months:type_name -> homecloud.agent.v3.SafeToDeleteMonth
 	76,  // 96: homecloud.agent.v3.ListSafeToDeleteResponse.items:type_name -> homecloud.agent.v3.SafeToDeleteItem
 	69,  // 97: homecloud.agent.v3.SafeToDeleteItem.item:type_name -> homecloud.agent.v3.LibraryItem
-	113, // 98: homecloud.agent.v3.SafeToDeleteItem.added_at:type_name -> google.protobuf.Timestamp
+	134, // 98: homecloud.agent.v3.SafeToDeleteItem.added_at:type_name -> google.protobuf.Timestamp
 	79,  // 99: homecloud.agent.v3.ListQuarantineResponse.assets:type_name -> homecloud.agent.v3.QuarantinedAsset
 	51,  // 100: homecloud.agent.v3.QuarantinedAsset.asset:type_name -> homecloud.agent.v3.AssetRef
-	113, // 101: homecloud.agent.v3.QuarantinedAsset.quarantined_at:type_name -> google.protobuf.Timestamp
+	134, // 101: homecloud.agent.v3.QuarantinedAsset.quarantined_at:type_name -> google.protobuf.Timestamp
 	80,  // 102: homecloud.agent.v3.QuarantinedAsset.failures:type_name -> homecloud.agent.v3.Failure
-	113, // 103: homecloud.agent.v3.QuarantinedAsset.repair_requested_at:type_name -> google.protobuf.Timestamp
+	134, // 103: homecloud.agent.v3.QuarantinedAsset.repair_requested_at:type_name -> google.protobuf.Timestamp
 	14,  // 104: homecloud.agent.v3.Failure.tier:type_name -> homecloud.agent.v3.Tier
-	113, // 105: homecloud.agent.v3.Failure.set_aside_at:type_name -> google.protobuf.Timestamp
+	134, // 105: homecloud.agent.v3.Failure.set_aside_at:type_name -> google.protobuf.Timestamp
 	83,  // 106: homecloud.agent.v3.GetAssetResponse.asset:type_name -> homecloud.agent.v3.Asset
 	51,  // 107: homecloud.agent.v3.Asset.ref:type_name -> homecloud.agent.v3.AssetRef
 	13,  // 108: homecloud.agent.v3.Asset.state:type_name -> homecloud.agent.v3.AssetState
-	113, // 109: homecloud.agent.v3.Asset.state_changed_at:type_name -> google.protobuf.Timestamp
-	113, // 110: homecloud.agent.v3.Asset.created_at:type_name -> google.protobuf.Timestamp
-	113, // 111: homecloud.agent.v3.Asset.added_at:type_name -> google.protobuf.Timestamp
-	113, // 112: homecloud.agent.v3.Asset.last_seen_at:type_name -> google.protobuf.Timestamp
+	134, // 109: homecloud.agent.v3.Asset.state_changed_at:type_name -> google.protobuf.Timestamp
+	134, // 110: homecloud.agent.v3.Asset.created_at:type_name -> google.protobuf.Timestamp
+	134, // 111: homecloud.agent.v3.Asset.added_at:type_name -> google.protobuf.Timestamp
+	134, // 112: homecloud.agent.v3.Asset.last_seen_at:type_name -> google.protobuf.Timestamp
 	84,  // 113: homecloud.agent.v3.Asset.renditions:type_name -> homecloud.agent.v3.Rendition
 	16,  // 114: homecloud.agent.v3.Rendition.media_type:type_name -> homecloud.agent.v3.MediaType
 	14,  // 115: homecloud.agent.v3.Rendition.required_tiers:type_name -> homecloud.agent.v3.Tier
 	85,  // 116: homecloud.agent.v3.Rendition.passes:type_name -> homecloud.agent.v3.TierPass
 	80,  // 117: homecloud.agent.v3.Rendition.failure:type_name -> homecloud.agent.v3.Failure
 	14,  // 118: homecloud.agent.v3.TierPass.tier:type_name -> homecloud.agent.v3.Tier
-	113, // 119: homecloud.agent.v3.TierPass.at:type_name -> google.protobuf.Timestamp
+	134, // 119: homecloud.agent.v3.TierPass.at:type_name -> google.protobuf.Timestamp
 	96,  // 120: homecloud.agent.v3.GetSettingsResponse.settings:type_name -> homecloud.agent.v3.Settings
 	97,  // 121: homecloud.agent.v3.Settings.downloader:type_name -> homecloud.agent.v3.ToolPin
 	97,  // 122: homecloud.agent.v3.Settings.video_probe:type_name -> homecloud.agent.v3.ToolPin
 	97,  // 123: homecloud.agent.v3.Settings.thumbnailer:type_name -> homecloud.agent.v3.ToolPin
 	17,  // 124: homecloud.agent.v3.CreateLoginCodeRequest.purpose:type_name -> homecloud.agent.v3.LoginCodePurpose
-	113, // 125: homecloud.agent.v3.CreateLoginCodeResponse.expires_at:type_name -> google.protobuf.Timestamp
+	134, // 125: homecloud.agent.v3.CreateLoginCodeResponse.expires_at:type_name -> google.protobuf.Timestamp
 	106, // 126: homecloud.agent.v3.ListDevicesResponse.devices:type_name -> homecloud.agent.v3.PairedDevice
-	113, // 127: homecloud.agent.v3.PairedDevice.paired_at:type_name -> google.protobuf.Timestamp
-	113, // 128: homecloud.agent.v3.PairedDevice.last_seen_at:type_name -> google.protobuf.Timestamp
-	18,  // 129: homecloud.agent.v3.AgentService.GetInfo:input_type -> homecloud.agent.v3.GetInfoRequest
-	20,  // 130: homecloud.agent.v3.AgentService.GetOverview:input_type -> homecloud.agent.v3.GetOverviewRequest
-	22,  // 131: homecloud.agent.v3.AgentService.WatchOverview:input_type -> homecloud.agent.v3.WatchOverviewRequest
-	45,  // 132: homecloud.agent.v3.AgentService.ListRuns:input_type -> homecloud.agent.v3.ListRunsRequest
-	61,  // 133: homecloud.agent.v3.AgentService.ListEvents:input_type -> homecloud.agent.v3.ListEventsRequest
-	63,  // 134: homecloud.agent.v3.AgentService.ListAssets:input_type -> homecloud.agent.v3.ListAssetsRequest
-	65,  // 135: homecloud.agent.v3.AgentService.ListCaptureMonths:input_type -> homecloud.agent.v3.ListCaptureMonthsRequest
-	70,  // 136: homecloud.agent.v3.AgentService.GetSafeToDelete:input_type -> homecloud.agent.v3.GetSafeToDeleteRequest
-	74,  // 137: homecloud.agent.v3.AgentService.ListSafeToDelete:input_type -> homecloud.agent.v3.ListSafeToDeleteRequest
-	77,  // 138: homecloud.agent.v3.AgentService.ListQuarantine:input_type -> homecloud.agent.v3.ListQuarantineRequest
-	81,  // 139: homecloud.agent.v3.AgentService.GetAsset:input_type -> homecloud.agent.v3.GetAssetRequest
-	86,  // 140: homecloud.agent.v3.AgentService.ReleaseQuarantine:input_type -> homecloud.agent.v3.ReleaseQuarantineRequest
-	88,  // 141: homecloud.agent.v3.AgentService.RepairQuarantine:input_type -> homecloud.agent.v3.RepairQuarantineRequest
-	90,  // 142: homecloud.agent.v3.AgentService.StartSync:input_type -> homecloud.agent.v3.StartSyncRequest
-	92,  // 143: homecloud.agent.v3.AgentService.SendTestNotification:input_type -> homecloud.agent.v3.SendTestNotificationRequest
-	94,  // 144: homecloud.agent.v3.AgentService.GetSettings:input_type -> homecloud.agent.v3.GetSettingsRequest
-	98,  // 145: homecloud.agent.v3.AgentService.CreateLoginCode:input_type -> homecloud.agent.v3.CreateLoginCodeRequest
-	100, // 146: homecloud.agent.v3.AgentService.ExchangeLoginCode:input_type -> homecloud.agent.v3.ExchangeLoginCodeRequest
-	102, // 147: homecloud.agent.v3.AgentService.PairDevice:input_type -> homecloud.agent.v3.PairDeviceRequest
-	104, // 148: homecloud.agent.v3.AgentService.ListDevices:input_type -> homecloud.agent.v3.ListDevicesRequest
-	107, // 149: homecloud.agent.v3.AgentService.RevokeDevice:input_type -> homecloud.agent.v3.RevokeDeviceRequest
-	109, // 150: homecloud.agent.v3.AgentService.SignOut:input_type -> homecloud.agent.v3.SignOutRequest
-	111, // 151: homecloud.agent.v3.AgentService.SignOutBrowsers:input_type -> homecloud.agent.v3.SignOutBrowsersRequest
-	19,  // 152: homecloud.agent.v3.AgentService.GetInfo:output_type -> homecloud.agent.v3.GetInfoResponse
-	21,  // 153: homecloud.agent.v3.AgentService.GetOverview:output_type -> homecloud.agent.v3.GetOverviewResponse
-	23,  // 154: homecloud.agent.v3.AgentService.WatchOverview:output_type -> homecloud.agent.v3.WatchOverviewResponse
-	46,  // 155: homecloud.agent.v3.AgentService.ListRuns:output_type -> homecloud.agent.v3.ListRunsResponse
-	62,  // 156: homecloud.agent.v3.AgentService.ListEvents:output_type -> homecloud.agent.v3.ListEventsResponse
-	68,  // 157: homecloud.agent.v3.AgentService.ListAssets:output_type -> homecloud.agent.v3.ListAssetsResponse
-	66,  // 158: homecloud.agent.v3.AgentService.ListCaptureMonths:output_type -> homecloud.agent.v3.ListCaptureMonthsResponse
-	71,  // 159: homecloud.agent.v3.AgentService.GetSafeToDelete:output_type -> homecloud.agent.v3.GetSafeToDeleteResponse
-	75,  // 160: homecloud.agent.v3.AgentService.ListSafeToDelete:output_type -> homecloud.agent.v3.ListSafeToDeleteResponse
-	78,  // 161: homecloud.agent.v3.AgentService.ListQuarantine:output_type -> homecloud.agent.v3.ListQuarantineResponse
-	82,  // 162: homecloud.agent.v3.AgentService.GetAsset:output_type -> homecloud.agent.v3.GetAssetResponse
-	87,  // 163: homecloud.agent.v3.AgentService.ReleaseQuarantine:output_type -> homecloud.agent.v3.ReleaseQuarantineResponse
-	89,  // 164: homecloud.agent.v3.AgentService.RepairQuarantine:output_type -> homecloud.agent.v3.RepairQuarantineResponse
-	91,  // 165: homecloud.agent.v3.AgentService.StartSync:output_type -> homecloud.agent.v3.StartSyncResponse
-	93,  // 166: homecloud.agent.v3.AgentService.SendTestNotification:output_type -> homecloud.agent.v3.SendTestNotificationResponse
-	95,  // 167: homecloud.agent.v3.AgentService.GetSettings:output_type -> homecloud.agent.v3.GetSettingsResponse
-	99,  // 168: homecloud.agent.v3.AgentService.CreateLoginCode:output_type -> homecloud.agent.v3.CreateLoginCodeResponse
-	101, // 169: homecloud.agent.v3.AgentService.ExchangeLoginCode:output_type -> homecloud.agent.v3.ExchangeLoginCodeResponse
-	103, // 170: homecloud.agent.v3.AgentService.PairDevice:output_type -> homecloud.agent.v3.PairDeviceResponse
-	105, // 171: homecloud.agent.v3.AgentService.ListDevices:output_type -> homecloud.agent.v3.ListDevicesResponse
-	108, // 172: homecloud.agent.v3.AgentService.RevokeDevice:output_type -> homecloud.agent.v3.RevokeDeviceResponse
-	110, // 173: homecloud.agent.v3.AgentService.SignOut:output_type -> homecloud.agent.v3.SignOutResponse
-	112, // 174: homecloud.agent.v3.AgentService.SignOutBrowsers:output_type -> homecloud.agent.v3.SignOutBrowsersResponse
-	152, // [152:175] is the sub-list for method output_type
-	129, // [129:152] is the sub-list for method input_type
-	129, // [129:129] is the sub-list for extension type_name
-	129, // [129:129] is the sub-list for extension extendee
-	0,   // [0:129] is the sub-list for field type_name
+	134, // 127: homecloud.agent.v3.PairedDevice.paired_at:type_name -> google.protobuf.Timestamp
+	134, // 128: homecloud.agent.v3.PairedDevice.last_seen_at:type_name -> google.protobuf.Timestamp
+	115, // 129: homecloud.agent.v3.ListFileLocationsResponse.locations:type_name -> homecloud.agent.v3.FileLocation
+	118, // 130: homecloud.agent.v3.ListFilesResponse.entries:type_name -> homecloud.agent.v3.FileEntry
+	134, // 131: homecloud.agent.v3.FileEntry.modified_at:type_name -> google.protobuf.Timestamp
+	129, // 132: homecloud.agent.v3.ListTrashResponse.items:type_name -> homecloud.agent.v3.TrashItem
+	134, // 133: homecloud.agent.v3.TrashItem.deleted_at:type_name -> google.protobuf.Timestamp
+	18,  // 134: homecloud.agent.v3.AgentService.GetInfo:input_type -> homecloud.agent.v3.GetInfoRequest
+	20,  // 135: homecloud.agent.v3.AgentService.GetOverview:input_type -> homecloud.agent.v3.GetOverviewRequest
+	22,  // 136: homecloud.agent.v3.AgentService.WatchOverview:input_type -> homecloud.agent.v3.WatchOverviewRequest
+	45,  // 137: homecloud.agent.v3.AgentService.ListRuns:input_type -> homecloud.agent.v3.ListRunsRequest
+	61,  // 138: homecloud.agent.v3.AgentService.ListEvents:input_type -> homecloud.agent.v3.ListEventsRequest
+	63,  // 139: homecloud.agent.v3.AgentService.ListAssets:input_type -> homecloud.agent.v3.ListAssetsRequest
+	65,  // 140: homecloud.agent.v3.AgentService.ListCaptureMonths:input_type -> homecloud.agent.v3.ListCaptureMonthsRequest
+	70,  // 141: homecloud.agent.v3.AgentService.GetSafeToDelete:input_type -> homecloud.agent.v3.GetSafeToDeleteRequest
+	74,  // 142: homecloud.agent.v3.AgentService.ListSafeToDelete:input_type -> homecloud.agent.v3.ListSafeToDeleteRequest
+	77,  // 143: homecloud.agent.v3.AgentService.ListQuarantine:input_type -> homecloud.agent.v3.ListQuarantineRequest
+	81,  // 144: homecloud.agent.v3.AgentService.GetAsset:input_type -> homecloud.agent.v3.GetAssetRequest
+	86,  // 145: homecloud.agent.v3.AgentService.ReleaseQuarantine:input_type -> homecloud.agent.v3.ReleaseQuarantineRequest
+	88,  // 146: homecloud.agent.v3.AgentService.RepairQuarantine:input_type -> homecloud.agent.v3.RepairQuarantineRequest
+	90,  // 147: homecloud.agent.v3.AgentService.StartSync:input_type -> homecloud.agent.v3.StartSyncRequest
+	92,  // 148: homecloud.agent.v3.AgentService.SendTestNotification:input_type -> homecloud.agent.v3.SendTestNotificationRequest
+	94,  // 149: homecloud.agent.v3.AgentService.GetSettings:input_type -> homecloud.agent.v3.GetSettingsRequest
+	98,  // 150: homecloud.agent.v3.AgentService.CreateLoginCode:input_type -> homecloud.agent.v3.CreateLoginCodeRequest
+	100, // 151: homecloud.agent.v3.AgentService.ExchangeLoginCode:input_type -> homecloud.agent.v3.ExchangeLoginCodeRequest
+	102, // 152: homecloud.agent.v3.AgentService.PairDevice:input_type -> homecloud.agent.v3.PairDeviceRequest
+	104, // 153: homecloud.agent.v3.AgentService.ListDevices:input_type -> homecloud.agent.v3.ListDevicesRequest
+	107, // 154: homecloud.agent.v3.AgentService.RevokeDevice:input_type -> homecloud.agent.v3.RevokeDeviceRequest
+	109, // 155: homecloud.agent.v3.AgentService.SignOut:input_type -> homecloud.agent.v3.SignOutRequest
+	111, // 156: homecloud.agent.v3.AgentService.SignOutBrowsers:input_type -> homecloud.agent.v3.SignOutBrowsersRequest
+	113, // 157: homecloud.agent.v3.AgentService.ListFileLocations:input_type -> homecloud.agent.v3.ListFileLocationsRequest
+	116, // 158: homecloud.agent.v3.AgentService.ListFiles:input_type -> homecloud.agent.v3.ListFilesRequest
+	119, // 159: homecloud.agent.v3.AgentService.CreateFolder:input_type -> homecloud.agent.v3.CreateFolderRequest
+	121, // 160: homecloud.agent.v3.AgentService.RenameFile:input_type -> homecloud.agent.v3.RenameFileRequest
+	123, // 161: homecloud.agent.v3.AgentService.MoveFiles:input_type -> homecloud.agent.v3.MoveFilesRequest
+	125, // 162: homecloud.agent.v3.AgentService.TrashFiles:input_type -> homecloud.agent.v3.TrashFilesRequest
+	127, // 163: homecloud.agent.v3.AgentService.ListTrash:input_type -> homecloud.agent.v3.ListTrashRequest
+	130, // 164: homecloud.agent.v3.AgentService.RestoreFiles:input_type -> homecloud.agent.v3.RestoreFilesRequest
+	132, // 165: homecloud.agent.v3.AgentService.GetFileLink:input_type -> homecloud.agent.v3.GetFileLinkRequest
+	19,  // 166: homecloud.agent.v3.AgentService.GetInfo:output_type -> homecloud.agent.v3.GetInfoResponse
+	21,  // 167: homecloud.agent.v3.AgentService.GetOverview:output_type -> homecloud.agent.v3.GetOverviewResponse
+	23,  // 168: homecloud.agent.v3.AgentService.WatchOverview:output_type -> homecloud.agent.v3.WatchOverviewResponse
+	46,  // 169: homecloud.agent.v3.AgentService.ListRuns:output_type -> homecloud.agent.v3.ListRunsResponse
+	62,  // 170: homecloud.agent.v3.AgentService.ListEvents:output_type -> homecloud.agent.v3.ListEventsResponse
+	68,  // 171: homecloud.agent.v3.AgentService.ListAssets:output_type -> homecloud.agent.v3.ListAssetsResponse
+	66,  // 172: homecloud.agent.v3.AgentService.ListCaptureMonths:output_type -> homecloud.agent.v3.ListCaptureMonthsResponse
+	71,  // 173: homecloud.agent.v3.AgentService.GetSafeToDelete:output_type -> homecloud.agent.v3.GetSafeToDeleteResponse
+	75,  // 174: homecloud.agent.v3.AgentService.ListSafeToDelete:output_type -> homecloud.agent.v3.ListSafeToDeleteResponse
+	78,  // 175: homecloud.agent.v3.AgentService.ListQuarantine:output_type -> homecloud.agent.v3.ListQuarantineResponse
+	82,  // 176: homecloud.agent.v3.AgentService.GetAsset:output_type -> homecloud.agent.v3.GetAssetResponse
+	87,  // 177: homecloud.agent.v3.AgentService.ReleaseQuarantine:output_type -> homecloud.agent.v3.ReleaseQuarantineResponse
+	89,  // 178: homecloud.agent.v3.AgentService.RepairQuarantine:output_type -> homecloud.agent.v3.RepairQuarantineResponse
+	91,  // 179: homecloud.agent.v3.AgentService.StartSync:output_type -> homecloud.agent.v3.StartSyncResponse
+	93,  // 180: homecloud.agent.v3.AgentService.SendTestNotification:output_type -> homecloud.agent.v3.SendTestNotificationResponse
+	95,  // 181: homecloud.agent.v3.AgentService.GetSettings:output_type -> homecloud.agent.v3.GetSettingsResponse
+	99,  // 182: homecloud.agent.v3.AgentService.CreateLoginCode:output_type -> homecloud.agent.v3.CreateLoginCodeResponse
+	101, // 183: homecloud.agent.v3.AgentService.ExchangeLoginCode:output_type -> homecloud.agent.v3.ExchangeLoginCodeResponse
+	103, // 184: homecloud.agent.v3.AgentService.PairDevice:output_type -> homecloud.agent.v3.PairDeviceResponse
+	105, // 185: homecloud.agent.v3.AgentService.ListDevices:output_type -> homecloud.agent.v3.ListDevicesResponse
+	108, // 186: homecloud.agent.v3.AgentService.RevokeDevice:output_type -> homecloud.agent.v3.RevokeDeviceResponse
+	110, // 187: homecloud.agent.v3.AgentService.SignOut:output_type -> homecloud.agent.v3.SignOutResponse
+	112, // 188: homecloud.agent.v3.AgentService.SignOutBrowsers:output_type -> homecloud.agent.v3.SignOutBrowsersResponse
+	114, // 189: homecloud.agent.v3.AgentService.ListFileLocations:output_type -> homecloud.agent.v3.ListFileLocationsResponse
+	117, // 190: homecloud.agent.v3.AgentService.ListFiles:output_type -> homecloud.agent.v3.ListFilesResponse
+	120, // 191: homecloud.agent.v3.AgentService.CreateFolder:output_type -> homecloud.agent.v3.CreateFolderResponse
+	122, // 192: homecloud.agent.v3.AgentService.RenameFile:output_type -> homecloud.agent.v3.RenameFileResponse
+	124, // 193: homecloud.agent.v3.AgentService.MoveFiles:output_type -> homecloud.agent.v3.MoveFilesResponse
+	126, // 194: homecloud.agent.v3.AgentService.TrashFiles:output_type -> homecloud.agent.v3.TrashFilesResponse
+	128, // 195: homecloud.agent.v3.AgentService.ListTrash:output_type -> homecloud.agent.v3.ListTrashResponse
+	131, // 196: homecloud.agent.v3.AgentService.RestoreFiles:output_type -> homecloud.agent.v3.RestoreFilesResponse
+	133, // 197: homecloud.agent.v3.AgentService.GetFileLink:output_type -> homecloud.agent.v3.GetFileLinkResponse
+	166, // [166:198] is the sub-list for method output_type
+	134, // [134:166] is the sub-list for method input_type
+	134, // [134:134] is the sub-list for extension type_name
+	134, // [134:134] is the sub-list for extension extendee
+	0,   // [0:134] is the sub-list for field type_name
 }
 
 func init() { file_homecloud_agent_v3_agent_proto_init() }
@@ -9022,7 +10236,7 @@ func file_homecloud_agent_v3_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_homecloud_agent_v3_agent_proto_rawDesc), len(file_homecloud_agent_v3_agent_proto_rawDesc)),
 			NumEnums:      18,
-			NumMessages:   95,
+			NumMessages:   116,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

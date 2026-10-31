@@ -10,8 +10,10 @@
 //     desktop app's origins),
 //  3. CORS, granted only to the desktop app's origins,
 //  4. security headers,
-//  5. for the API: authentication (bearer token or session cookie, with CSRF
-//     protection for cookies), whose principal the request then carries.
+//  5. for the API and the upload endpoints: authentication (bearer token or
+//     session cookie, with CSRF protection for cookies), whose principal the
+//     request then carries. Media and file downloads are signed links
+//     instead (package media).
 package web
 
 import (
@@ -34,6 +36,7 @@ import (
 
 	"github.com/vasilistotskas/homecloud/gen/homecloud/agent/v3/agentv3connect"
 	"github.com/vasilistotskas/homecloud/internal/auth"
+	"github.com/vasilistotskas/homecloud/internal/files"
 	"github.com/vasilistotskas/homecloud/internal/media"
 )
 
@@ -84,8 +87,13 @@ type Options struct {
 	App fs.FS
 	// Media serves signed thumbnail and preview URLs (package media).
 	Media http.Handler
-	Auth  *auth.Authenticator
-	Log   *slog.Logger
+	// Downloads serves signed file links (files.Downloads).
+	Downloads http.Handler
+	// Uploads serves the tus upload endpoints (files.Uploads); the server
+	// authenticates every request first.
+	Uploads http.Handler
+	Auth    *auth.Authenticator
+	Log     *slog.Logger
 }
 
 // Handler returns the agent's root HTTP handler.
@@ -99,11 +107,13 @@ func Handler(o Options) (http.Handler, error) {
 	// that opens it is sent to the browser address).
 	own := []string{"http://" + browser}
 	signIn := []string{browser}
+	publicHost := ""
 	if o.PublicOrigin != "" {
 		u, parseErr := url.Parse(o.PublicOrigin)
 		if parseErr != nil {
 			return nil, fmt.Errorf("public origin %q: %w", o.PublicOrigin, parseErr)
 		}
+		publicHost = u.Host
 		hosts = append(hosts, u.Host)
 		own = append(own, o.PublicOrigin)
 		signIn = append(signIn, u.Host)
@@ -131,12 +141,16 @@ func Handler(o Options) (http.Handler, error) {
 	mux.Handle("GET /{$}", toBrowserAddr(o.Listen, browser, app))
 	mux.Handle("GET /assets/", app)
 	mux.Handle("GET "+media.Prefix, o.Media)
+	mux.Handle("GET "+files.DownloadPrefix, o.Downloads)
+	// Upload bodies are as large as the file; tusd bounds each by its declared
+	// length and the volume's free space.
+	mux.Handle(files.UploadPrefix, authenticateHTTP(o.Auth, csrf, o.Log, forwardedProto(publicHost, o.Uploads)))
 
 	cors := newCORSPolicy(
 		DesktopOrigins,
-		connectcors.AllowedMethods(),
-		append(connectcors.AllowedHeaders(), "Authorization"),
-		connectcors.ExposedHeaders(),
+		slices.Concat(connectcors.AllowedMethods(), files.TusMethods),
+		slices.Concat(connectcors.AllowedHeaders(), []string{"Authorization"}, files.TusRequestHeaders),
+		slices.Concat(connectcors.ExposedHeaders(), files.TusResponseHeaders),
 		corsMaxAge,
 	)
 	refused := &refusals{log: o.Log}
@@ -258,34 +272,77 @@ func authenticate(a *auth.Authenticator, csrf *http.CrossOriginProtection, signI
 			next.ServeHTTP(w, r)
 			return
 		}
-		p, err := a.Authenticate(r)
-		if err != nil {
-			log.ErrorContext(r.Context(), "credentials could not be checked", "procedure", procedure, "err", err)
-			deny(w, r, connect.CodeUnavailable, "credentials cannot be checked right now")
+		p, refusal := credentials(a, csrf, log, r)
+		if refusal != nil {
+			deny(w, r, refusal.code, refusal.msg)
 			return
 		}
-		switch p.Kind {
-		case auth.KindBearer:
-		case auth.KindDevice:
-			if procedure == agentv3connect.AgentServiceCreateLoginCodeProcedure {
-				deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")
-				return
-			}
-		case auth.KindSession:
-			if procedure == agentv3connect.AgentServiceCreateLoginCodeProcedure {
-				deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")
-				return
-			}
-			if err := csrf.Check(r); err != nil {
-				deny(w, r, connect.CodePermissionDenied, "cross-origin request rejected")
-				return
-			}
-		case auth.KindNone:
-			deny(w, r, connect.CodeUnauthenticated, "missing or invalid credentials")
+		if p.Kind != auth.KindBearer && procedure == agentv3connect.AgentServiceCreateLoginCodeProcedure {
+			deny(w, r, connect.CodePermissionDenied, "login codes require the agent token")
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
 	})
+}
+
+// authenticateHTTP admits plain HTTP requests (the upload endpoints) on the
+// same credentials and checks as the API, and passes their principal on.
+func authenticateHTTP(a *auth.Authenticator, csrf *http.CrossOriginProtection, log *slog.Logger, next http.Handler) http.Handler {
+	status := map[connect.Code]int{
+		connect.CodeUnauthenticated:  http.StatusUnauthorized,
+		connect.CodePermissionDenied: http.StatusForbidden,
+		connect.CodeUnavailable:      http.StatusServiceUnavailable,
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, refusal := credentials(a, csrf, log, r)
+		if refusal != nil {
+			http.Error(w, refusal.msg, status[refusal.code])
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), p)))
+	})
+}
+
+// forwardedProto drops every forwarding header a client sent and states
+// X-Forwarded-Proto: https for requests to the public host, which only the
+// https proxy serves under that name, so a handler building absolute URLs
+// trusts nothing a client claimed.
+func forwardedProto(publicHost string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Del("Forwarded")
+		r.Header.Del("X-Forwarded-Host")
+		r.Header.Del("X-Forwarded-Proto")
+		if publicHost != "" && r.Host == publicHost {
+			r.Header.Set("X-Forwarded-Proto", "https")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// refusal is why credentials refused a request.
+type refusal struct {
+	code connect.Code
+	msg  string
+}
+
+// credentials checks a request's credential: the agent token, a device
+// token, or a browser session whose request passes the CSRF check.
+func credentials(a *auth.Authenticator, csrf *http.CrossOriginProtection, log *slog.Logger, r *http.Request) (auth.Principal, *refusal) {
+	p, err := a.Authenticate(r)
+	if err != nil {
+		log.ErrorContext(r.Context(), "credentials could not be checked", "path", r.URL.Path, "err", err)
+		return p, &refusal{connect.CodeUnavailable, "credentials cannot be checked right now"}
+	}
+	switch p.Kind {
+	case auth.KindBearer, auth.KindDevice:
+	case auth.KindSession:
+		if err := csrf.Check(r); err != nil {
+			return p, &refusal{connect.CodePermissionDenied, "cross-origin request rejected"}
+		}
+	case auth.KindNone:
+		return p, &refusal{connect.CodeUnauthenticated, "missing or invalid credentials"}
+	}
+	return p, nil
 }
 
 // guardedMux registers each route connecthttp.Mount hands it behind wrap.

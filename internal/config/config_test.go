@@ -193,11 +193,36 @@ func TestValidate(t *testing.T) {
 			mutate(&c.Viewer)
 		}
 	}
+	files := func(mutate func(*Files)) func(*Config) {
+		return func(c *Config) {
+			c.Files = testFiles()
+			mutate(&c.Files)
+		}
+	}
 	tests := []struct {
 		name    string
 		mutate  func(*Config)
 		wantErr string
 	}{
+		{"files location without a name", files(func(f *Files) { f.Locations[0].Name = "" }), "files.locations name"},
+		{"files location name with spaces around", files(func(f *Files) { f.Locations[0].Name = " Uploads" }), "files.locations name"},
+		{"files location name with a slash", files(func(f *Files) { f.Locations[0].Name = "Up/loads" }), "must not contain a slash"},
+		{"files location name too long", files(func(f *Files) { f.Locations[0].Name = strings.Repeat("a", MaxLocationName+1) }), "files.locations name"},
+		{"files location names twice", files(func(f *Files) { f.Locations[1].Name = "UPLOADS" }), "twice"},
+		{"files location relative", files(func(f *Files) { f.Locations[0].Path = "Uploads" }), "clean absolute path"},
+		{"files location not clean", files(func(f *Files) { f.Locations[0].Path += string(filepath.Separator) }), "clean absolute path"},
+		{"files location is the archive", files(func(f *Files) { f.Locations[0].Path = testRoot }), "apart from storage.root"},
+		{"files location inside the archive", files(func(f *Files) {
+			f.Locations[0].Path = filepath.Join(testRoot, "Photos")
+		}), "apart from storage.root"},
+		{"files location holds the archive", files(func(f *Files) { f.Locations[0].Path = filepath.Dir(testRoot) }), "apart from storage.root"},
+		{"files location holds the ledger backups", files(func(f *Files) { f.Locations[0].Path = testTools }), "apart from backup.dir"},
+		{"files location inside another", files(func(f *Files) {
+			f.Locations[1].Path = filepath.Join(f.Locations[0].Path, "Phone")
+		}), "must be apart"},
+		{"files trash kept too briefly", files(func(f *Files) { f.TrashRetention = Duration(time.Hour) }), "files.trash_retention"},
+		{"files uploads kept too long", files(func(f *Files) { f.UploadExpiry = Duration(60 * 24 * time.Hour) }), "files.upload_expiry"},
+		{"files settings without locations", files(func(f *Files) { f.Locations = nil }), "need at least one"},
 		{"viewer without url", viewer(func(v *Viewer) { v.URL = "" }), "viewer.url"},
 		{"viewer url with a path", viewer(func(v *Viewer) { v.URL = "http://immich-server:2283/api" }), "viewer.url"},
 		{"viewer url with credentials", viewer(func(v *Viewer) { v.URL = "http://me:pw@immich-server:2283" }), "viewer.url"},
@@ -287,6 +312,30 @@ func TestValidate(t *testing.T) {
 				t.Fatalf("want error containing %q, got %v", tt.wantErr, err)
 			}
 		})
+	}
+}
+
+// testFiles is a valid [files] section: two locations beside the archive.
+func testFiles() Files {
+	parent := filepath.Dir(testRoot)
+	return Files{
+		Locations: []Location{
+			{Name: "Uploads", Path: filepath.Join(parent, "Uploads")},
+			{Name: "Old PC", Path: filepath.Join(parent, "Old-PC")},
+		},
+		TrashRetention: Duration(30 * 24 * time.Hour),
+		UploadExpiry:   Duration(7 * 24 * time.Hour),
+	}
+}
+
+func TestValidFiles(t *testing.T) {
+	cfg, err := Load(writeConfig(t, validTOML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Files = testFiles()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid [files] refused: %v", err)
 	}
 }
 

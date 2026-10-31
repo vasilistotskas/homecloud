@@ -27,6 +27,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/drive"
 	"github.com/vasilistotskas/homecloud/internal/export"
+	"github.com/vasilistotskas/homecloud/internal/files"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/media"
@@ -94,6 +95,7 @@ type Service struct {
 	notify       app.Notifier
 	auth         *auth.Authenticator
 	media        *media.Signer
+	files        *files.Service
 	log          *slog.Logger
 	hiddenDir    string
 	now          func() time.Time
@@ -113,6 +115,8 @@ type Deps struct {
 	Notifier     app.Notifier
 	Auth         *auth.Authenticator
 	Media        *media.Signer
+	// Files serves the Files page (docs/design.md §8m).
+	Files *files.Service
 	// Log receives security events (sign-ins, pairings, revocations).
 	Log *slog.Logger
 	Now func() time.Time
@@ -122,7 +126,7 @@ type Deps struct {
 func New(d Deps) *Service {
 	return &Service{
 		cfg: d.Config, configPath: d.ConfigPath, cli: d.CLI, agentVersion: d.AgentVersion,
-		db: d.Ledger, agent: d.Agent, notify: d.Notifier, auth: d.Auth, media: d.Media, log: d.Log, now: d.Now,
+		db: d.Ledger, agent: d.Agent, notify: d.Notifier, auth: d.Auth, media: d.Media, files: d.Files, log: d.Log, now: d.Now,
 		hiddenDir: kei.HiddenPath(d.Config.Storage.Root) + string(filepath.Separator),
 	}
 }

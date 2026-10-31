@@ -66,11 +66,18 @@ func (s *Signer) mac(path, principal string, exp int64) string {
 
 // URL returns a signed URL for one rendition at size, for principal p.
 func (s *Signer) URL(p auth.Principal, size thumbs.Size, library, assetID, version string) string {
-	path := Prefix + url.PathEscape(string(size)) + "/" + url.PathEscape(library) + "/" +
-		url.PathEscape(assetID) + "/" + url.PathEscape(version)
+	return s.Sign(p, Prefix+url.PathEscape(string(size))+"/"+url.PathEscape(library)+"/"+
+		url.PathEscape(assetID)+"/"+url.PathEscape(version))
+}
+
+// Sign returns escapedPath, an escaped URL path the agent serves, with the
+// query that makes it a link for principal p (Admit). Links minted within one
+// window are identical, so browsers can cache what they fetch.
+func (s *Signer) Sign(p auth.Principal, escapedPath string) string {
 	exp := s.now().Add(validity).Truncate(window).Add(window).Unix()
 	principal := p.String()
-	return path + "?p=" + url.QueryEscape(principal) + "&exp=" + strconv.FormatInt(exp, 10) + "&sig=" + s.mac(path, principal, exp)
+	return escapedPath + "?p=" + url.QueryEscape(principal) + "&exp=" + strconv.FormatInt(exp, 10) +
+		"&sig=" + s.mac(escapedPath, principal, exp)
 }
 
 // verify checks a request's signature and expiry and returns the principal
@@ -90,6 +97,26 @@ func (s *Signer) verify(r *http.Request) (auth.Principal, error) {
 	return auth.ParsePrincipal(q.Get("p")) //nolint:wrapcheck // package auth's own error
 }
 
+// Admit checks that r is a signed link (Sign) whose principal a still
+// admits, and answers the request with the reason when it is not.
+func (s *Signer) Admit(w http.ResponseWriter, r *http.Request, a *auth.Authenticator, log *slog.Logger) bool {
+	p, err := s.verify(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return false
+	}
+	switch ok, validErr := a.Valid(r.Context(), p); {
+	case validErr != nil:
+		log.ErrorContext(r.Context(), "signed link refused: its access could not be checked", "err", validErr)
+		http.Error(w, "access cannot be checked right now", http.StatusServiceUnavailable)
+		return false
+	case !ok:
+		http.Error(w, "the access this link was made for has ended", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 // Ledger finds a rendition's file.
 type Ledger interface {
 	Rendition(ctx context.Context, library, assetID, version string) (ledger.RenditionFile, error)
@@ -100,18 +127,7 @@ type Ledger interface {
 func Handler(s *Signer, a *auth.Authenticator, db Ledger, renderer *thumbs.Renderer, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+Prefix+"{size}/{library}/{asset}/{version}", func(w http.ResponseWriter, r *http.Request) {
-		p, err := s.verify(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusForbidden)
-			return
-		}
-		switch ok, validErr := a.Valid(r.Context(), p); {
-		case validErr != nil:
-			log.ErrorContext(r.Context(), "media link refused: its access could not be checked", "err", validErr)
-			http.Error(w, "access cannot be checked right now", http.StatusServiceUnavailable)
-			return
-		case !ok:
-			http.Error(w, "the access this link was made for has ended", http.StatusForbidden)
+		if !s.Admit(w, r, a, log) {
 			return
 		}
 		size, err := thumbs.ParseSize(r.PathValue("size"))

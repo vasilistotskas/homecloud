@@ -27,6 +27,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
 	"github.com/vasilistotskas/homecloud/internal/doctor"
+	"github.com/vasilistotskas/homecloud/internal/files"
 	"github.com/vasilistotskas/homecloud/internal/kei"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/media"
@@ -188,6 +189,12 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 	if err != nil {
 		return err
 	}
+	fileStore := files.New(cfg.Files, freeBytes, time.Now, log)
+	uploads, err := files.Uploads(fileStore, log)
+	if err != nil {
+		return err
+	}
+	go purgeFiles(ctx, fileStore)
 	self, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("locate the agent executable: %w", err)
@@ -200,11 +207,13 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 			Config: cfg, ConfigPath: cfgPath, AgentVersion: version,
 			// The CLI is installed next to the agent.
 			CLI:    filepath.Join(filepath.Dir(self), "homecloud"+platform.ExeSuffix),
-			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Media: signer, Log: log, Now: time.Now,
+			Ledger: db, Agent: agent, Notifier: n, Auth: authn, Media: signer, Files: fileStore, Log: log, Now: time.Now,
 		}),
-		Media: media.Handler(signer, authn, db, renderer, log),
-		Auth:  authn,
-		Log:   log,
+		Media:     media.Handler(signer, authn, db, renderer, log),
+		Downloads: files.Downloads(fileStore, signer, authn, log),
+		Uploads:   uploads,
+		Auth:      authn,
+		Log:       log,
 	})
 	if err != nil {
 		return err
@@ -227,4 +236,32 @@ func serveAPI(ctx context.Context, cfg *config.Config, cfgPath string, db *ledge
 	}()
 	log.InfoContext(ctx, "local API listening", "addr", cfg.Web.Listen, "endpoint", endpoint)
 	return web.Serve(ctx, ln, h, log)
+}
+
+// filesPurgeEvery is how often the Files trash and unfinished uploads are
+// checked for expired items.
+const filesPurgeEvery = time.Hour
+
+// purgeFiles removes expired Files trash items and unfinished uploads now
+// and every filesPurgeEvery until ctx ends.
+func purgeFiles(ctx context.Context, s *files.Service) {
+	t := time.NewTicker(filesPurgeEvery)
+	defer t.Stop()
+	for {
+		s.Purge(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// freeBytes is the free space on path's volume.
+func freeBytes(path string) (uint64, error) {
+	s, err := platform.DiskSpace(path)
+	if err != nil {
+		return 0, err //nolint:wrapcheck // platform's own error names the path
+	}
+	return s.Free, nil
 }

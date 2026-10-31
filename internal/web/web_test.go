@@ -29,6 +29,7 @@ import (
 	"github.com/vasilistotskas/homecloud/internal/app"
 	"github.com/vasilistotskas/homecloud/internal/auth"
 	"github.com/vasilistotskas/homecloud/internal/config"
+	"github.com/vasilistotskas/homecloud/internal/files"
 	"github.com/vasilistotskas/homecloud/internal/health"
 	"github.com/vasilistotskas/homecloud/internal/ledger"
 	"github.com/vasilistotskas/homecloud/internal/media"
@@ -87,7 +88,9 @@ type env struct {
 	// browser is the host:port a browser on this computer uses.
 	browser string
 	// root is the archive's root.
-	root     string
+	root string
+	// files is the folder of the Files location "Uploads".
+	files    string
 	notes    *notes
 	renderer *thumbs.Renderer
 	url      string
@@ -145,6 +148,16 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 		Web:          config.Web{Listen: listen, PublicOrigin: &publicOrigin},
 		Schedule:     config.Schedule{SyncInterval: config.Duration(time.Hour)},
 		SafeToDelete: config.SafeToDelete{MinAge: config.Duration(365 * 24 * time.Hour)},
+		Files: config.Files{
+			Locations:      []config.Location{{Name: "Uploads", Path: t.TempDir()}},
+			TrashRetention: config.Duration(30 * 24 * time.Hour),
+			UploadExpiry:   config.Duration(7 * 24 * time.Hour),
+		},
+	}
+	fileStore := files.New(cfg.Files, func(string) (uint64, error) { return 1 << 30, nil }, func() time.Time { return t0 }, slog.New(slog.DiscardHandler))
+	uploads, err := files.Uploads(fileStore, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	discard := slog.New(slog.DiscardHandler)
@@ -154,16 +167,18 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 		PublicOrigin: publicOrigin,
 		Service: api.New(api.Deps{
 			Config: cfg, ConfigPath: "config.toml", AgentVersion: "test",
-			Ledger: db, Agent: agent, Notifier: sent, Auth: authn, Media: signer, Log: discard,
+			Ledger: db, Agent: agent, Notifier: sent, Auth: authn, Media: signer, Files: fileStore, Log: discard,
 			Now: func() time.Time { return t0 },
 		}),
 		App: fstest.MapFS{
 			"index.html":        {Data: []byte(`<div id="root"></div>`)},
 			"assets/index-1.js": {Data: []byte("console.log(1)")},
 		},
-		Media: media.Handler(signer, authn, db, renderer, discard),
-		Auth:  authn,
-		Log:   discard,
+		Media:     media.Handler(signer, authn, db, renderer, discard),
+		Downloads: files.Downloads(fileStore, signer, authn, discard),
+		Uploads:   uploads,
+		Auth:      authn,
+		Log:       discard,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +192,7 @@ func setupWith(t *testing.T, publicOrigin string, opts ...func(*fakeAgent)) *env
 	srv.Start()
 	t.Cleanup(srv.Close)
 	return &env{
-		url: srv.URL, host: listen, browser: browser, root: cfg.Storage.Root, notes: sent, token: token, db: db, agent: agent, renderer: renderer,
+		url: srv.URL, host: listen, browser: browser, root: cfg.Storage.Root, files: cfg.Files.Locations[0].Path, notes: sent, token: token, db: db, agent: agent, renderer: renderer,
 		client: agentv3connect.NewAgentServiceClient(connect.NewClient(connecthttp.NewTransport(srv.Client(), srv.URL), auth.Bearer(token))),
 	}
 }

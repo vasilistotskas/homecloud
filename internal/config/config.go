@@ -17,6 +17,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/pelletier/go-toml/v2"
 
@@ -41,6 +43,7 @@ type Config struct {
 	Smartctl     Smartctl     `toml:"smartctl"`
 	SafeToDelete SafeToDelete `toml:"safe_to_delete"`
 	Viewer       Viewer       `toml:"viewer"`
+	Files        Files        `toml:"files"`
 }
 
 // Storage describes the archive.
@@ -266,6 +269,29 @@ type Viewer struct {
 	Timeout Duration `toml:"timeout"`
 }
 
+// Files configures the Files page: the folders the app may browse, upload
+// into and change (docs/design.md §8m). Absent when there are none.
+type Files struct {
+	// Locations are the folders the app may touch, each apart from the
+	// archive and every other location.
+	Locations []Location `toml:"locations"`
+	// TrashRetention is how long a deleted file stays in its location's trash.
+	TrashRetention Duration `toml:"trash_retention"`
+	// UploadExpiry is how long an unfinished upload is kept for resuming.
+	UploadExpiry Duration `toml:"upload_expiry"`
+}
+
+// Location is one folder the Files page may touch.
+type Location struct {
+	// Name is how the app shows it, unique ignoring case.
+	Name string `toml:"name"`
+	// Path is the folder's absolute path.
+	Path string `toml:"path"`
+}
+
+// MaxLocationName is the longest location name, in characters.
+const MaxLocationName = 64
+
 // Duration is a time.Duration decoded from a Go duration string such as "1h30m".
 type Duration time.Duration
 
@@ -490,6 +516,8 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	c.validateFiles(add)
+
 	if c.Logs.MaxSizeMB < 1 || c.Logs.MaxSizeMB > 1024 {
 		add("logs.max_size_mb must be between 1 and 1024, got %d", c.Logs.MaxSizeMB)
 	}
@@ -563,4 +591,58 @@ func nested(a, b string) bool {
 		return err == nil && filepath.IsLocal(rel)
 	}
 	return inside(a, b) || inside(b, a)
+}
+
+// validateFiles checks [files]: every location is a named absolute folder
+// apart from the archive, the ledger backups, the iPhone backup folders and
+// every other location, since the app writes there by hand.
+func (c *Config) validateFiles(add func(format string, args ...any)) {
+	f := c.Files
+	if len(f.Locations) == 0 {
+		if f.TrashRetention != 0 || f.UploadExpiry != 0 {
+			add("files.trash_retention and files.upload_expiry need at least one [[files.locations]]")
+		}
+		return
+	}
+	apart := map[string]string{"storage.root": c.Storage.Root, "backup.dir": c.Backup.Dir}
+	if c.IPhoneBackup.Incoming != "" {
+		apart["iphone_backup.incoming"] = c.IPhoneBackup.Incoming
+	}
+	for _, d := range c.IPhoneBackup.Dirs {
+		apart["iphone_backup.dirs entry "+d] = d
+	}
+	names := map[string]bool{}
+	for i, l := range f.Locations {
+		switch n := utf8.RuneCountInString(l.Name); {
+		case strings.TrimSpace(l.Name) != l.Name || n == 0 || n > MaxLocationName:
+			add("files.locations name must be 1 to %d characters without surrounding spaces, got %q", MaxLocationName, l.Name)
+		case strings.ContainsFunc(l.Name, func(r rune) bool { return r == '/' || r == '\\' || unicode.IsControl(r) }):
+			add("files.locations name %q must not contain a slash, backslash or control character", l.Name)
+		}
+		key := strings.ToLower(l.Name)
+		if names[key] {
+			add("files.locations names %q twice (names are compared ignoring case)", l.Name)
+		}
+		names[key] = true
+		if !filepath.IsAbs(l.Path) || filepath.Clean(l.Path) != l.Path {
+			add("files.locations %q path must be a clean absolute path, got %q", l.Name, l.Path)
+			continue
+		}
+		for what, dir := range apart {
+			if dir != "" && nested(l.Path, dir) {
+				add("files.locations %q path %q must be apart from %s (neither the same folder nor inside the other)", l.Name, l.Path, what)
+			}
+		}
+		for _, other := range f.Locations[i+1:] {
+			if filepath.IsAbs(other.Path) && nested(l.Path, other.Path) {
+				add("files.locations %q and %q must be apart (neither the same folder nor inside the other)", l.Name, other.Name)
+			}
+		}
+	}
+	if r := f.TrashRetention.Std(); r < 24*time.Hour || r > 90*24*time.Hour {
+		add("files.trash_retention must be between 24h and 2160h (90 days), got %s", r)
+	}
+	if e := f.UploadExpiry.Std(); e < 24*time.Hour || e > 30*24*time.Hour {
+		add("files.upload_expiry must be between 24h and 720h (30 days), got %s", e)
+	}
 }

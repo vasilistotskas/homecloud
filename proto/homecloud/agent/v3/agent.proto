@@ -95,6 +95,44 @@ service AgentService {
   rpc SignOut(SignOutRequest) returns (SignOutResponse);
   // SignOutBrowsers ends every browser session, the caller's too.
   rpc SignOutBrowsers(SignOutBrowsersRequest) returns (SignOutBrowsersResponse);
+
+  // Files (docs/design.md §8m): the folders named in [[files.locations]].
+  // Paths are slash-separated and relative to their location; "" is its top.
+  // Nothing is overwritten: a taken name answers AlreadyExists. A location
+  // whose folder cannot be opened answers FailedPrecondition. Uploads go
+  // through tus at upload_path (ListFileLocations), not this service.
+
+  // ListFileLocations lists the locations, in configuration order.
+  rpc ListFileLocations(ListFileLocationsRequest) returns (ListFileLocationsResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // ListFiles lists a folder: folders first, then files, by name.
+  rpc ListFiles(ListFilesRequest) returns (ListFilesResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // CreateFolder creates a folder.
+  rpc CreateFolder(CreateFolderRequest) returns (CreateFolderResponse);
+  // RenameFile renames a file or folder within its folder.
+  rpc RenameFile(RenameFileRequest) returns (RenameFileResponse);
+  // MoveFiles moves files and folders into another folder of the same
+  // location, in order, stopping at the first that cannot move.
+  rpc MoveFiles(MoveFilesRequest) returns (MoveFilesResponse);
+  // TrashFiles moves files and folders to the location's trash, in order,
+  // stopping at the first that cannot move. They are purged after
+  // files.trash_retention.
+  rpc TrashFiles(TrashFilesRequest) returns (TrashFilesResponse);
+  // ListTrash lists a location's trash, most recently deleted first.
+  rpc ListTrash(ListTrashRequest) returns (ListTrashResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  // RestoreFiles puts trash items back where they were, recreating their
+  // folder and taking the next free name ("name (2).ext") if theirs is taken.
+  rpc RestoreFiles(RestoreFilesRequest) returns (RestoreFilesResponse);
+  // GetFileLink returns a signed link that downloads a file, or shows it in
+  // the browser. It stops working when the caller's access ends.
+  rpc GetFileLink(GetFileLinkRequest) returns (GetFileLinkResponse) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
 }
 
 message GetInfoRequest {}
@@ -1253,4 +1291,120 @@ message SignOutBrowsersRequest {}
 message SignOutBrowsersResponse {
   // How many sessions were open.
   int32 ended = 1;
+}
+
+message ListFileLocationsRequest {}
+
+message ListFileLocationsResponse {
+  repeated FileLocation locations = 1;
+  // How long deleted items stay in the trash.
+  int64 trash_retention_seconds = 2;
+}
+
+message FileLocation {
+  string name = 1;
+  // False when its folder cannot be opened: a drive that is not connected, a
+  // share that is not mounted.
+  bool available = 2;
+  // Free space on its volume, when available.
+  uint64 free_bytes = 3;
+  // Where tus uploads into this location are created (POST), relative to the
+  // agent's origin. Each upload's metadata names its "filename" and its
+  // folder "dir"; the response that finishes it carries the path it was
+  // saved at in the Homecloud-Saved-As header (URL-encoded).
+  string upload_path = 4;
+}
+
+message ListFilesRequest {
+  string location = 1;
+  string path = 2;
+}
+
+message ListFilesResponse {
+  repeated FileEntry entries = 1;
+}
+
+message FileEntry {
+  string name = 1;
+  bool folder = 2;
+  // Files only.
+  int64 size_bytes = 3;
+  google.protobuf.Timestamp modified_at = 4;
+}
+
+message CreateFolderRequest {
+  string location = 1;
+  // The folder to create it in.
+  string path = 2;
+  string name = 3;
+}
+
+message CreateFolderResponse {}
+
+message RenameFileRequest {
+  string location = 1;
+  string path = 2;
+  string new_name = 3;
+}
+
+message RenameFileResponse {}
+
+message MoveFilesRequest {
+  string location = 1;
+  repeated string paths = 2;
+  // The folder to move them into.
+  string destination = 3;
+}
+
+message MoveFilesResponse {
+  int32 moved = 1;
+}
+
+message TrashFilesRequest {
+  string location = 1;
+  repeated string paths = 2;
+}
+
+message TrashFilesResponse {
+  int32 trashed = 1;
+}
+
+message ListTrashRequest {
+  string location = 1;
+}
+
+message ListTrashResponse {
+  repeated TrashItem items = 1;
+}
+
+message TrashItem {
+  string id = 1;
+  // Where it was.
+  string path = 2;
+  bool folder = 3;
+  // Files only.
+  int64 size_bytes = 4;
+  google.protobuf.Timestamp deleted_at = 5;
+}
+
+message RestoreFilesRequest {
+  string location = 1;
+  repeated string ids = 2;
+}
+
+message RestoreFilesResponse {
+  // Where each was restored, in order.
+  repeated string paths = 1;
+}
+
+message GetFileLinkRequest {
+  string location = 1;
+  string path = 2;
+  // Show it in the browser instead of downloading it.
+  bool inline = 3;
+}
+
+message GetFileLinkResponse {
+  // Relative to the agent's origin.
+  string url = 1;
 }

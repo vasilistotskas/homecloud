@@ -60,6 +60,9 @@ func Run(ctx context.Context, cfg *config.Config) []Result {
 	if cfg.Viewer != (config.Viewer{}) {
 		results = append(results, checkViewer(ctx, cfg.Viewer))
 	}
+	for _, l := range cfg.Files.Locations {
+		results = append(results, checkDir("files location "+l.Name, l.Path))
+	}
 	return append(results, checkIPhoneBackupDirs(cfg)...)
 }
 

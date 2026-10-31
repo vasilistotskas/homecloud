@@ -84,6 +84,25 @@ const (
 	// AgentServiceSignOutBrowsersProcedure is the procedure name of the AgentService's SignOutBrowsers
 	// RPC.
 	AgentServiceSignOutBrowsersProcedure = "/homecloud.agent.v3.AgentService/SignOutBrowsers"
+	// AgentServiceListFileLocationsProcedure is the procedure name of the AgentService's
+	// ListFileLocations RPC.
+	AgentServiceListFileLocationsProcedure = "/homecloud.agent.v3.AgentService/ListFileLocations"
+	// AgentServiceListFilesProcedure is the procedure name of the AgentService's ListFiles RPC.
+	AgentServiceListFilesProcedure = "/homecloud.agent.v3.AgentService/ListFiles"
+	// AgentServiceCreateFolderProcedure is the procedure name of the AgentService's CreateFolder RPC.
+	AgentServiceCreateFolderProcedure = "/homecloud.agent.v3.AgentService/CreateFolder"
+	// AgentServiceRenameFileProcedure is the procedure name of the AgentService's RenameFile RPC.
+	AgentServiceRenameFileProcedure = "/homecloud.agent.v3.AgentService/RenameFile"
+	// AgentServiceMoveFilesProcedure is the procedure name of the AgentService's MoveFiles RPC.
+	AgentServiceMoveFilesProcedure = "/homecloud.agent.v3.AgentService/MoveFiles"
+	// AgentServiceTrashFilesProcedure is the procedure name of the AgentService's TrashFiles RPC.
+	AgentServiceTrashFilesProcedure = "/homecloud.agent.v3.AgentService/TrashFiles"
+	// AgentServiceListTrashProcedure is the procedure name of the AgentService's ListTrash RPC.
+	AgentServiceListTrashProcedure = "/homecloud.agent.v3.AgentService/ListTrash"
+	// AgentServiceRestoreFilesProcedure is the procedure name of the AgentService's RestoreFiles RPC.
+	AgentServiceRestoreFilesProcedure = "/homecloud.agent.v3.AgentService/RestoreFiles"
+	// AgentServiceGetFileLinkProcedure is the procedure name of the AgentService's GetFileLink RPC.
+	AgentServiceGetFileLinkProcedure = "/homecloud.agent.v3.AgentService/GetFileLink"
 )
 
 var (
@@ -260,6 +279,73 @@ var (
 			Procedure:  AgentServiceSignOutBrowsersProcedure,
 		}
 	})
+	agentServiceListFileLocationsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListFileLocations"),
+			Procedure:        AgentServiceListFileLocationsProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceListFilesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListFiles"),
+			Procedure:        AgentServiceListFilesProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceCreateFolderSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("CreateFolder"),
+			Procedure:  AgentServiceCreateFolderProcedure,
+		}
+	})
+	agentServiceRenameFileSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("RenameFile"),
+			Procedure:  AgentServiceRenameFileProcedure,
+		}
+	})
+	agentServiceMoveFilesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("MoveFiles"),
+			Procedure:  AgentServiceMoveFilesProcedure,
+		}
+	})
+	agentServiceTrashFilesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("TrashFiles"),
+			Procedure:  AgentServiceTrashFilesProcedure,
+		}
+	})
+	agentServiceListTrashSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("ListTrash"),
+			Procedure:        AgentServiceListTrashProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
+	agentServiceRestoreFilesSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("RestoreFiles"),
+			Procedure:  AgentServiceRestoreFilesProcedure,
+		}
+	})
+	agentServiceGetFileLinkSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType:       connect.StreamTypeUnary,
+			Schema:           v3.File_homecloud_agent_v3_agent_proto.Services().ByName("AgentService").Methods().ByName("GetFileLink"),
+			Procedure:        AgentServiceGetFileLinkProcedure,
+			IdempotencyLevel: connect.IdempotencyNoSideEffects,
+		}
+	})
 )
 
 // AgentServiceClient is a client for the homecloud.agent.v3.AgentService service.
@@ -325,6 +411,29 @@ type AgentServiceClient interface {
 	SignOut(context.Context, *v3.SignOutRequest) (*v3.SignOutResponse, error)
 	// SignOutBrowsers ends every browser session, the caller's too.
 	SignOutBrowsers(context.Context, *v3.SignOutBrowsersRequest) (*v3.SignOutBrowsersResponse, error)
+	// ListFileLocations lists the locations, in configuration order.
+	ListFileLocations(context.Context, *v3.ListFileLocationsRequest) (*v3.ListFileLocationsResponse, error)
+	// ListFiles lists a folder: folders first, then files, by name.
+	ListFiles(context.Context, *v3.ListFilesRequest) (*v3.ListFilesResponse, error)
+	// CreateFolder creates a folder.
+	CreateFolder(context.Context, *v3.CreateFolderRequest) (*v3.CreateFolderResponse, error)
+	// RenameFile renames a file or folder within its folder.
+	RenameFile(context.Context, *v3.RenameFileRequest) (*v3.RenameFileResponse, error)
+	// MoveFiles moves files and folders into another folder of the same
+	// location, in order, stopping at the first that cannot move.
+	MoveFiles(context.Context, *v3.MoveFilesRequest) (*v3.MoveFilesResponse, error)
+	// TrashFiles moves files and folders to the location's trash, in order,
+	// stopping at the first that cannot move. They are purged after
+	// files.trash_retention.
+	TrashFiles(context.Context, *v3.TrashFilesRequest) (*v3.TrashFilesResponse, error)
+	// ListTrash lists a location's trash, most recently deleted first.
+	ListTrash(context.Context, *v3.ListTrashRequest) (*v3.ListTrashResponse, error)
+	// RestoreFiles puts trash items back where they were, recreating their
+	// folder and taking the next free name ("name (2).ext") if theirs is taken.
+	RestoreFiles(context.Context, *v3.RestoreFilesRequest) (*v3.RestoreFilesResponse, error)
+	// GetFileLink returns a signed link that downloads a file, or shows it in
+	// the browser. It stops working when the caller's access ends.
+	GetFileLink(context.Context, *v3.GetFileLinkRequest) (*v3.GetFileLinkResponse, error)
 }
 
 // NewAgentServiceClient constructs a client for the homecloud.agent.v3.AgentService service.
@@ -417,6 +526,29 @@ type AgentServiceHandler interface {
 	SignOut(context.Context, *v3.SignOutRequest) (*v3.SignOutResponse, error)
 	// SignOutBrowsers ends every browser session, the caller's too.
 	SignOutBrowsers(context.Context, *v3.SignOutBrowsersRequest) (*v3.SignOutBrowsersResponse, error)
+	// ListFileLocations lists the locations, in configuration order.
+	ListFileLocations(context.Context, *v3.ListFileLocationsRequest) (*v3.ListFileLocationsResponse, error)
+	// ListFiles lists a folder: folders first, then files, by name.
+	ListFiles(context.Context, *v3.ListFilesRequest) (*v3.ListFilesResponse, error)
+	// CreateFolder creates a folder.
+	CreateFolder(context.Context, *v3.CreateFolderRequest) (*v3.CreateFolderResponse, error)
+	// RenameFile renames a file or folder within its folder.
+	RenameFile(context.Context, *v3.RenameFileRequest) (*v3.RenameFileResponse, error)
+	// MoveFiles moves files and folders into another folder of the same
+	// location, in order, stopping at the first that cannot move.
+	MoveFiles(context.Context, *v3.MoveFilesRequest) (*v3.MoveFilesResponse, error)
+	// TrashFiles moves files and folders to the location's trash, in order,
+	// stopping at the first that cannot move. They are purged after
+	// files.trash_retention.
+	TrashFiles(context.Context, *v3.TrashFilesRequest) (*v3.TrashFilesResponse, error)
+	// ListTrash lists a location's trash, most recently deleted first.
+	ListTrash(context.Context, *v3.ListTrashRequest) (*v3.ListTrashResponse, error)
+	// RestoreFiles puts trash items back where they were, recreating their
+	// folder and taking the next free name ("name (2).ext") if theirs is taken.
+	RestoreFiles(context.Context, *v3.RestoreFilesRequest) (*v3.RestoreFilesResponse, error)
+	// GetFileLink returns a signed link that downloads a file, or shows it in
+	// the browser. It stops working when the caller's access ends.
+	GetFileLink(context.Context, *v3.GetFileLinkRequest) (*v3.GetFileLinkResponse, error)
 }
 
 // RegisterAgentServiceHandler registers svc as the homecloud.agent.v3.AgentService implementation
@@ -447,6 +579,15 @@ func RegisterAgentServiceHandler(server *connect.Server, svc AgentServiceHandler
 		connect.Method{Spec: agentServiceRevokeDeviceSpec(), Handler: adapter.revokeDevice},
 		connect.Method{Spec: agentServiceSignOutSpec(), Handler: adapter.signOut},
 		connect.Method{Spec: agentServiceSignOutBrowsersSpec(), Handler: adapter.signOutBrowsers},
+		connect.Method{Spec: agentServiceListFileLocationsSpec(), Handler: adapter.listFileLocations},
+		connect.Method{Spec: agentServiceListFilesSpec(), Handler: adapter.listFiles},
+		connect.Method{Spec: agentServiceCreateFolderSpec(), Handler: adapter.createFolder},
+		connect.Method{Spec: agentServiceRenameFileSpec(), Handler: adapter.renameFile},
+		connect.Method{Spec: agentServiceMoveFilesSpec(), Handler: adapter.moveFiles},
+		connect.Method{Spec: agentServiceTrashFilesSpec(), Handler: adapter.trashFiles},
+		connect.Method{Spec: agentServiceListTrashSpec(), Handler: adapter.listTrash},
+		connect.Method{Spec: agentServiceRestoreFilesSpec(), Handler: adapter.restoreFiles},
+		connect.Method{Spec: agentServiceGetFileLinkSpec(), Handler: adapter.getFileLink},
 	)
 }
 
@@ -559,6 +700,42 @@ func (UnimplementedAgentServiceHandler) SignOut(context.Context, *v3.SignOutRequ
 
 func (UnimplementedAgentServiceHandler) SignOutBrowsers(context.Context, *v3.SignOutBrowsersRequest) (*v3.SignOutBrowsersResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.SignOutBrowsers is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) ListFileLocations(context.Context, *v3.ListFileLocationsRequest) (*v3.ListFileLocationsResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListFileLocations is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) ListFiles(context.Context, *v3.ListFilesRequest) (*v3.ListFilesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListFiles is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) CreateFolder(context.Context, *v3.CreateFolderRequest) (*v3.CreateFolderResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.CreateFolder is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) RenameFile(context.Context, *v3.RenameFileRequest) (*v3.RenameFileResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.RenameFile is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) MoveFiles(context.Context, *v3.MoveFilesRequest) (*v3.MoveFilesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.MoveFiles is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) TrashFiles(context.Context, *v3.TrashFilesRequest) (*v3.TrashFilesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.TrashFiles is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) ListTrash(context.Context, *v3.ListTrashRequest) (*v3.ListTrashResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.ListTrash is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) RestoreFiles(context.Context, *v3.RestoreFilesRequest) (*v3.RestoreFilesResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.RestoreFiles is not implemented")
+}
+
+func (UnimplementedAgentServiceHandler) GetFileLink(context.Context, *v3.GetFileLinkRequest) (*v3.GetFileLinkResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "homecloud.agent.v3.AgentService.GetFileLink is not implemented")
 }
 
 type agentServiceClient struct {
@@ -744,6 +921,78 @@ func (c *agentServiceClient) SignOut(ctx context.Context, req *v3.SignOutRequest
 func (c *agentServiceClient) SignOutBrowsers(ctx context.Context, req *v3.SignOutBrowsersRequest) (*v3.SignOutBrowsersResponse, error) {
 	var res v3.SignOutBrowsersResponse
 	if err := c.client.CallUnary(ctx, agentServiceSignOutBrowsersSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListFileLocations(ctx context.Context, req *v3.ListFileLocationsRequest) (*v3.ListFileLocationsResponse, error) {
+	var res v3.ListFileLocationsResponse
+	if err := c.client.CallUnary(ctx, agentServiceListFileLocationsSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListFiles(ctx context.Context, req *v3.ListFilesRequest) (*v3.ListFilesResponse, error) {
+	var res v3.ListFilesResponse
+	if err := c.client.CallUnary(ctx, agentServiceListFilesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) CreateFolder(ctx context.Context, req *v3.CreateFolderRequest) (*v3.CreateFolderResponse, error) {
+	var res v3.CreateFolderResponse
+	if err := c.client.CallUnary(ctx, agentServiceCreateFolderSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) RenameFile(ctx context.Context, req *v3.RenameFileRequest) (*v3.RenameFileResponse, error) {
+	var res v3.RenameFileResponse
+	if err := c.client.CallUnary(ctx, agentServiceRenameFileSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) MoveFiles(ctx context.Context, req *v3.MoveFilesRequest) (*v3.MoveFilesResponse, error) {
+	var res v3.MoveFilesResponse
+	if err := c.client.CallUnary(ctx, agentServiceMoveFilesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) TrashFiles(ctx context.Context, req *v3.TrashFilesRequest) (*v3.TrashFilesResponse, error) {
+	var res v3.TrashFilesResponse
+	if err := c.client.CallUnary(ctx, agentServiceTrashFilesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) ListTrash(ctx context.Context, req *v3.ListTrashRequest) (*v3.ListTrashResponse, error) {
+	var res v3.ListTrashResponse
+	if err := c.client.CallUnary(ctx, agentServiceListTrashSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) RestoreFiles(ctx context.Context, req *v3.RestoreFilesRequest) (*v3.RestoreFilesResponse, error) {
+	var res v3.RestoreFilesResponse
+	if err := c.client.CallUnary(ctx, agentServiceRestoreFilesSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *agentServiceClient) GetFileLink(ctx context.Context, req *v3.GetFileLinkRequest) (*v3.GetFileLinkResponse, error) {
+	var res v3.GetFileLinkResponse
+	if err := c.client.CallUnary(ctx, agentServiceGetFileLinkSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -1017,6 +1266,114 @@ func (h agentServiceHandler) signOutBrowsers(ctx context.Context, _ connect.Spec
 		return err
 	}
 	res, err := h.svc.SignOutBrowsers(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listFileLocations(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListFileLocationsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListFileLocations(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listFiles(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListFilesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListFiles(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) createFolder(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.CreateFolderRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CreateFolder(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) renameFile(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.RenameFileRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RenameFile(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) moveFiles(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.MoveFilesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.MoveFiles(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) trashFiles(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.TrashFilesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.TrashFiles(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) listTrash(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.ListTrashRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListTrash(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) restoreFiles(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.RestoreFilesRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RestoreFiles(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h agentServiceHandler) getFileLink(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v3.GetFileLinkRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GetFileLink(ctx, &req)
 	if err != nil {
 		return err
 	}
