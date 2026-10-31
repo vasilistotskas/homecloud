@@ -21,8 +21,9 @@ import {
 } from "../gen/homecloud/agent/v3/agent_pb";
 import { App } from "./App";
 import type { Platform } from "./platformContext";
+import { testPlatform } from "../test/platform";
 
-const browser: Platform = { kind: "browser", mediaUrl: (path) => path, logError: (m) => expect.unreachable(m) };
+const browser: Platform = testPlatform();
 
 const run = create(RunSchema, {
   id: 4n,

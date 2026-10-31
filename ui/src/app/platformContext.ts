@@ -1,5 +1,7 @@
 import { createContext, use } from "react";
 
+import type { UploadTarget } from "../api/uploads";
+
 /** Which agent the desktop app uses. */
 export type DesktopConnection =
   /** The agent on this computer, found through its discovery file. */
@@ -11,6 +13,8 @@ export type DesktopConnection =
 export type Platform = {
   /** Records an error the page cannot recover from: in the desktop app's log file, or the browser's console. */
   logError: (message: string) => void;
+  /** How Files uploads reach the agent. */
+  upload: UploadTarget;
 } & (
   | {
       /** Served by the agent to a browser; authenticated with a session cookie. */

@@ -17,12 +17,9 @@ import {
   SafeToDeleteItemSchema,
   SafeToDeleteSchema,
 } from "../gen/homecloud/agent/v3/agent_pb";
+import { testPlatform } from "../test/platform";
 
-const browser: Platform = {
-  kind: "browser",
-  mediaUrl: (path) => "http://agent" + path,
-  logError: (m) => expect.unreachable(m),
-};
+const browser: Platform = testPlatform("http://agent");
 
 const year = 365n * 24n * 3600n;
 

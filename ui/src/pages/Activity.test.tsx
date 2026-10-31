@@ -21,8 +21,9 @@ import {
   RunResult,
   SettingsSchema,
 } from "../gen/homecloud/agent/v3/agent_pb";
+import { testPlatform } from "../test/platform";
 
-const browser: Platform = { kind: "browser", mediaUrl: (path) => path, logError: (m) => expect.unreachable(m) };
+const browser: Platform = testPlatform();
 
 function never(): Promise<never> {
   return new Promise<never>(() => undefined);

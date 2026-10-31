@@ -21,12 +21,9 @@ import {
   SettingsSchema,
   Tier,
 } from "../gen/homecloud/agent/v3/agent_pb";
+import { testPlatform } from "../test/platform";
 
-const desktopLike: Platform = {
-  kind: "browser",
-  mediaUrl: (path) => "http://agent" + path,
-  logError: (m) => expect.unreachable(m),
-};
+const desktopLike: Platform = testPlatform("http://agent");
 
 function quarantinedItem(id: string, filename: string) {
   return create(QuarantinedAssetSchema, {

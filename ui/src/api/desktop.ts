@@ -53,6 +53,7 @@ export class DesktopTransport implements Transport {
    * app's).
    */
   baseUrl = "";
+  private token = "";
 
   constructor(readonly connection: DesktopConnection) {}
 
@@ -60,6 +61,7 @@ export class DesktopTransport implements Transport {
     this.inner ??= invoke<Credentials>("connection_credentials").then(
       (c) => {
         this.baseUrl = import.meta.env.DEV && this.connection.kind === "this_pc" ? window.location.origin : c.url;
+        this.token = c.token;
         return createConnectTransport({ baseUrl: this.baseUrl, interceptors: [bearer(c.token)] });
       },
       (err: unknown) => {
@@ -68,6 +70,12 @@ export class DesktopTransport implements Transport {
       },
     );
     return this.inner;
+  }
+
+  /** The Authorization header for requests outside Connect (Files uploads). */
+  async authorization(): Promise<string> {
+    await this.current();
+    return `Bearer ${this.token}`;
   }
 
   /** Forgets the address and token; the next call reads them again. */
@@ -131,6 +139,17 @@ export function desktopPlatform(transport: DesktopTransport): Platform {
     connection: transport.connection,
     // Media URLs are paths on the agent, which is not the webview's origin.
     mediaUrl: (path) => transport.baseUrl + path,
+    upload: {
+      url: (path) => transport.baseUrl + path,
+      authorization: () => transport.authorization(),
+      onUnauthenticated: () => {
+        if (transport.connection.kind !== "this_pc") {
+          return false;
+        }
+        transport.invalidate();
+        return true;
+      },
+    },
     startAgent: () => invoke("start_agent"),
     revealInFolder: (path) => invoke("reveal_in_folder", { path }),
     onUnauthenticated: () => {

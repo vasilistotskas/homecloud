@@ -2,6 +2,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { ActivityPage } from "../pages/Activity";
 import { ConnectPage } from "../pages/Connect";
+import { FilesPage } from "../pages/Files";
 import { LibraryPage } from "../pages/Library";
 import { OverviewPage } from "../pages/Overview";
 import { QuarantinePage } from "../pages/Quarantine";
@@ -14,6 +15,7 @@ import { Shell } from "./Shell";
 const shellPages: Record<Exclude<Path, "/connect">, () => ReactNode> = {
   "/": () => <OverviewPage />,
   "/library": () => <LibraryPage />,
+  "/files": () => <FilesPage />,
   "/activity": () => <ActivityPage />,
   "/quarantine": () => <QuarantinePage />,
   "/safe-to-delete": () => <SafeToDeletePage />,

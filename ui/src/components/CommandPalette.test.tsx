@@ -15,12 +15,9 @@ import {
   Phase,
   SettingsSchema,
 } from "../gen/homecloud/agent/v3/agent_pb";
+import { testPlatform } from "../test/platform";
 
-const browser: Platform = {
-  kind: "browser",
-  mediaUrl: (path) => "http://agent" + path,
-  logError: (m) => expect.unreachable(m),
-};
+const browser: Platform = testPlatform("http://agent");
 
 function agent(phase: Phase, onStartSync: () => void = () => undefined) {
   return createRouterTransport(({ service }) => {

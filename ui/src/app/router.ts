@@ -11,6 +11,7 @@ import { useSyncExternalStore } from "react";
 export const paths = [
   "/",
   "/library",
+  "/files",
   "/activity",
   "/quarantine",
   "/safe-to-delete",

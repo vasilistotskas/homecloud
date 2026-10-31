@@ -3,9 +3,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { DesktopTransport, desktopConnection, desktopPlatform } from "./api/desktop";
-import { browserTransport } from "./api/transport";
+import { browserPlatform, browserTransport } from "./api/transport";
 import { App } from "./app/App";
-import type { Platform } from "./app/platformContext";
 
 const root = document.getElementById("root");
 if (root === null) {
@@ -19,13 +18,9 @@ async function environment() {
     const transport = new DesktopTransport(await desktopConnection());
     return { transport, platform: desktopPlatform(transport) };
   }
-  const platform: Platform = {
-    kind: "browser",
-    mediaUrl: (path) => path,
-    logError: (message) => {
-      console.error(message);
-    },
-  };
+  const platform = browserPlatform((message) => {
+    console.error(message);
+  });
   return { transport: browserTransport(), platform };
 }
 
