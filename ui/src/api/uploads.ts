@@ -45,6 +45,8 @@ interface Entry {
   endpoint: string;
   target: UploadTarget;
   upload?: Upload;
+  /** It failed because the connection was lost, not because the agent refused it. */
+  interrupted?: boolean;
 }
 
 /** Retries after a dropped connection, then waits for the owner to resume. */
@@ -56,12 +58,67 @@ let nextID = 1;
 let snapshot: readonly UploadItem[] = [];
 const listeners = new Set<() => void>();
 const savedListeners = new Set<(location: string, dir: string) => void>();
+let watchingVisibility = false;
 
 function emit(): void {
   snapshot = entries.map((e) => e.item);
   for (const l of listeners) {
     l();
   }
+  keepAwake();
+}
+
+// A phone suspends a page soon after its screen locks, and the upload with
+// it. While uploads run, the page keeps the screen on (Screen Wake Lock,
+// Baseline 2025); the browser releases the lock whenever the page is hidden.
+let wakeLock: WakeLockSentinel | undefined;
+let requestingWakeLock = false;
+
+function keepAwake(): void {
+  // Safari on iOS has it from 18.4; without it, uploads resume when the page
+  // is shown again.
+  if (!("wakeLock" in navigator)) {
+    return;
+  }
+  const busy = uploadsPending();
+  if (busy && wakeLock === undefined && !requestingWakeLock && document.visibilityState === "visible") {
+    requestingWakeLock = true;
+    navigator.wakeLock.request("screen").then(
+      (lock) => {
+        requestingWakeLock = false;
+        wakeLock = lock;
+        lock.addEventListener("release", () => {
+          wakeLock = undefined;
+        });
+        if (!uploadsPending()) {
+          void lock.release();
+        }
+      },
+      () => {
+        // Refused (low battery, a browser without it): uploads still resume
+        // when the page is shown again.
+        requestingWakeLock = false;
+      },
+    );
+  } else if (!busy && wakeLock !== undefined) {
+    void wakeLock.release();
+  }
+}
+
+// When the page is shown again, uploads the suspension cut off carry on by
+// themselves.
+function onVisible(): void {
+  if (document.visibilityState !== "visible") {
+    return;
+  }
+  for (const e of entries) {
+    if (e.item.state === "failed" && e.interrupted === true) {
+      e.interrupted = false;
+      e.item = { ...e.item, state: "queued", error: undefined };
+    }
+  }
+  emit();
+  pump();
 }
 
 function update(e: Entry, change: Partial<UploadItem>): void {
@@ -77,6 +134,10 @@ export function enqueueUploads(
   dir: string,
   uploadPath: string,
 ): void {
+  if (!watchingVisibility) {
+    watchingVisibility = true;
+    document.addEventListener("visibilitychange", onVisible);
+  }
   for (const file of files) {
     entries.push({
       item: { id: nextID++, name: file.name, location, dir, size: file.size, sent: 0, state: "queued" },
@@ -145,6 +206,7 @@ async function start(e: Entry): Promise<void> {
       pump();
     },
     onError: (err) => {
+      e.interrupted = !(err instanceof DetailedError && err.originalResponse !== null);
       update(e, { state: "failed", error: describe(err) });
       pump();
     },
@@ -188,6 +250,7 @@ export function resumeUpload(id: number): void {
   if (e === undefined || (e.item.state !== "paused" && e.item.state !== "failed")) {
     return;
   }
+  e.interrupted = false;
   update(e, { state: "queued", error: undefined });
   pump();
 }

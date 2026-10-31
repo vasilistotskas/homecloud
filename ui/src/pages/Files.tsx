@@ -281,8 +281,9 @@ function FolderView({
   return (
     <>
       <Text className={styles.intro}>
-        Uploads resume where they stopped if the connection drops. Nothing is replaced: a file whose name is taken is
-        saved as “name (2)”.
+        Keep this page open while files upload: it keeps the screen on until they finish. If you leave or the phone
+        locks, uploads stop and carry on from where they stopped when you come back. Nothing is replaced: a file whose
+        name is taken is saved as “name (2)”.
       </Text>
       <div className={styles.bar}>
         <Button
