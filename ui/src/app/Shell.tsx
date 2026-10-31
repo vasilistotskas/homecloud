@@ -1,6 +1,7 @@
 import {
   Button,
   CounterBadge,
+  Hamburger,
   makeStyles,
   NavDrawer,
   NavDrawerBody,
@@ -20,25 +21,33 @@ import { cyclePhases } from "../api/sync";
 import { CommandPalette } from "../components/CommandPalette";
 import { toasterId } from "../components/toast";
 import { Phase } from "../gen/homecloud/agent/v3/agent_pb";
-import { wideWindow } from "./breakpoints";
+import { narrowQuery, narrowWindow, wideWindow } from "./breakpoints";
 import { navPages } from "./navPages";
 import { isPath, navigate, useLocation } from "./router";
+import { useMediaQuery } from "./useMediaQuery";
 
 const useStyles = makeStyles({
-  // Narrow windows stack the navigation above the content and scroll as a page.
-  // Wide windows are an app layout: the window never scrolls, the navigation is
-  // a fixed full-height pane and only the content pane scrolls.
+  // Narrow windows (phones) scroll as a page under a top bar whose menu button
+  // opens the navigation over it. Wide windows are an app layout: the window
+  // never scrolls, the navigation is a fixed full-height pane and only the
+  // content pane scrolls.
   root: {
-    display: "flex",
-    flexWrap: "wrap",
     minHeight: "100vh",
-    [wideWindow]: { flexWrap: "nowrap", height: "100vh", overflow: "hidden" },
+    [wideWindow]: { display: "flex", height: "100vh", overflow: "hidden" },
   },
-  nav: {
-    flex: "1 1 100%",
-    minHeight: "auto",
-    [wideWindow]: { flex: "0 0 248px", height: "100%" },
+  nav: { [wideWindow]: { flex: "0 0 248px", height: "100%" } },
+  topBar: {
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
+    display: "flex",
+    alignItems: "center",
+    gap: tokens.spacingHorizontalS,
+    padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalS}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+    borderBottom: `${tokens.strokeWidthThin} solid ${tokens.colorNeutralStroke2}`,
   },
+  topStatus: { marginLeft: "auto", display: "flex", alignItems: "center" },
   brand: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS },
   brandIcon: { fontSize: "24px", color: tokens.colorBrandForeground1 },
   search: { width: "100%", marginTop: tokens.spacingVerticalS, justifyContent: "flex-start" },
@@ -56,7 +65,8 @@ const useStyles = makeStyles({
     minWidth: 0,
     boxSizing: "border-box",
     padding: `${tokens.spacingVerticalXXL} ${tokens.spacingHorizontalXXXL}`,
-    [wideWindow]: { height: "100%", overflowY: "auto" },
+    [wideWindow]: { flex: "1 1 auto", height: "100%", overflowY: "auto" },
+    [narrowWindow]: { padding: `${tokens.spacingVerticalL} ${tokens.spacingHorizontalL}` },
   },
   footer: { display: "flex", alignItems: "center", gap: tokens.spacingHorizontalS, padding: tokens.spacingHorizontalM },
   dot: { width: "8px", height: "8px", borderRadius: tokens.borderRadiusCircular, flex: "none" },
@@ -93,6 +103,8 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [path]);
   const { overview, connection } = useOverview();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const narrow = useMediaQuery(narrowQuery);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Ctrl+K (Cmd+K on macOS) opens the command palette from anywhere.
   useEffect(() => {
@@ -119,31 +131,66 @@ export function Shell({ children }: { children: ReactNode }) {
   const status = connectionStatus[connection];
   const syncing = cyclePhases.has(overview?.activity?.phase ?? Phase.UNSPECIFIED);
 
+  const brand = (
+    <div className={styles.brand}>
+      <CloudRegular className={styles.brandIcon} aria-hidden />
+      <Text weight="semibold" size={400}>
+        homecloud
+      </Text>
+    </div>
+  );
+  const statusLine = (
+    <div className={styles.footer} role="status">
+      <span className={styles.dot} style={{ backgroundColor: status.color }} />
+      <Text size={200}>{status.label}</Text>
+    </div>
+  );
+
   return (
     <div className={styles.root}>
+      {narrow && (
+        <header className={styles.topBar}>
+          <Hamburger
+            aria-label="Menu"
+            aria-expanded={menuOpen}
+            onClick={() => {
+              setMenuOpen(true);
+            }}
+          />
+          {brand}
+          <span className={styles.topStatus} title={status.label}>
+            <span
+              className={styles.dot}
+              style={{ backgroundColor: status.color }}
+              aria-label={status.label}
+              role="img"
+            />
+          </span>
+        </header>
+      )}
       <NavDrawer
-        open
-        type="inline"
+        open={!narrow || menuOpen}
+        type={narrow ? "overlay" : "inline"}
+        onOpenChange={(_, data) => {
+          setMenuOpen(data.open);
+        }}
         className={styles.nav}
         selectedValue={path ?? ""}
         onNavItemSelect={(_, data) => {
+          setMenuOpen(false);
           if (isPath(data.value)) {
             navigate(data.value);
           }
         }}
       >
         <NavDrawerHeader>
-          <div className={styles.brand}>
-            <CloudRegular className={styles.brandIcon} aria-hidden />
-            <Text weight="semibold" size={400}>
-              homecloud
-            </Text>
-          </div>
+          {brand}
           <Button
             className={styles.search}
             icon={<SearchRegular />}
             aria-keyshortcuts="Control+K"
             onClick={() => {
+              setMenuOpen(false);
               setPaletteOpen(true);
             }}
           >
@@ -170,12 +217,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </NavItem>
           ))}
         </NavDrawerBody>
-        <NavDrawerFooter>
-          <div className={styles.footer} role="status">
-            <span className={styles.dot} style={{ backgroundColor: status.color }} />
-            <Text size={200}>{status.label}</Text>
-          </div>
-        </NavDrawerFooter>
+        <NavDrawerFooter>{statusLine}</NavDrawerFooter>
       </NavDrawer>
       <main ref={mainRef} className={styles.main}>
         {children}

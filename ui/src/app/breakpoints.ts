@@ -1,7 +1,9 @@
 /**
  * Windows at least 840 px wide get the app layout: a fixed navigation pane
- * beside a scrolling content pane. Narrower ones stack the navigation above
- * the content and scroll as one page.
+ * beside a scrolling content pane. Narrower ones (phones) get a top bar whose
+ * menu button opens the navigation over the page.
  */
 export const wideWindow = "@media (min-width: 840px)";
-export const narrowWindow = "@media (max-width: 839.98px)";
+/** The query for narrow windows, for useMediaQuery. */
+export const narrowQuery = "(max-width: 839.98px)";
+export const narrowWindow = `@media ${narrowQuery}`;
