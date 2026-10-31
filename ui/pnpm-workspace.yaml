@@ -1,0 +1,6 @@
+# minimatch < 11.0.1 is vulnerable (GHSA-g3hv-75wg-m249) and 10.x gets no fix.
+# ESLint 10 and typescript-eslint 8 ask for ^10 but use only what 11 kept
+# (Minimatch#match, minimatch(), the dot and flipNegate options). Remove once
+# ESLint depends on 11 (eslint/eslint#21463).
+overrides:
+  "minimatch@10": 11.0.3
